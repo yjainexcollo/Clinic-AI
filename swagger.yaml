@@ -1,0 +1,956 @@
+openapi: 3.0.3
+info:
+  title: Clinic-AI Intake Assistant API
+  description: |
+    AI-powered clinical intake system for small and mid-sized clinics.
+
+    This API provides endpoints for patient registration and intake management,
+    including AI-powered adaptive questioning for Step-01 functionality.
+
+    ## Features
+    - Patient registration with automatic ID generation
+    - AI-powered adaptive questioning based on disease/complaint
+    - Intake session management with question tracking
+    - Support for multiple diseases (Hypertension, Diabetes, Chest Pain, Fever, Cough, Headache, Back Pain)
+    - Maximum 12 questions per intake with early stopping capability
+
+    ## Authentication
+    Currently no authentication is required for development.
+
+    ## Rate Limiting
+    No rate limiting is currently implemented.
+  version: 0.1.0
+  contact:
+    name: Clinic-AI Support
+    email: support@clinicai.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8000
+    description: Development server
+  - url: https://api.clinicai.com
+    description: Production server
+
+tags:
+  - name: health
+    description: Health check endpoints
+  - name: patients
+    description: Patient management and intake endpoints
+  - name: intake
+    description: Repeat-intake workflow endpoints (stable identity and visit history)
+
+paths:
+  /:
+    get:
+      tags:
+        - health
+      summary: Root endpoint
+      description: Get API information and available endpoints
+      operationId: get_root
+      responses:
+        "200":
+          description: API information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service:
+                    type: string
+                    example: "Clinic-AI Intake Assistant"
+                  version:
+                    type: string
+                    example: "0.1.0"
+                  environment:
+                    type: string
+                    example: "development"
+                  status:
+                    type: string
+                    example: "running"
+                  docs:
+                    type: string
+                    example: "/docs"
+                  endpoints:
+                    type: object
+                    properties:
+                      health:
+                        type: string
+                        example: "/health"
+                      register_patient:
+                        type: string
+                        example: "POST /patients/"
+                      answer_intake:
+                        type: string
+                        example: "POST /patients/consultations/answer"
+
+  /health/:
+    get:
+      tags:
+        - health
+      summary: Health check
+      description: Check if the service is healthy and running
+      operationId: health_check
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              example:
+                status: "healthy"
+                timestamp: "2025-01-03T12:00:00Z"
+                version: "0.1.0"
+                service: "Clinic-AI Intake Assistant"
+
+  /health/ready:
+    get:
+      tags:
+        - health
+      summary: Readiness check
+      description: Check if the service is ready to handle requests
+      operationId: readiness_check
+      responses:
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ready"
+                  timestamp:
+                    type: string
+                    format: date-time
+                  checks:
+                    type: object
+                    properties:
+                      database:
+                        type: string
+                        example: "ok"
+                      openai:
+                        type: string
+                        example: "ok"
+                      memory:
+                        type: string
+                        example: "ok"
+
+  /health/live:
+    get:
+      tags:
+        - health
+      summary: Liveness check
+      description: Check if the service is alive
+      operationId: liveness_check
+      responses:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "alive"
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /patients/:
+    post:
+      tags:
+        - patients
+      summary: Register a new patient
+      description: |
+        Register a new patient and start an intake session.
+
+        This endpoint:
+        1. Validates patient data (name, mobile, age, disease)
+        2. Generates a unique patient ID in format: CLINIC01_{name}_{mobile}
+        3. Creates a new visit with ID in format: CONSULT-YYYYMMDD-XXX
+        4. Generates the first AI-powered question based on the disease/complaint
+        5. Returns patient_id, visit_id, and the first question
+
+        ## Supported Diseases
+        - Hypertension
+        - Diabetes
+        - Chest Pain
+        - Fever
+        - Cough
+        - Headache
+        - Back Pain
+      operationId: register_patient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterPatientRequest"
+            examples:
+              hypertension_patient:
+                summary: Hypertension Patient
+                value:
+                  name: "John Doe"
+                  mobile: "9123456789"
+                  age: 35
+                  disease: "Hypertension"
+              diabetes_patient:
+                summary: Diabetes Patient
+                value:
+                  name: "Jane Smith"
+                  mobile: "9876543210"
+                  age: 45
+                  disease: "Diabetes"
+              chest_pain_patient:
+                summary: Chest Pain Patient
+                value:
+                  name: "Bob Johnson"
+                  mobile: "5551234567"
+                  age: 60
+                  disease: "Chest Pain"
+      responses:
+        "201":
+          description: Patient registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisterPatientResponse"
+              examples:
+                success_response:
+                  summary: Successful Registration
+                  value:
+                    patient_id: "CLINIC01_JOHNDOE_9123456789"
+                    visit_id: "CONSULT-20250103-001"
+                    first_question: "What specific symptoms are you experiencing with your hypertension?"
+                    message: "Patient registered successfully. Intake session started."
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                validation_error:
+                  summary: Validation Error
+                  value:
+                    error: "VALIDATION_ERROR"
+                    message: "Name cannot be empty"
+                    details: {}
+        "409":
+          description: Duplicate patient
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                duplicate_patient:
+                  summary: Duplicate Patient
+                  value:
+                    error: "DUPLICATE_PATIENT"
+                    message: "Patient with ID 'CLINIC01_JOHNDOE_9123456789' already exists"
+                    details:
+                      patient_id: "CLINIC01_JOHNDOE_9123456789"
+        "422":
+          description: Invalid disease
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                invalid_disease:
+                  summary: Invalid Disease
+                  value:
+                    error: "INVALID_DISEASE"
+                    message: "Invalid disease/complaint: InvalidDisease"
+                    details:
+                      disease: "InvalidDisease"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /patients/consultations/answer:
+    post:
+      tags:
+        - patients
+      summary: Answer an intake question
+      description: |
+        Answer an intake question and get the next question or completion status.
+
+        This endpoint:
+        1. Validates the answer and finds the patient/visit
+        2. Adds the answer to the intake session
+        3. Uses AI to determine if sufficient information has been collected
+        4. Generates the next adaptive question or completes the intake
+        5. Returns the next question or completion status
+
+        ## Question Flow
+        - Maximum 12 questions per intake session
+        - AI can stop early if sufficient information is collected
+        - No duplicate questions are asked
+        - Questions are adaptive based on previous answers
+      operationId: answer_intake_question
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnswerIntakeRequest"
+            examples:
+              first_answer:
+                summary: First Answer
+                value:
+                  patient_id: "CLINIC01_JOHNDOE_9123456789"
+                  visit_id: "CONSULT-20250103-001"
+                  answer: "I have been experiencing high blood pressure for 3 months"
+              follow_up_answer:
+                summary: Follow-up Answer
+                value:
+                  patient_id: "CLINIC01_JOHNDOE_9123456789"
+                  visit_id: "CONSULT-20250103-001"
+                  answer: "The headaches are severe, about 8 out of 10 on the pain scale"
+      responses:
+        "200":
+          description: Answer processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnswerIntakeResponse"
+              examples:
+                next_question:
+                  summary: Next Question Available
+                  value:
+                    next_question: "How long have you been experiencing these symptoms?"
+                    is_complete: false
+                    question_count: 1
+                    max_questions: 12
+                    message: "Question 2 of 12"
+                intake_complete:
+                  summary: Intake Completed
+                  value:
+                    next_question: null
+                    is_complete: true
+                    question_count: 5
+                    max_questions: 12
+                    message: "Intake completed successfully. Ready for next step."
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Patient or visit not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                patient_not_found:
+                  summary: Patient Not Found
+                  value:
+                    error: "PATIENT_NOT_FOUND"
+                    message: "Patient with ID 'CLINIC01_INVALID_1234567890' not found"
+                    details:
+                      patient_id: "CLINIC01_INVALID_1234567890"
+                visit_not_found:
+                  summary: Visit Not Found
+                  value:
+                    error: "VISIT_NOT_FOUND"
+                    message: "Visit with ID 'CONSULT-20250103-999' not found"
+                    details:
+                      visit_id: "CONSULT-20250103-999"
+        "409":
+          description: Intake already completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                intake_completed:
+                  summary: Intake Already Completed
+                  value:
+                    error: "INTAKE_ALREADY_COMPLETED"
+                    message: "Intake already completed for visit: CONSULT-20250103-001"
+                    details:
+                      visit_id: "CONSULT-20250103-001"
+        "422":
+          description: Question limit exceeded or duplicate question
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                question_limit:
+                  summary: Question Limit Exceeded
+                  value:
+                    error: "QUESTION_LIMIT_EXCEEDED"
+                    message: "Question limit exceeded. Current: 12, Max: 12"
+                    details:
+                      current_count: 12
+                      max_count: 12
+                duplicate_question:
+                  summary: Duplicate Question
+                  value:
+                    error: "DUPLICATE_QUESTION"
+                    message: "Duplicate question detected: What symptoms are you experiencing?"
+                    details:
+                      question: "What symptoms are you experiencing?"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /intake/start:
+    post:
+      tags:
+        - intake
+      summary: Start an intake session (stable identity)
+      description: |
+        Start an intake session. If a patient with the same normalized name and E.164 phone exists,
+        create a new visit for that patient. Otherwise, create a new patient and the first visit.
+
+        Idempotency is supported using `idempotency_key` for 10 minutes.
+      operationId: intake_start
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IntakeStartRequest"
+            examples:
+              new_patient:
+                summary: New patient
+                value:
+                  name: "John Smith"
+                  phone: "+19876543210"
+                  age: 30
+                  otp_verified: true
+              repeat_visit:
+                summary: Existing patient, new visit
+                value:
+                  name: "John Smith"
+                  phone: "+19876543210"
+                  age: 30
+                  otp_verified: true
+                  idempotency_key: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        "201":
+          description: Intake started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntakeStartResponse"
+        "422":
+          description: Validation error (e.g., phone not OTP-verified)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /intake/submit:
+    post:
+      tags:
+        - intake
+      summary: Submit intake answers for a specific visit
+      operationId: intake_submit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IntakeSubmitRequest"
+      responses:
+        "200":
+          description: Intake answers accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntakeSubmitResponse"
+        "422":
+          description: Validation error (invalid patient/visit linkage)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /intake/patients/{patient_id}/visits:
+    get:
+      tags:
+        - intake
+      summary: Get patient visit history
+      operationId: intake_visit_history
+      parameters:
+        - in: path
+          name: patient_id
+          required: true
+          schema:
+            type: string
+          description: Patient UUID
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            default: 100
+          description: Max number of visits to return
+        - in: query
+          name: offset
+          required: false
+          schema:
+            type: integer
+            default: 0
+          description: Offset for pagination
+      responses:
+        "200":
+          description: Visit history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VisitHistoryResponse"
+        "404":
+          description: Patient not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  schemas:
+    IntakeStartRequest:
+      type: object
+      required:
+        - name
+        - phone
+        - otp_verified
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 80
+          description: Patient name (will be normalized for matching)
+          example: "John Smith"
+        phone:
+          type: string
+          minLength: 10
+          maxLength: 20
+          description: Phone number; will be normalized to E.164
+          example: "+19876543210"
+        age:
+          type: integer
+          minimum: 0
+          maximum: 120
+          nullable: true
+          description: Optional age
+          example: 30
+        patient_id_hint:
+          type: string
+          nullable: true
+          description: Optional hint of an existing patient UUID
+        idempotency_key:
+          type: string
+          nullable: true
+          description: Optional idempotency key (10-minute window)
+        otp_verified:
+          type: boolean
+          description: Whether phone has been OTP-verified (required)
+          example: true
+
+    IntakeStartResponse:
+      type: object
+      required:
+        - action
+        - patient_id
+        - visit_id
+        - message
+      properties:
+        action:
+          type: string
+          enum: ["existing_patient_new_visit", "new_patient_created"]
+          description: Outcome of start operation
+        patient_id:
+          type: string
+          description: Patient UUID
+          example: "dd1211c0-f747-4168-8cb4-cf9e3506637a"
+        visit_id:
+          type: string
+          description: Visit UUID
+          example: "d7a4453b-b4c0-4094-a0c6-f15909a52b35"
+        message:
+          type: string
+          example: "Visit created. Continue intake for this visit only."
+
+    IntakeSubmitRequest:
+      type: object
+      required:
+        - patient_id
+        - visit_id
+        - answers
+      properties:
+        patient_id:
+          type: string
+          description: Patient UUID
+        visit_id:
+          type: string
+          description: Visit UUID
+        answers:
+          type: object
+          additionalProperties: true
+          description: Key-value answers payload
+
+    IntakeSubmitResponse:
+      type: object
+      required:
+        - visit_id
+        - status
+        - total_questions
+        - message
+      properties:
+        visit_id:
+          type: string
+          description: Visit UUID
+        status:
+          type: string
+          enum: ["open", "in_progress", "completed", "cancelled"]
+        total_questions:
+          type: integer
+          minimum: 0
+        message:
+          type: string
+
+    VisitSummary:
+      type: object
+      required:
+        - visit_id
+        - status
+        - created_at
+        - total_questions
+      properties:
+        visit_id:
+          type: string
+        status:
+          type: string
+          enum: ["open", "in_progress", "completed", "cancelled"]
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        total_questions:
+          type: integer
+        intake_duration_seconds:
+          type: integer
+          nullable: true
+
+    VisitHistoryResponse:
+      type: object
+      required:
+        - patient_id
+        - total_visits
+        - visits
+      properties:
+        patient_id:
+          type: string
+        total_visits:
+          type: integer
+        visits:
+          type: array
+          items:
+            $ref: "#/components/schemas/VisitSummary"
+    RegisterPatientRequest:
+      type: object
+      required:
+        - name
+        - mobile
+        - age
+        - disease
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 80
+          description: Patient's full name
+          example: "John Doe"
+        mobile:
+          type: string
+          minLength: 10
+          maxLength: 15
+          pattern: '^\d{10,15}$'
+          description: Mobile phone number (digits only)
+          example: "9123456789"
+        age:
+          type: integer
+          minimum: 0
+          maximum: 120
+          description: Patient's age in years
+          example: 35
+        disease:
+          type: string
+          enum:
+            - "Hypertension"
+            - "Diabetes"
+            - "Chest Pain"
+            - "Fever"
+            - "Cough"
+            - "Headache"
+            - "Back Pain"
+          description: Primary disease or complaint
+          example: "Hypertension"
+
+    RegisterPatientResponse:
+      type: object
+      required:
+        - patient_id
+        - visit_id
+        - first_question
+        - message
+      properties:
+        patient_id:
+          type: string
+          pattern: '^CLINIC01_[A-Z0-9]+_\d+$'
+          description: Generated patient ID in format CLINIC01_{name}_{mobile}
+          example: "CLINIC01_JOHNDOE_9123456789"
+        visit_id:
+          type: string
+          pattern: '^CONSULT-\d{8}-\d{3}$'
+          description: Generated visit ID in format CONSULT-YYYYMMDD-XXX
+          example: "CONSULT-20250103-001"
+        first_question:
+          type: string
+          description: AI-generated first question based on the disease
+          example: "What specific symptoms are you experiencing with your hypertension?"
+        message:
+          type: string
+          description: Success message
+          example: "Patient registered successfully. Intake session started."
+
+    AnswerIntakeRequest:
+      type: object
+      required:
+        - patient_id
+        - visit_id
+        - answer
+      properties:
+        patient_id:
+          type: string
+          pattern: '^CLINIC01_[A-Z0-9]+_\d+$'
+          description: Patient ID from registration
+          example: "CLINIC01_JOHNDOE_9123456789"
+        visit_id:
+          type: string
+          pattern: '^CONSULT-\d{8}-\d{3}$'
+          description: Visit ID from registration
+          example: "CONSULT-20250103-001"
+        answer:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: Patient's answer to the question
+          example: "I have been experiencing high blood pressure for 3 months"
+
+    AnswerIntakeResponse:
+      type: object
+      required:
+        - next_question
+        - is_complete
+        - question_count
+        - max_questions
+        - message
+      properties:
+        next_question:
+          type: string
+          nullable: true
+          description: Next question to ask (null if intake is complete)
+          example: "How long have you been experiencing these symptoms?"
+        is_complete:
+          type: boolean
+          description: Whether the intake session is complete
+          example: false
+        question_count:
+          type: integer
+          minimum: 0
+          maximum: 12
+          description: Current number of questions asked
+          example: 1
+        max_questions:
+          type: integer
+          description: Maximum number of questions allowed
+          example: 12
+        message:
+          type: string
+          description: Status message
+          example: "Question 2 of 12"
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+        - version
+        - service
+      properties:
+        status:
+          type: string
+          enum: ["healthy", "unhealthy"]
+          description: Service health status
+          example: "healthy"
+        timestamp:
+          type: string
+          format: date-time
+          description: Current timestamp
+          example: "2025-01-03T12:00:00Z"
+        version:
+          type: string
+          description: API version
+          example: "0.1.0"
+        service:
+          type: string
+          description: Service name
+          example: "Clinic-AI Intake Assistant"
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error type code
+          example: "VALIDATION_ERROR"
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Name cannot be empty"
+        details:
+          type: object
+          description: Additional error details
+          additionalProperties: true
+          example:
+            field: "name"
+            value: ""
+
+    QuestionAnswer:
+      type: object
+      required:
+        - question_id
+        - question
+        - answer
+        - timestamp
+        - question_number
+      properties:
+        question_id:
+          type: string
+          description: Unique question identifier
+          example: "Q12345678"
+        question:
+          type: string
+          description: Question text
+          example: "What specific symptoms are you experiencing?"
+        answer:
+          type: string
+          description: Patient's answer
+          example: "I have been experiencing headaches and dizziness"
+        timestamp:
+          type: string
+          format: date-time
+          description: When the question was asked
+          example: "2025-01-03T12:00:00Z"
+        question_number:
+          type: integer
+          description: Question number in sequence
+          example: 1
+
+    IntakeSummary:
+      type: object
+      required:
+        - visit_id
+        - disease
+        - status
+        - questions_asked
+        - total_questions
+        - max_questions
+        - intake_status
+        - started_at
+      properties:
+        visit_id:
+          type: string
+          description: Visit identifier
+          example: "CONSULT-20250103-001"
+        disease:
+          type: string
+          description: Disease or complaint
+          example: "Hypertension"
+        status:
+          type: string
+          description: Visit status
+          example: "intake"
+        questions_asked:
+          type: array
+          items:
+            $ref: "#/components/schemas/QuestionAnswer"
+          description: List of questions and answers
+        total_questions:
+          type: integer
+          description: Total questions asked
+          example: 3
+        max_questions:
+          type: integer
+          description: Maximum questions allowed
+          example: 12
+        intake_status:
+          type: string
+          enum: ["in_progress", "completed", "cancelled"]
+          description: Intake session status
+          example: "in_progress"
+        started_at:
+          type: string
+          format: date-time
+          description: When intake started
+          example: "2025-01-03T12:00:00Z"
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When intake completed (null if not completed)
+          example: "2025-01-03T12:15:00Z"
+
+  securitySchemes:
+    # Future authentication schemes can be added here
+    # BearerAuth:
+    #   type: http
+    #   scheme: bearer
+    #   bearerFormat: JWT
+
+security:
+  # No security requirements for development
+  - {}

@@ -1,0 +1,1 @@
+# Consultation API Pydantic schemas

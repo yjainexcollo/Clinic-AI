@@ -1,0 +1,1 @@
+# Consultation recorded domain event
