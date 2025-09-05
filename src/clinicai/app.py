@@ -21,46 +21,15 @@ async def lifespan(app: FastAPI):
     print(f"🚀 Starting Clinic-AI Intake Assistant v{settings.app_version}")
     print(f"📊 Environment: {settings.app_env}")
     print(f"🔧 Debug mode: {settings.debug}")
-    # Initialize database connection (MongoDB + Beanie)
+    # Initialize database connection and DI via composition root
     try:
-        from beanie import init_beanie  # type: ignore
-        from motor.motor_asyncio import AsyncIOMotorClient  # type: ignore
-
-        # Import models for registration
-        from clinicai.adapters.db.mongo.models.patient_m import (
-            IntakeSessionMongo,
-            PatientMongo,
-            QuestionAnswerMongo,
-            VisitMongo,
-        )
-        from clinicai.adapters.db.mongo.models.stable_patient_m import (
-            IdempotencyRecordMongo,
-            IntakeSnapshotMongo,
-            StablePatientMongo,
-            StableVisitMongo,
-            VisitSummaryMongo,
-        )
-
+        # Echo effective Mongo settings to verify env resolution
         mongo_uri = settings.database.uri
         db_name = settings.database.db_name
-        client = AsyncIOMotorClient(mongo_uri)
-        db = client[db_name]
-        await init_beanie(
-            database=db,
-            document_models=[
-                # Original models
-                PatientMongo,
-                VisitMongo,
-                IntakeSessionMongo,
-                QuestionAnswerMongo,
-                # Stable patient models
-                StablePatientMongo,
-                StableVisitMongo,
-                IntakeSnapshotMongo,
-                VisitSummaryMongo,
-                IdempotencyRecordMongo,
-            ],
-        )
+        print(f"🔗 Connecting to MongoDB at {mongo_uri}")
+        print(f"🗄 Using database: {db_name}")
+        from clinicai.bootstrap import initialize_database
+        await initialize_database()
         print("✅ MongoDB/Beanie initialized")
     except Exception as exc:
         print(f"⚠️  Skipping MongoDB init (reason: {exc})")
