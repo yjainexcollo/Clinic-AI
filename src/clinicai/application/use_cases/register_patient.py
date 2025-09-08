@@ -7,7 +7,6 @@ Formatting-only changes; behavior preserved.
 
 from ...domain.entities.patient import Patient
 from ...domain.entities.visit import Visit
-from ...domain.errors import DuplicatePatientError
 
 # Domain events currently not dispatched here; keeping behavior unchanged.
 from ...domain.value_objects.patient_id import PatientId
@@ -31,15 +30,30 @@ class RegisterPatientUseCase:
         # Accept any disease/complaint; trim whitespace
         request.disease = request.disease.strip() if request.disease else ""
 
-        # Generate patient ID
-        patient_id = PatientId.generate(request.name, request.mobile)
-
         # Check if patient already exists (exact match)
         existing_patient = await self._patient_repository.find_by_name_and_mobile(
             request.name, request.mobile
         )
         if existing_patient:
-            raise DuplicatePatientError(patient_id.value)
+            # Start a new visit for the existing patient instead of raising duplicate
+            visit_id = VisitId.generate()
+            visit = Visit(
+                visit_id=visit_id, patient_id=existing_patient.patient_id.value, disease=request.disease
+            )
+            first_question = await self._question_service.generate_first_question(
+                request.disease
+            )
+            existing_patient.add_visit(visit)
+            await self._patient_repository.save(existing_patient)
+            return RegisterPatientResponse(
+                patient_id=existing_patient.patient_id.value,
+                visit_id=visit_id.value,
+                first_question=first_question,
+                message="Existing patient found. New visit started.",
+            )
+
+        # Generate patient ID for new patient
+        patient_id = PatientId.generate(request.name, request.mobile)
 
         # Check for family members (mobile-only match) for analytics
         family_members = await self._patient_repository.find_by_mobile(request.mobile)  # noqa: F841
