@@ -100,7 +100,10 @@ class AnswerIntakeUseCase:
                 current_count=visit.intake_session.current_question_count,
                 max_count=visit.intake_session.max_questions,
             )
-            message = f"Question {visit.intake_session.current_question_count + 1} of {visit.intake_session.max_questions}"
+            message = (
+                f"Question {visit.intake_session.current_question_count + 1} "
+                f"of {visit.intake_session.max_questions}"
+            )
 
         # Save the updated patient
         await self._patient_repository.save(patient)

@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, List, Optional
 
 if TYPE_CHECKING:
     from .stable_visit import StableVisit
 
+from ...core.utils.patient_matching import normalize_name, normalize_phone
 from ..errors import InvalidPatientDataError
 from ..value_objects.stable_patient_id import StablePatientId
-from ...core.utils.patient_matching import normalize_name, normalize_phone
 
 
 @dataclass
@@ -27,7 +27,7 @@ class StablePatient:
     visits: List["StableVisit"] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
-    
+
     # Normalized fields for matching
     name_normalized: str = field(init=False)
     phone_normalized: str = field(init=False)
@@ -48,7 +48,7 @@ class StablePatient:
             raise InvalidPatientDataError("name", "Name too long (max 80 characters)")
 
         # Validate phone
-        if not self.phone_e164 or not self.phone_e164.startswith('+'):
+        if not self.phone_e164 or not self.phone_e164.startswith("+"):
             raise InvalidPatientDataError("phone_e164", "Phone must be in E.164 format")
 
         # Validate age if provided
@@ -85,11 +85,11 @@ class StablePatient:
         return sorted(self.visits, key=lambda v: v.created_at, reverse=True)
 
     def update_demographics(
-        self, 
+        self,
         name: Optional[str] = None,
         age: Optional[int] = None,
         gender: Optional[str] = None,
-        date_of_birth: Optional[datetime] = None
+        date_of_birth: Optional[datetime] = None,
     ) -> None:
         """Update patient demographics."""
         if name is not None:

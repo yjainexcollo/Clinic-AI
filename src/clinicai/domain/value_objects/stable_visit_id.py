@@ -22,7 +22,7 @@ class StableVisitId:
         if not isinstance(self.value, str):
             raise ValueError("Visit ID must be a string")
 
-        # Validate UUID format
+        # Validate UUID forma
         try:
             uuid.UUID(self.value)
         except ValueError:

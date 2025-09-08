@@ -1,1 +1,1 @@
-# Consultation recorded domain event
+# Consultation recorded domain even

@@ -51,7 +51,10 @@ class ResolvePatientUseCase:
                 candidates=mobile_patients,
                 resolution_type="mobile_match",
                 action="select_or_create",
-                message=f"Found {len(mobile_patients)} existing patient(s) with this mobile number. Please select or create new.",
+                message=(
+                    f"Found {len(mobile_patients)} existing patient(s) with this"
+                    " mobile number. Please select or create new."
+                ),
             )
 
         # Step 3: No match - new patient

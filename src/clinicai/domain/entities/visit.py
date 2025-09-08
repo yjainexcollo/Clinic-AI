@@ -116,7 +116,7 @@ class IntakeSession:
         Recent answers: {'; '.join(recent_answers)}
         Already asked questions: {asked_questions}
         Current question count: {self.current_question_count}/{self.max_questions}
-        
+
         Generate the next symptom-focused question. Do not repeat any already asked questions.
         """
         return context.strip()
@@ -136,7 +136,7 @@ class Visit:
     updated_at: datetime = field(default_factory=datetime.utcnow)
 
     # Step 1: Pre-Visit Intake
-    intake_session: IntakeSession = field(default_factory=lambda: None)
+    intake_session: Optional[IntakeSession] = None
 
     def __post_init__(self) -> None:
         """Initialize intake session."""

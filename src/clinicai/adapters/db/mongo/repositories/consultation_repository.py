@@ -1,1 +1,0 @@
-# Consultation MongoDB repository implementation

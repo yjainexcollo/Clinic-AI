@@ -7,7 +7,10 @@ from ...domain.entities.visit import Visit
 from ...domain.errors import PatientNotFoundError
 from ...domain.value_objects.patient_id import PatientId
 from ...domain.value_objects.visit_id import VisitId
-from ..dto.patient_dto import FamilyMemberSelectionRequest, FamilyMemberSelectionResponse
+from ..dto.patient_dto import (
+    FamilyMemberSelectionRequest,
+    FamilyMemberSelectionResponse,
+)
 from ..ports.repositories.patient_repo import PatientRepository
 from ..ports.services.question_service import QuestionService
 

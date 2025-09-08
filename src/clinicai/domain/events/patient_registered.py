@@ -4,7 +4,7 @@ Domain events for patient registration and intake process.
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Optional
 
 from ..value_objects.patient_id import PatientId
 from ..value_objects.visit_id import VisitId

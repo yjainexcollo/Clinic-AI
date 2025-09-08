@@ -77,7 +77,9 @@ class MongoPatientRepository(PatientRepository):
 
     async def find_by_mobile(self, mobile: str) -> List[Patient]:
         """Find all patients with the same mobile number (family members)."""
-        patients_mongo = await PatientMongo.find(PatientMongo.mobile == mobile).to_list()
+        patients_mongo = await PatientMongo.find(
+            PatientMongo.mobile == mobile
+        ).to_list()
 
         return [
             await self._mongo_to_domain(patient_mongo)

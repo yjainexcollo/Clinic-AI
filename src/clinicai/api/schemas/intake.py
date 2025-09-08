@@ -1,6 +1,5 @@
 """Pydantic schemas for repeat intake logic endpoints."""
 
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, validator
@@ -13,7 +12,9 @@ class IntakeStartRequest(BaseModel):
     phone: str = Field(..., min_length=10, max_length=20, description="Phone number")
     age: Optional[int] = Field(None, ge=0, le=120, description="Patient age")
     patient_id_hint: Optional[str] = Field(None, description="Optional patient ID hint")
-    idempotency_key: Optional[str] = Field(None, description="Idempotency key for repeat submissions")
+    idempotency_key: Optional[str] = Field(
+        None, description="Idempotency key for repeat submissions"
+    )
     otp_verified: bool = Field(False, description="Whether phone is OTP verified")
 
     @validator("name")
@@ -34,7 +35,10 @@ class IntakeStartRequest(BaseModel):
 class IntakeStartResponse(BaseModel):
     """Response schema for starting an intake session."""
 
-    action: str = Field(..., description="Action taken: existing_patient_new_visit or new_patient_created")
+    action: str = Field(
+        ...,
+        description="Action taken: existing_patient_new_visit or new_patient_created",
+    )
     patient_id: str = Field(..., description="Patient ID")
     visit_id: str = Field(..., description="Visit ID")
     message: str = Field(..., description="Status message")
@@ -71,7 +75,9 @@ class VisitSummarySchema(BaseModel):
     created_at: str = Field(..., description="Visit creation time")
     completed_at: Optional[str] = Field(None, description="Visit completion time")
     total_questions: int = Field(..., description="Total questions answered")
-    intake_duration_seconds: Optional[int] = Field(None, description="Intake duration in seconds")
+    intake_duration_seconds: Optional[int] = Field(
+        None, description="Intake duration in seconds"
+    )
 
 
 class VisitHistoryResponse(BaseModel):
@@ -100,4 +106,6 @@ class ErrorResponse(BaseModel):
 
     error: str = Field(..., description="Error type")
     message: str = Field(..., description="Error message")
-    details: Optional[Dict[str, Any]] = Field(None, description="Additional error details")
+    details: Optional[Dict[str, Any]] = Field(
+        None, description="Additional error details"
+    )

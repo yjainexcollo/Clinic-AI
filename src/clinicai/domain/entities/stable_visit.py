@@ -4,14 +4,14 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from ..value_objects.stable_visit_id import StableVisitId
 from ..value_objects.idempotency_key import IdempotencyKey
+from ..value_objects.stable_visit_id import StableVisitId
 
 
 @dataclass
 class IntakeSnapshot:
     """Snapshot of intake data for a specific visit."""
-    
+
     answers: Dict[str, Any] = field(default_factory=dict)
     completed_at: Optional[datetime] = None
     total_questions: int = 0
@@ -21,7 +21,7 @@ class IntakeSnapshot:
 @dataclass
 class VisitSummary:
     """Summary data for a visit."""
-    
+
     chief_complaint: Optional[str] = None
     symptoms: List[str] = field(default_factory=list)
     diagnosis: Optional[str] = None
@@ -34,18 +34,18 @@ class StableVisit:
     """Enhanced Visit domain entity with stable identity for repeat intakes."""
 
     visit_id: StableVisitId
-    patient_id: str  # Reference to patient
+    patient_id: str  # Reference to patien
     status: str = "open"  # open, in_progress, completed, cancelled
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
-    
+
     # Intake data
     intake_snapshot: Optional[IntakeSnapshot] = None
-    
+
     # Visit summaries and notes
     summaries: List[VisitSummary] = field(default_factory=list)
     notes: Optional[str] = None
-    
+
     # Idempotency tracking
     idempotency_key: Optional[IdempotencyKey] = None
 
@@ -63,8 +63,10 @@ class StableVisit:
     def submit_intake_answers(self, answers: Dict[str, Any]) -> None:
         """Submit intake answers for this visit."""
         if self.status not in ["open", "in_progress"]:
-            raise ValueError(f"Cannot submit answers for visit with status: {self.status}")
-        
+            raise ValueError(
+                f"Cannot submit answers for visit with status: {self.status}"
+            )
+
         self.intake_snapshot.answers.update(answers)
         self.intake_snapshot.total_questions = len(answers)
         self.status = "in_progress"
@@ -73,8 +75,10 @@ class StableVisit:
     def complete_intake(self) -> None:
         """Complete the intake process for this visit."""
         if self.status != "in_progress":
-            raise ValueError(f"Cannot complete intake for visit with status: {self.status}")
-        
+            raise ValueError(
+                f"Cannot complete intake for visit with status: {self.status}"
+            )
+
         self.intake_snapshot.completed_at = datetime.utcnow()
         self.status = "completed"
         self.updated_at = datetime.utcnow()
@@ -112,10 +116,12 @@ class StableVisit:
         return {
             "visit_id": self.visit_id.value,
             "status": self.status,
-            "total_questions": self.intake_snapshot.total_questions if self.intake_snapshot else 0,
+            "total_questions": (
+                self.intake_snapshot.total_questions if self.intake_snapshot else 0
+            ),
             "completed_at": (
                 self.intake_snapshot.completed_at.isoformat()
-                if self.intake_snapshot and self.intake_snapshot.completed_at
+                if self.intake_snapshot and self.intake_snapshot.completed_a
                 else None
             ),
             "created_at": self.created_at.isoformat(),
@@ -134,12 +140,12 @@ class StableVisit:
                     "total_questions": self.intake_snapshot.total_questions,
                     "completed_at": (
                         self.intake_snapshot.completed_at.isoformat()
-                        if self.intake_snapshot.completed_at
+                        if self.intake_snapshot.completed_a
                         else None
                     ),
                     "intake_duration_seconds": self.intake_snapshot.intake_duration_seconds,
                 }
-                if self.intake_snapshot
+                if self.intake_snapsho
                 else None
             ),
             "summaries": [

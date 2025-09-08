@@ -36,7 +36,7 @@ class Container:
 
     def get(self, name: str) -> Any:
         """Get a service by name."""
-        # Check singletons first
+        # Check singletons firs
         if name in self._singletons:
             return self._singletons[name]
 

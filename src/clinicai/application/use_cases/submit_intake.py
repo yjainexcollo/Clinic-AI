@@ -1,6 +1,5 @@
 """Submit Intake use case for repeat intake logic."""
 
-from ...domain.value_objects.stable_patient_id import StablePatientId
 from ...domain.value_objects.stable_visit_id import StableVisitId
 from ..dto.intake_dto import IntakeSubmitRequest, IntakeSubmitResponse
 from ..ports.repositories.stable_patient_repo import StablePatientRepository
@@ -17,7 +16,7 @@ class SubmitIntakeUseCase:
         # Find the visit
         visit_id = StableVisitId.from_string(request.visit_id)
         visit = await self._patient_repository.find_visit_by_id(visit_id)
-        
+
         if not visit:
             raise ValueError(f"Visit not found: {request.visit_id}")
 
@@ -34,6 +33,10 @@ class SubmitIntakeUseCase:
         return IntakeSubmitResponse(
             visit_id=updated_visit.visit_id.value,
             status=updated_visit.status,
-            total_questions=updated_visit.intake_snapshot.total_questions if updated_visit.intake_snapshot else 0,
-            message="Intake answers submitted successfully."
+            total_questions=(
+                updated_visit.intake_snapshot.total_questions
+                if updated_visit.intake_snapshot
+                else 0
+            ),
+            message="Intake answers submitted successfully.",
         )

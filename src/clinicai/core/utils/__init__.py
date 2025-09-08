@@ -1,7 +1,7 @@
 """
 Utility functions for Clinic-AI application.
 
-This module provides common utility functions used throughout
+This module provides common utility functions used throughou
 the application for various operations.
 """
 

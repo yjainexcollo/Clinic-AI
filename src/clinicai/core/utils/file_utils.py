@@ -4,7 +4,7 @@ File utility functions for Clinic-AI application.
 
 import os
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 
 def get_file_extension(filename: str) -> str:

@@ -175,8 +175,12 @@ class ResolvePatientResponse(BaseModel):
     resolution_type: str = Field(..., description="Type of resolution")
     action: str = Field(..., description="Recommended action")
     message: str = Field(..., description="Resolution message")
-    patient: Optional[PatientSummarySchema] = Field(None, description="Existing patient (if found)")
-    candidates: Optional[List[PatientCandidateSchema]] = Field(None, description="Family member candidates")
+    patient: Optional[PatientSummarySchema] = Field(
+        None, description="Existing patient (if found)"
+    )
+    candidates: Optional[List[PatientCandidateSchema]] = Field(
+        None, description="Family member candidates"
+    )
 
 
 class FamilyMemberSelectionRequest(BaseModel):

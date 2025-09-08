@@ -4,9 +4,11 @@ from fastapi import APIRouter, HTTPException, status
 
 from clinicai.application.dto.intake_dto import (
     IntakeStartRequest as IntakeStartRequestDTO,
-    IntakeSubmitRequest as IntakeSubmitRequestDTO,
-    VisitHistoryRequest,
 )
+from clinicai.application.dto.intake_dto import (
+    IntakeSubmitRequest as IntakeSubmitRequestDTO,
+)
+from clinicai.application.dto.intake_dto import VisitHistoryRequest
 from clinicai.application.use_cases.get_visit_history import GetVisitHistoryUseCase
 from clinicai.application.use_cases.start_intake import StartIntakeUseCase
 from clinicai.application.use_cases.submit_intake import SubmitIntakeUseCase
@@ -30,7 +32,10 @@ router = APIRouter(prefix="/intake", tags=["intake"])
     status_code=status.HTTP_201_CREATED,
     responses={
         400: {"model": ErrorResponse, "description": "Validation error"},
-        422: {"model": ErrorResponse, "description": "Invalid phone or OTP not verified"},
+        422: {
+            "model": ErrorResponse,
+            "description": "Invalid phone or OTP not verified",
+        },
         500: {"model": ErrorResponse, "description": "Internal server error"},
     },
 )

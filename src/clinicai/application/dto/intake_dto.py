@@ -3,10 +3,6 @@
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from ...domain.value_objects.stable_patient_id import StablePatientId
-from ...domain.value_objects.stable_visit_id import StableVisitId
-from ...domain.value_objects.idempotency_key import IdempotencyKey
-
 
 @dataclass
 class IntakeStartRequest:

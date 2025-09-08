@@ -5,9 +5,9 @@ from typing import List, Optional
 
 from ....domain.entities.stable_patient import StablePatient
 from ....domain.entities.stable_visit import StableVisit
+from ....domain.value_objects.idempotency_key import IdempotencyKey
 from ....domain.value_objects.stable_patient_id import StablePatientId
 from ....domain.value_objects.stable_visit_id import StableVisitId
-from ....domain.value_objects.idempotency_key import IdempotencyKey
 
 
 class StablePatientRepository(ABC):
@@ -19,7 +19,9 @@ class StablePatientRepository(ABC):
         pass
 
     @abstractmethod
-    async def find_patient_by_id(self, patient_id: StablePatientId) -> Optional[StablePatient]:
+    async def find_patient_by_id(
+        self, patient_id: StablePatientId
+    ) -> Optional[StablePatient]:
         """Find a patient by ID."""
         pass
 
@@ -36,7 +38,7 @@ class StablePatientRepository(ABC):
     ) -> tuple[StablePatient, bool]:
         """
         Find existing patient or create new one.
-        
+
         Returns:
             Tuple of (patient, is_new_patient)
         """
@@ -68,10 +70,10 @@ class StablePatientRepository(ABC):
 
     @abstractmethod
     async def save_idempotency_record(
-        self, 
+        self,
         idempotency_key: IdempotencyKey,
         patient_id: StablePatientId,
-        visit_id: StableVisitId
+        visit_id: StableVisitId,
     ) -> None:
         """Save an idempotency record."""
         pass

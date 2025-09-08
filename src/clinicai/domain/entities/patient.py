@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 from ..errors import InvalidPatientDataError
 from ..value_objects.patient_id import PatientId
+
+if TYPE_CHECKING:
+    # Avoid circular import at runtime while keeping type hints
+    from .visit import Visit
 
 
 @dataclass

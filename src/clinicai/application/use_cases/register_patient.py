@@ -52,7 +52,7 @@ class RegisterPatientUseCase:
             raise DuplicatePatientError(patient_id.value)
 
         # Check for family members (mobile-only match) for analytics
-        family_members = await self._patient_repository.find_by_mobile(request.mobile)
+        family_members = await self._patient_repository.find_by_mobile(request.mobile)  # noqa: F841
         # Note: We don't prevent registration here, just log for analytics
         # The frontend should handle family member detection via resolve endpoint
 

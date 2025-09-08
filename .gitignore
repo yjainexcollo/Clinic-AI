@@ -121,6 +121,11 @@ celerybeat.pid
 
 # Environments
 .env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+!.env.example
 .venv
 env/
 venv/
@@ -168,6 +173,11 @@ cython_debug/
 # VS Code
 .vscode/
 *.code-workspace
+# Allow curated shared VS Code settings
+!.vscode/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
 
 # Sublime Text
 *.sublime-project
@@ -286,11 +296,7 @@ node_modules/
 .yarn-integrity
 
 # dotenv environment variable files
-.env
-.env.development.local
-.env.test.local
-.env.production.local
-.env.local
+# (patterns duplicated above for grouping purposes)
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -345,6 +351,10 @@ models/
 *.joblib
 *.h5
 *.onnx
+# Track docs inside models/
+!models/
+models/*
+!models/README.md
 
 # Audio files (consultation recordings)
 audio/
@@ -352,12 +362,20 @@ audio/
 *.mp3
 *.m4a
 *.flac
+# Track docs inside audio/
+!audio/
+audio/*
+!audio/README.md
 
 # Medical documents
 documents/
 *.pdf
 *.doc
 *.docx
+# Track docs inside documents/
+!documents/
+documents/*
+!documents/README.md
 
 # Temporary files
 temp/
@@ -370,7 +388,9 @@ settings.local.*
 
 # Docker
 .dockerignore
+!/.dockerignore
 docker-compose.override.yml
+!/docker-compose.override.yml
 
 # Terraform
 *.tfstate

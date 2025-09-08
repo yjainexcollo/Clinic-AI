@@ -4,7 +4,6 @@ String utility functions for Clinic-AI application.
 
 import re
 import uuid
-from typing import Optional
 
 
 def generate_id(prefix: str = "") -> str:

@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from clinicai.api.routers import health, patients, intake
+from clinicai.api.routers import health, intake, patients
 from clinicai.core.config import get_settings
 from clinicai.domain.errors import DomainError
 
@@ -125,7 +125,7 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
-# Root endpoint
+# Root endpoin
 @app.get("/")
 async def root():
     """Root endpoint with API information."""

@@ -14,7 +14,9 @@ from clinicai.application.dto.patient_dto import (
 from clinicai.application.use_cases.answer_intake import AnswerIntakeUseCase
 from clinicai.application.use_cases.register_patient import RegisterPatientUseCase
 from clinicai.application.use_cases.resolve_patient import ResolvePatientUseCase
-from clinicai.application.use_cases.start_visit_for_patient import StartVisitForPatientUseCase
+from clinicai.application.use_cases.start_visit_for_patient import (
+    StartVisitForPatientUseCase,
+)
 from clinicai.domain.errors import (
     DuplicatePatientError,
     DuplicateQuestionError,
@@ -26,17 +28,18 @@ from clinicai.domain.errors import (
 )
 
 from ..deps import PatientRepositoryDep, QuestionServiceDep
+from ..schemas.patient import AnswerIntakeResponse, ErrorResponse
 from ..schemas.patient import (
-    AnswerIntakeResponse,
-    ErrorResponse,
     FamilyMemberSelectionRequest as FamilyMemberSelectionRequestSchema,
+)
+from ..schemas.patient import (
     FamilyMemberSelectionResponse,
     PatientCandidateSchema,
     PatientSummarySchema,
     RegisterPatientResponse,
-    ResolvePatientRequest as ResolvePatientRequestSchema,
-    ResolvePatientResponse,
 )
+from ..schemas.patient import ResolvePatientRequest as ResolvePatientRequestSchema
+from ..schemas.patient import ResolvePatientResponse
 
 router = APIRouter(prefix="/patients", tags=["patients"])
 
@@ -141,7 +144,7 @@ async def answer_intake_question(
 
     This endpoint:
     1. Validates the answer
-    2. Finds the patient and visit
+    2. Finds the patient and visi
     3. Adds the answer to the intake session
     4. Generates next question or completes intake
     5. Returns next question or completion status
@@ -227,7 +230,7 @@ async def resolve_patient(
     Resolve patient identity and determine next action.
 
     This endpoint:
-    1. Checks for exact match (name + mobile) - returning patient
+    1. Checks for exact match (name + mobile) - returning patien
     2. Checks for mobile-only match - family members
     3. Returns new patient option if no matches found
     """
@@ -260,7 +263,7 @@ async def resolve_patient(
                 age=result.patient.age,
                 created_at=result.patient.created_at.isoformat(),
                 total_visits=len(result.patient.visits),
-                latest_visit=None,  # Could be enhanced to include latest visit
+                latest_visit=None,  # Could be enhanced to include latest visi
             )
 
         # Add candidates if family members found
@@ -273,7 +276,11 @@ async def resolve_patient(
                         name=candidate.name,
                         age=candidate.age,
                         total_visits=len(candidate.visits),
-                        last_visit_date=candidate.visits[-1].created_at if candidate.visits else None,
+                        last_visit_date=(
+                            candidate.visits[-1].created_a
+                            if candidate.visits
+                            else None
+                        ),
                     )
                 )
             response_data["candidates"] = candidates
@@ -321,7 +328,7 @@ async def start_visit_for_family_member(
 
     This endpoint:
     1. Validates the selected patient exists
-    2. Creates a new visit for the existing patient
+    2. Creates a new visit for the existing patien
     3. Generates first question based on disease
     4. Returns visit details and first question
     """

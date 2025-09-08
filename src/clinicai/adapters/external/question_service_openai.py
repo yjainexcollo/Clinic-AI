@@ -103,8 +103,10 @@ class OpenAIQuestionService(QuestionService):
             f"Previous answers (last 3): {', '.join(previous_answers[-3:])}.\n"
             f"Already asked questions: {asked_questions}.\n"
             f"Current question count: {current_count}/{max_count}.\n"
-            "Generate the next symptom-focused question that is not a repeat, builds on prior answers, and is a single question.\n"
-            "Focus on duration, severity, triggers, associated symptoms, impact on daily life, and prior treatments.\n"
+            "Generate the next symptom-focused question that is not a repeat, "
+            "builds on prior answers, and is a single question.\n"
+            "Focus on duration, severity, triggers, associated symptoms, impact "
+            "on daily life, and prior treatments.\n"
             "Return only the question text."
         )
 

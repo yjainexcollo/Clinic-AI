@@ -16,7 +16,9 @@ from clinicai.adapters.db.mongo.repositories.stable_patient_repository import (
 )
 from clinicai.adapters.external.question_service_openai import OpenAIQuestionService
 from clinicai.application.ports.repositories.patient_repo import PatientRepository
-from clinicai.application.ports.repositories.stable_patient_repo import StablePatientRepository
+from clinicai.application.ports.repositories.stable_patient_repo import (
+    StablePatientRepository,
+)
 from clinicai.application.ports.services.question_service import QuestionService
 
 
@@ -47,4 +49,6 @@ def get_stable_patient_repository() -> StablePatientRepository:
 # Dependency annotations for FastAPI
 PatientRepositoryDep = Annotated[PatientRepository, Depends(get_patient_repository)]
 QuestionServiceDep = Annotated[QuestionService, Depends(get_question_service)]
-StablePatientRepositoryDep = Annotated[StablePatientRepository, Depends(get_stable_patient_repository)]
+StablePatientRepositoryDep = Annotated[
+    StablePatientRepository, Depends(get_stable_patient_repository)
+]
