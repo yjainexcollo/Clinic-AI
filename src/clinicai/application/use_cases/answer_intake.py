@@ -79,7 +79,11 @@ class AnswerIntakeUseCase:
         next_question = None
         is_complete = False
 
-        if should_stop or not visit.can_ask_more_questions():
+        # Enforce minimum of 3 questions before completion unless service decides to stop after >=3
+        min_questions_required = 3
+        reached_minimum = visit.intake_session.current_question_count >= min_questions_required
+
+        if (should_stop and reached_minimum) or not visit.can_ask_more_questions():
             # Complete the intake
             visit.complete_intake()
             is_complete = True

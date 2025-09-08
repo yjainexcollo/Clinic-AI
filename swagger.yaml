@@ -11,8 +11,8 @@ info:
     - Patient registration with automatic ID generation
     - AI-powered adaptive questioning based on disease/complaint
     - Intake session management with question tracking
-    - Support for multiple diseases (Hypertension, Diabetes, Chest Pain, Fever, Cough, Headache, Back Pain)
-    - Maximum 12 questions per intake with early stopping capability
+    - Supports any disease/complaint (free-text)
+    - Maximum 8 questions per intake with early stopping capability (minimum ~3)
 
     ## Authentication
     Currently no authentication is required for development.
@@ -171,19 +171,10 @@ paths:
 
         This endpoint:
         1. Validates patient data (name, mobile, age, disease)
-        2. Generates a unique patient ID in format: CLINIC01_{name}_{mobile}
-        3. Creates a new visit with ID in format: CONSULT-YYYYMMDD-XXX
+        2. Generates a patient ID in format: {NAME}_{MOBILE}
+        3. If the same name and mobile already exist, a new visit is created for that patient
         4. Generates the first AI-powered question based on the disease/complaint
         5. Returns patient_id, visit_id, and the first question
-
-        ## Supported Diseases
-        - Hypertension
-        - Diabetes
-        - Chest Pain
-        - Fever
-        - Cough
-        - Headache
-        - Back Pain
       operationId: register_patient
       requestBody:
         required: true
@@ -224,7 +215,7 @@ paths:
                 success_response:
                   summary: Successful Registration
                   value:
-                    patient_id: "CLINIC01_JOHNDOE_9123456789"
+                    patient_id: "JOHNDOE_9123456789"
                     visit_id: "CONSULT-20250103-001"
                     first_question: "What specific symptoms are you experiencing with your hypertension?"
                     message: "Patient registered successfully. Intake session started."
@@ -241,20 +232,7 @@ paths:
                     error: "VALIDATION_ERROR"
                     message: "Name cannot be empty"
                     details: {}
-        "409":
-          description: Duplicate patient
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-              examples:
-                duplicate_patient:
-                  summary: Duplicate Patient
-                  value:
-                    error: "DUPLICATE_PATIENT"
-                    message: "Patient with ID 'CLINIC01_JOHNDOE_9123456789' already exists"
-                    details:
-                      patient_id: "CLINIC01_JOHNDOE_9123456789"
+
         "422":
           description: Invalid disease
           content:
@@ -292,7 +270,7 @@ paths:
         5. Returns the next question or completion status
 
         ## Question Flow
-        - Maximum 12 questions per intake session
+        - Maximum 8 questions per intake session
         - AI can stop early if sufficient information is collected
         - No duplicate questions are asked
         - Questions are adaptive based on previous answers
@@ -307,13 +285,13 @@ paths:
               first_answer:
                 summary: First Answer
                 value:
-                  patient_id: "CLINIC01_JOHNDOE_9123456789"
+                  patient_id: "JOHNDOE_9123456789"
                   visit_id: "CONSULT-20250103-001"
                   answer: "I have been experiencing high blood pressure for 3 months"
               follow_up_answer:
                 summary: Follow-up Answer
                 value:
-                  patient_id: "CLINIC01_JOHNDOE_9123456789"
+                  patient_id: "JOHNDOE_9123456789"
                   visit_id: "CONSULT-20250103-001"
                   answer: "The headaches are severe, about 8 out of 10 on the pain scale"
       responses:
@@ -331,14 +309,14 @@ paths:
                     is_complete: false
                     question_count: 1
                     max_questions: 12
-                    message: "Question 2 of 12"
+                    message: "Question 2 of 8"
                 intake_complete:
                   summary: Intake Completed
                   value:
                     next_question: null
                     is_complete: true
                     question_count: 5
-                    max_questions: 12
+                    max_questions: 8
                     message: "Intake completed successfully. Ready for next step."
         "400":
           description: Validation error
@@ -357,9 +335,9 @@ paths:
                   summary: Patient Not Found
                   value:
                     error: "PATIENT_NOT_FOUND"
-                    message: "Patient with ID 'CLINIC01_INVALID_1234567890' not found"
+                    message: "Patient with ID 'INVALID_1234567890' not found"
                     details:
-                      patient_id: "CLINIC01_INVALID_1234567890"
+                      patient_id: "INVALID_1234567890"
                 visit_not_found:
                   summary: Visit Not Found
                   value:
@@ -392,7 +370,7 @@ paths:
                   summary: Question Limit Exceeded
                   value:
                     error: "QUESTION_LIMIT_EXCEEDED"
-                    message: "Question limit exceeded. Current: 12, Max: 12"
+                    message: "Question limit exceeded. Current: 8, Max: 8"
                     details:
                       current_count: 12
                       max_count: 12
@@ -715,15 +693,7 @@ components:
           example: 35
         disease:
           type: string
-          enum:
-            - "Hypertension"
-            - "Diabetes"
-            - "Chest Pain"
-            - "Fever"
-            - "Cough"
-            - "Headache"
-            - "Back Pain"
-          description: Primary disease or complaint
+          description: Primary disease or complaint (free-text)
           example: "Hypertension"
 
     RegisterPatientResponse:
@@ -736,9 +706,9 @@ components:
       properties:
         patient_id:
           type: string
-          pattern: '^CLINIC01_[A-Z0-9]+_\d+$'
-          description: Generated patient ID in format CLINIC01_{name}_{mobile}
-          example: "CLINIC01_JOHNDOE_9123456789"
+          pattern: '^[A-Z0-9]+_\d+$'
+          description: Generated patient ID in format {NAME}_{MOBILE}
+          example: "JOHNDOE_9123456789"
         visit_id:
           type: string
           pattern: '^CONSULT-\d{8}-\d{3}$'
@@ -762,9 +732,9 @@ components:
       properties:
         patient_id:
           type: string
-          pattern: '^CLINIC01_[A-Z0-9]+_\d+$'
+          pattern: '^[A-Z0-9]+_\d+$'
           description: Patient ID from registration
-          example: "CLINIC01_JOHNDOE_9123456789"
+          example: "JOHNDOE_9123456789"
         visit_id:
           type: string
           pattern: '^CONSULT-\d{8}-\d{3}$'
@@ -798,13 +768,13 @@ components:
         question_count:
           type: integer
           minimum: 0
-          maximum: 12
+          maximum: 8
           description: Current number of questions asked
           example: 1
         max_questions:
           type: integer
           description: Maximum number of questions allowed
-          example: 12
+          example: 8
         message:
           type: string
           description: Status message
