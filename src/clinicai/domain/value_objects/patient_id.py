@@ -1,6 +1,6 @@
 """
 Patient ID value object for type-safe patient identification.
-Format: CLINIC01_{patient_name}_{patient_phone_number}
+Format: {PATIENT_NAME}_{PATIENT_PHONE_NUMBER}
 """
 
 import re
@@ -22,11 +22,11 @@ class PatientId:
         if not isinstance(self.value, str):
             raise ValueError("Patient ID must be a string")
 
-        # Validate format: CLINIC01_{patient_name}_{patient_phone_number}
-        pattern = r"^CLINIC01_[a-zA-Z0-9_]+_\d+$"
+        # Validate format: {patient_name}_{patient_phone_number}
+        pattern = r"^[a-zA-Z0-9_]+_\d+$"
         if not re.match(pattern, self.value):
             raise ValueError(
-                "Patient ID must follow format: CLINIC01_{patient_name}_{patient_phone_number}"
+                "Patient ID must follow format: {PATIENT_NAME}_{PATIENT_PHONE_NUMBER}"
             )
 
     def __str__(self) -> str:
@@ -58,4 +58,4 @@ class PatientId:
         if not clean_phone:
             raise ValueError("Phone number must contain at least one digit")
 
-        return cls(f"CLINIC01_{clean_name}_{clean_phone}")
+        return cls(f"{clean_name}_{clean_phone}")

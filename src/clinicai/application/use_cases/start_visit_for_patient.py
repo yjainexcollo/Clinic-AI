@@ -28,18 +28,8 @@ class StartVisitForPatientUseCase:
         self, request: FamilyMemberSelectionRequest
     ) -> FamilyMemberSelectionResponse:
         """Execute the start visit for patient use case."""
-        # Validate disease
-        valid_diseases = [
-            "Hypertension",
-            "Diabetes",
-            "Chest Pain",
-            "Fever",
-            "Cough",
-            "Headache",
-            "Back Pain",
-        ]
-        if request.disease not in valid_diseases:
-            raise ValueError(f"Invalid disease: {request.disease}")
+        # Accept any disease/complaint; trim whitespace
+        request.disease = request.disease.strip() if request.disease else ""
 
         # Find the patient
         patient_id = PatientId(request.selected_patient_id)

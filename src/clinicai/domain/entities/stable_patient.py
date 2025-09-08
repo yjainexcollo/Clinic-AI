@@ -9,7 +9,11 @@ from typing import TYPE_CHECKING, List, Optional
 if TYPE_CHECKING:
     from .stable_visit import StableVisit
 
-from ...core.utils.patient_matching import normalize_name, normalize_phone
+from ...core.utils.patient_matching import (
+    normalize_name,
+    normalize_phone,
+    normalize_phone_digits_only,
+)
 from ..errors import InvalidPatientDataError
 from ..value_objects.stable_patient_id import StablePatientId
 
@@ -36,7 +40,8 @@ class StablePatient:
         """Validate patient data and set normalized fields."""
         self._validate_patient_data()
         self.name_normalized = normalize_name(self.name)
-        self.phone_normalized = normalize_phone(self.phone_e164)
+        # Store digits-only normalization for matching, while keeping phone_e164 for storage/display
+        self.phone_normalized = normalize_phone_digits_only(self.phone_e164)
 
     def _validate_patient_data(self) -> None:
         """Validate patient data according to business rules."""

@@ -74,6 +74,8 @@ async def start_intake(
             patient_id=result.patient_id,
             visit_id=result.visit_id,
             message=result.message,
+            patient=result.patient,
+            visit=result.visit,
         )
 
     except ValueError as e:

@@ -32,18 +32,9 @@ class RegisterPatientRequest(BaseModel):
 
     @validator("disease")
     def validate_disease(cls, v):
-        valid_diseases = [
-            "Hypertension",
-            "Diabetes",
-            "Chest Pain",
-            "Fever",
-            "Cough",
-            "Headache",
-            "Back Pain",
-        ]
-        if v not in valid_diseases:
-            raise ValueError(f'Disease must be one of: {", ".join(valid_diseases)}')
-        return v
+        if not v or not v.strip():
+            raise ValueError("Disease cannot be empty")
+        return v.strip()
 
 
 class RegisterPatientResponse(BaseModel):
@@ -145,18 +136,9 @@ class ResolvePatientRequest(BaseModel):
 
     @validator("disease")
     def validate_disease(cls, v):
-        valid_diseases = [
-            "Hypertension",
-            "Diabetes",
-            "Chest Pain",
-            "Fever",
-            "Cough",
-            "Headache",
-            "Back Pain",
-        ]
-        if v not in valid_diseases:
-            raise ValueError(f'Disease must be one of: {", ".join(valid_diseases)}')
-        return v
+        if not v or not v.strip():
+            raise ValueError("Disease cannot be empty")
+        return v.strip()
 
 
 class PatientCandidateSchema(BaseModel):
@@ -191,18 +173,9 @@ class FamilyMemberSelectionRequest(BaseModel):
 
     @validator("disease")
     def validate_disease(cls, v):
-        valid_diseases = [
-            "Hypertension",
-            "Diabetes",
-            "Chest Pain",
-            "Fever",
-            "Cough",
-            "Headache",
-            "Back Pain",
-        ]
-        if v not in valid_diseases:
-            raise ValueError(f'Disease must be one of: {", ".join(valid_diseases)}')
-        return v
+        if not v or not v.strip():
+            raise ValueError("Disease cannot be empty")
+        return v.strip()
 
 
 class FamilyMemberSelectionResponse(BaseModel):

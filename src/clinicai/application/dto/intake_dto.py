@@ -24,6 +24,9 @@ class IntakeStartResponse:
     patient_id: str
     visit_id: str
     message: str
+    # Optional enriched objects for caller convenience
+    patient: Optional[dict] = None
+    visit: Optional[dict] = None
 
 
 @dataclass

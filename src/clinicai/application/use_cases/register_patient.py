@@ -7,7 +7,7 @@ Formatting-only changes; behavior preserved.
 
 from ...domain.entities.patient import Patient
 from ...domain.entities.visit import Visit
-from ...domain.errors import DuplicatePatientError, InvalidDiseaseError
+from ...domain.errors import DuplicatePatientError
 
 # Domain events currently not dispatched here; keeping behavior unchanged.
 from ...domain.value_objects.patient_id import PatientId
@@ -28,18 +28,8 @@ class RegisterPatientUseCase:
 
     async def execute(self, request: RegisterPatientRequest) -> RegisterPatientResponse:
         """Execute the register patient use case."""
-        # Validate disease
-        valid_diseases = [
-            "Hypertension",
-            "Diabetes",
-            "Chest Pain",
-            "Fever",
-            "Cough",
-            "Headache",
-            "Back Pain",
-        ]
-        if request.disease not in valid_diseases:
-            raise InvalidDiseaseError(request.disease)
+        # Accept any disease/complaint; trim whitespace
+        request.disease = request.disease.strip() if request.disease else ""
 
         # Generate patient ID
         patient_id = PatientId.generate(request.name, request.mobile)

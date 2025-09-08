@@ -6,7 +6,11 @@ from typing import List, Optional, Tuple
 from clinicai.application.ports.repositories.stable_patient_repo import (
     StablePatientRepository,
 )
-from clinicai.core.utils.patient_matching import normalize_name, normalize_phone
+from clinicai.core.utils.patient_matching import (
+    normalize_name,
+    normalize_phone,
+    normalize_phone_digits_only,
+)
 from clinicai.domain.entities.stable_patient import StablePatient
 from clinicai.domain.entities.stable_visit import (
     IntakeSnapshot,
@@ -68,7 +72,8 @@ class MongoStablePatientRepository(StablePatientRepository):
             Tuple of (patient, is_new_patient)
         """
         name_normalized = normalize_name(name)
-        phone_normalized = normalize_phone(phone_e164)
+        # For matching, use digits-only as requested
+        phone_normalized = normalize_phone_digits_only(phone_e164)
 
         # Try to find existing patient
         existing_patient = await self.find_patient_by_normalized_data(
@@ -79,7 +84,7 @@ class MongoStablePatientRepository(StablePatientRepository):
             return existing_patient, False
 
         # Create new patient
-        patient_id = StablePatientId.generate()
+        patient_id = StablePatientId.generate(name=name, phone=phone_e164)
         new_patient = StablePatient(
             patient_id=patient_id, name=name, phone_e164=phone_e164, age=age
         )

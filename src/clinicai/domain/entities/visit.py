@@ -40,20 +40,9 @@ class IntakeSession:
     completed_at: Optional[datetime] = None
 
     def __post_init__(self) -> None:
-        """Validate disease."""
-        valid_diseases = [
-            "Hypertension",
-            "Diabetes",
-            "Chest Pain",
-            "Fever",
-            "Cough",
-            "Headache",
-            "Back Pain",
-        ]
-        if self.disease not in valid_diseases:
-            from ..errors import InvalidDiseaseError
-
-            raise InvalidDiseaseError(self.disease)
+        """Normalize disease string (no fixed whitelist)."""
+        if self.disease:
+            self.disease = self.disease.strip()
 
     def add_question_answer(self, question: str, answer: str) -> None:
         """Add a question and answer to the intake."""

@@ -1,11 +1,12 @@
 """Stable Patient ID value object for repeat intake logic.
 
-Uses UUID-based approach for better stability and uniqueness.
+Uses human-readable format derived from patient name and phone.
 """
 
-import uuid
 from dataclasses import dataclass
 from typing import Any
+
+from ...core.utils.patient_matching import generate_patient_id
 
 
 @dataclass(frozen=True)
@@ -22,12 +23,6 @@ class StablePatientId:
         if not isinstance(self.value, str):
             raise ValueError("Patient ID must be a string")
 
-        # Validate UUID forma
-        try:
-            uuid.UUID(self.value)
-        except ValueError:
-            raise ValueError("Patient ID must be a valid UUID")
-
     def __str__(self) -> str:
         """String representation."""
         return self.value
@@ -43,9 +38,9 @@ class StablePatientId:
         return hash(self.value)
 
     @classmethod
-    def generate(cls) -> "StablePatientId":
-        """Generate a new stable patient ID using UUID4."""
-        return cls(str(uuid.uuid4()))
+    def generate(cls, name: str, phone: str) -> "StablePatientId":
+        """Generate a new stable patient ID using {name}_{digits} format."""
+        return cls(generate_patient_id(name, phone))
 
     @classmethod
     def from_string(cls, value: str) -> "StablePatientId":

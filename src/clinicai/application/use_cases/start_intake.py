@@ -2,6 +2,7 @@
 
 from ...core.utils.patient_matching import normalize_phone, validate_phone_otp_verified
 from ...domain.entities.stable_visit import StableVisit
+from ...domain.entities.stable_patient import StablePatient
 from ...domain.value_objects.idempotency_key import IdempotencyKey
 from ...domain.value_objects.stable_visit_id import StableVisitId
 from ..dto.intake_dto import IntakeStartRequest, IntakeStartResponse
@@ -69,9 +70,24 @@ class StartIntakeUseCase:
             "new_patient_created" if is_new_patient else "existing_patient_new_visit"
         )
 
+        # Prepare minimal patient/visit dicts for response
+        patient_dict = {
+            "patient_id": patient.patient_id.value,
+            "name": patient.name,
+            "phone_e164": patient.phone_e164,
+            "age": patient.age,
+        }
+        visit_dict = {
+            "visit_id": visit.visit_id.value,
+            "patient_id": visit.patient_id,
+            "status": visit.status,
+        }
+
         return IntakeStartResponse(
             action=action,
             patient_id=patient.patient_id.value,
             visit_id=visit.visit_id.value,
             message="Visit created. Continue intake for this visit only.",
+            patient=patient_dict,
+            visit=visit_dict,
         )

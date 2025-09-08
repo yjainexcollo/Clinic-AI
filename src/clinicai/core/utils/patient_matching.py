@@ -72,6 +72,21 @@ def normalize_patient_data(name: str, phone: str) -> Tuple[str, str]:
     return normalize_name(name), normalize_phone(phone)
 
 
+def normalize_phone_digits_only(phone: str) -> str:
+    """
+    Normalize phone number to digits-only for matching.
+
+    Rules:
+    - Remove all non-digit characters
+    - Return only digits string (no leading +)
+    """
+    if not phone:
+        return ""
+
+    digits_only = re.sub(r"\D", "", phone)
+    return digits_only
+
+
 def is_strong_match(name1: str, phone1: str, name2: str, phone2: str) -> bool:
     """
     Check if two patient records represent the same person.
@@ -93,17 +108,16 @@ def is_strong_match(name1: str, phone1: str, name2: str, phone2: str) -> bool:
 
 def generate_patient_id(name: str, phone: str) -> str:
     """
-    Generate a stable patient ID from normalized name and phone.
+    Generate patient ID in format {patientname}_{patientmobilenumber}.
 
-    Format: P-{normalized_name_hash}_{phone_e164_hash}
+    - Patient name: trimmed, lowercase, spaces collapsed and removed of non-word chars
+    - Mobile number: digits-only
     """
-    norm_name, norm_phone = normalize_patient_data(name, phone)
-
-    # Create short hashes for the ID
-    name_hash = str(abs(hash(norm_name)))[:8]
-    phone_hash = str(abs(hash(norm_phone)))[:8]
-
-    return f"P-{name_hash}_{phone_hash}"
+    norm_name = normalize_name(name)
+    # Remove spaces from normalized name for ID token
+    name_token = re.sub(r"\s+", "", norm_name)
+    phone_digits = normalize_phone_digits_only(phone)
+    return f"{name_token}_{phone_digits}"
 
 
 def validate_phone_otp_verified(phone: str, otp_verified: bool) -> bool:

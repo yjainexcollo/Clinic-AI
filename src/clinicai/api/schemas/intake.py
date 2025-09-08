@@ -42,6 +42,8 @@ class IntakeStartResponse(BaseModel):
     patient_id: str = Field(..., description="Patient ID")
     visit_id: str = Field(..., description="Visit ID")
     message: str = Field(..., description="Status message")
+    patient: Optional[dict] = Field(None, description="Resolved patient object")
+    visit: Optional[dict] = Field(None, description="Newly created visit object")
 
 
 class IntakeSubmitRequest(BaseModel):
