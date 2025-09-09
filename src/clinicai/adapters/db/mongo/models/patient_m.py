@@ -44,6 +44,9 @@ class VisitMongo(Document):
 
     # Step 1: Pre-Visit Intake
     intake_session: Optional[IntakeSessionMongo] = None
+    
+    # Step 2: Pre-Visit Summary (EHR Storage)
+    pre_visit_summary: Optional[dict] = None
 
 
 class PatientMongo(Document):

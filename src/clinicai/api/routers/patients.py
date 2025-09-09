@@ -285,4 +285,92 @@ async def generate_pre_visit_summary(
         )
 
 
+@router.get(
+    "/{patient_id}/visits/{visit_id}/summary",
+    response_model=PreVisitSummaryResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: {"model": ErrorResponse, "description": "Patient, visit, or summary not found"},
+        500: {"model": ErrorResponse, "description": "Internal server error"},
+    },
+)
+async def get_pre_visit_summary(
+    patient_id: str,
+    visit_id: str,
+    patient_repo: PatientRepositoryDep,
+):
+    """
+    Retrieve stored pre-visit summary from EHR.
+
+    This endpoint:
+    1. Validates patient and visit exist
+    2. Retrieves stored pre-visit summary from EHR
+    3. Returns the clinical summary for doctor review
+    """
+    try:
+        from ...domain.value_objects.patient_id import PatientId
+        
+        # Find patient
+        patient_id_obj = PatientId(patient_id)
+        patient = await patient_repo.find_by_id(patient_id_obj)
+        if not patient:
+            raise PatientNotFoundError(patient_id)
+
+        # Find visit
+        visit = patient.get_visit_by_id(visit_id)
+        if not visit:
+            raise VisitNotFoundError(visit_id)
+
+        # Check if summary exists
+        if not visit.has_pre_visit_summary():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "error": "SUMMARY_NOT_FOUND",
+                    "message": f"No pre-visit summary found for visit {visit_id}",
+                    "details": {"visit_id": visit_id},
+                },
+            )
+
+        # Get stored summary
+        summary_data = visit.get_pre_visit_summary()
+
+        return PreVisitSummaryResponse(
+            patient_id=patient.patient_id.value,
+            visit_id=visit.visit_id.value,
+            summary=summary_data["summary"],
+            structured_data=summary_data["structured_data"],
+            generated_at=summary_data["generated_at"],
+            message="Pre-visit summary retrieved from EHR"
+        )
+
+    except PatientNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": "PATIENT_NOT_FOUND",
+                "message": e.message,
+                "details": e.details,
+            },
+        )
+    except VisitNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": "VISIT_NOT_FOUND",
+                "message": e.message,
+                "details": e.details,
+            },
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "INTERNAL_ERROR",
+                "message": "An unexpected error occurred",
+                "details": {"exception": str(e)},
+            },
+        )
+
+
  

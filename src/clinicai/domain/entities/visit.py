@@ -126,6 +126,9 @@ class Visit:
 
     # Step 1: Pre-Visit Intake
     intake_session: Optional[IntakeSession] = None
+    
+    # Step 2: Pre-Visit Summary (EHR Storage)
+    pre_visit_summary: Optional[Dict[str, Any]] = None
 
     def __post_init__(self) -> None:
         """Initialize intake session."""
@@ -181,3 +184,22 @@ class Visit:
                 else None
             ),
         }
+
+    def store_pre_visit_summary(self, summary: str, structured_data: Dict[str, Any]) -> None:
+        """Store pre-visit summary in EHR."""
+        self.pre_visit_summary = {
+            "summary": summary,
+            "structured_data": structured_data,
+            "generated_at": datetime.utcnow().isoformat(),
+            "visit_id": self.visit_id.value,
+            "patient_id": self.patient_id,
+        }
+        self.updated_at = datetime.utcnow()
+
+    def get_pre_visit_summary(self) -> Optional[Dict[str, Any]]:
+        """Get stored pre-visit summary from EHR."""
+        return self.pre_visit_summary
+
+    def has_pre_visit_summary(self) -> bool:
+        """Check if pre-visit summary exists."""
+        return self.pre_visit_summary is not None

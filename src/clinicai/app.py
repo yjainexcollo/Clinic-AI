@@ -141,5 +141,6 @@ async def root():
             "register_patient": "POST /patients/",
             "answer_intake": "POST /patients/consultations/answer",
             "pre_visit_summary": "POST /patients/summary/previsit",
+            "get_summary": "GET /patients/{patient_id}/visits/{visit_id}/summary",
         },
     }

@@ -85,6 +85,9 @@ paths:
                       pre_visit_summary:
                         type: string
                         example: "POST /patients/summary/previsit"
+                      get_summary:
+                        type: string
+                        example: "GET /patients/{patient_id}/visits/{visit_id}/summary"
 
   /health/:
     get:
@@ -456,6 +459,79 @@ paths:
                     error: "INTAKE_NOT_COMPLETED"
                     message: "Cannot generate summary for incomplete intake"
                     details: {}
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /patients/{patient_id}/visits/{visit_id}/summary:
+    get:
+      tags:
+        - patients
+      summary: Retrieve pre-visit summary from EHR
+      description: |
+        Retrieve stored pre-visit summary from Electronic Health Record.
+
+        This endpoint:
+        1. Validates patient and visit exist
+        2. Retrieves stored pre-visit summary from EHR
+        3. Returns the clinical summary for doctor review
+      operationId: get_pre_visit_summary
+      parameters:
+        - in: path
+          name: patient_id
+          required: true
+          schema:
+            type: string
+            pattern: '^[A-Z0-9]+_\d+$'
+          description: Patient ID
+          example: "JOHNDOE_9123456789"
+        - in: path
+          name: visit_id
+          required: true
+          schema:
+            type: string
+            pattern: '^CONSULT-\d{8}-\d{3}$'
+          description: Visit ID
+          example: "CONSULT-20250103-001"
+      responses:
+        "200":
+          description: Summary retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PreVisitSummaryResponse"
+              examples:
+                success_response:
+                  summary: Successful Summary Retrieval
+                  value:
+                    patient_id: "JOHNDOE_9123456789"
+                    visit_id: "CONSULT-20250103-001"
+                    summary: "## PRE-VISIT SUMMARY\n\n### Chief Complaint\nPatient presents with hypertension..."
+                    structured_data:
+                      chief_complaint: "Hypertension"
+                      key_findings:
+                        ["High blood pressure", "Headaches", "Dizziness"]
+                      recommendations:
+                        ["Blood pressure monitoring", "Lifestyle modifications"]
+                    generated_at: "2025-01-03T12:30:00Z"
+                    message: "Pre-visit summary retrieved from EHR"
+        "404":
+          description: Patient, visit, or summary not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                summary_not_found:
+                  summary: Summary Not Found
+                  value:
+                    error: "SUMMARY_NOT_FOUND"
+                    message: "No pre-visit summary found for visit CONSULT-20250103-001"
+                    details:
+                      visit_id: "CONSULT-20250103-001"
         "500":
           description: Internal server error
           content:
