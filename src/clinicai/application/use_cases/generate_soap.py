@@ -1,1 +1,0 @@
-# Generate SOAP use case

@@ -1,1 +1,0 @@
-# OCR service interface

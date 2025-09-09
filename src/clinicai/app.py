@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from clinicai.api.routers import health, intake, patients
+from clinicai.api.routers import health, patients
 from clinicai.core.config import get_settings
 from clinicai.domain.errors import DomainError
 
@@ -48,7 +48,7 @@ async def lifespan(app: FastAPI):
         await init_beanie(
             database=db,
             document_models=[
-                # Original models
+                # Patient models
                 PatientMongo,
                 VisitMongo,
                 IntakeSessionMongo,
@@ -61,9 +61,10 @@ async def lifespan(app: FastAPI):
                 IdempotencyRecordMongo,
             ],
         )
-        print("✅ MongoDB/Beanie initialized")
-    except Exception as exc:
-        print(f"⚠️  Skipping MongoDB init (reason: {exc})")
+        print("✅ Database connection established")
+    except Exception as e:
+        print(f"❌ Database connection failed: {e}")
+        raise
 
     yield
 
@@ -96,7 +97,6 @@ def create_app() -> FastAPI:
     # Include routers
     app.include_router(health.router)
     app.include_router(patients.router)
-    app.include_router(intake.router)
 
     # Global exception handler for domain errors
     @app.exception_handler(DomainError)
@@ -125,7 +125,7 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
-# Root endpoin
+# Root endpoint
 @app.get("/")
 async def root():
     """Root endpoint with API information."""
@@ -140,8 +140,5 @@ async def root():
             "health": "/health",
             "register_patient": "POST /patients/",
             "answer_intake": "POST /patients/consultations/answer",
-            "start_intake": "POST /intake/start",
-            "submit_intake": "POST /intake/submit",
-            "visit_history": "GET /intake/patients/{id}/visits",
         },
     }

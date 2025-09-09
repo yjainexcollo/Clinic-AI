@@ -1,1 +1,0 @@
-# Mistral OCR adapter

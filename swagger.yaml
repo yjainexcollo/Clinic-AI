@@ -38,8 +38,6 @@ tags:
     description: Health check endpoints
   - name: patients
     description: Patient management and intake endpoints
-  - name: intake
-    description: Repeat-intake workflow endpoints (stable identity and visit history)
 
 paths:
   /:
@@ -308,7 +306,7 @@ paths:
                     next_question: "How long have you been experiencing these symptoms?"
                     is_complete: false
                     question_count: 1
-                    max_questions: 12
+                    max_questions: 8
                     message: "Question 2 of 8"
                 intake_complete:
                   summary: Intake Completed
@@ -372,8 +370,8 @@ paths:
                     error: "QUESTION_LIMIT_EXCEEDED"
                     message: "Question limit exceeded. Current: 8, Max: 8"
                     details:
-                      current_count: 12
-                      max_count: 12
+                      current_count: 8
+                      max_count: 8
                 duplicate_question:
                   summary: Duplicate Question
                   value:
@@ -388,282 +386,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  /intake/start:
-    post:
-      tags:
-        - intake
-      summary: Start an intake session (stable identity)
-      description: |
-        Start an intake session. If a patient with the same normalized name and E.164 phone exists,
-        create a new visit for that patient. Otherwise, create a new patient and the first visit.
-
-        Idempotency is supported using `idempotency_key` for 10 minutes.
-      operationId: intake_start
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/IntakeStartRequest"
-            examples:
-              new_patient:
-                summary: New patient
-                value:
-                  name: "John Smith"
-                  phone: "+19876543210"
-                  age: 30
-                  otp_verified: true
-              repeat_visit:
-                summary: Existing patient, new visit
-                value:
-                  name: "John Smith"
-                  phone: "+19876543210"
-                  age: 30
-                  otp_verified: true
-                  idempotency_key: "123e4567-e89b-12d3-a456-426614174000"
-      responses:
-        "201":
-          description: Intake started
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IntakeStartResponse"
-        "422":
-          description: Validation error (e.g., phone not OTP-verified)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "500":
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-  /intake/submit:
-    post:
-      tags:
-        - intake
-      summary: Submit intake answers for a specific visit
-      operationId: intake_submit
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/IntakeSubmitRequest"
-      responses:
-        "200":
-          description: Intake answers accepted
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IntakeSubmitResponse"
-        "422":
-          description: Validation error (invalid patient/visit linkage)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "500":
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-  /intake/patients/{patient_id}/visits:
-    get:
-      tags:
-        - intake
-      summary: Get patient visit history
-      operationId: intake_visit_history
-      parameters:
-        - in: path
-          name: patient_id
-          required: true
-          schema:
-            type: string
-          description: Patient UUID
-        - in: query
-          name: limit
-          required: false
-          schema:
-            type: integer
-            default: 100
-          description: Max number of visits to return
-        - in: query
-          name: offset
-          required: false
-          schema:
-            type: integer
-            default: 0
-          description: Offset for pagination
-      responses:
-        "200":
-          description: Visit history
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/VisitHistoryResponse"
-        "404":
-          description: Patient not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "500":
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
 components:
   schemas:
-    IntakeStartRequest:
-      type: object
-      required:
-        - name
-        - phone
-        - otp_verified
-      properties:
-        name:
-          type: string
-          minLength: 2
-          maxLength: 80
-          description: Patient name (will be normalized for matching)
-          example: "John Smith"
-        phone:
-          type: string
-          minLength: 10
-          maxLength: 20
-          description: Phone number; will be normalized to E.164
-          example: "+19876543210"
-        age:
-          type: integer
-          minimum: 0
-          maximum: 120
-          nullable: true
-          description: Optional age
-          example: 30
-        patient_id_hint:
-          type: string
-          nullable: true
-          description: Optional hint of an existing patient UUID
-        idempotency_key:
-          type: string
-          nullable: true
-          description: Optional idempotency key (10-minute window)
-        otp_verified:
-          type: boolean
-          description: Whether phone has been OTP-verified (required)
-          example: true
-
-    IntakeStartResponse:
-      type: object
-      required:
-        - action
-        - patient_id
-        - visit_id
-        - message
-      properties:
-        action:
-          type: string
-          enum: ["existing_patient_new_visit", "new_patient_created"]
-          description: Outcome of start operation
-        patient_id:
-          type: string
-          description: Patient UUID
-          example: "dd1211c0-f747-4168-8cb4-cf9e3506637a"
-        visit_id:
-          type: string
-          description: Visit UUID
-          example: "d7a4453b-b4c0-4094-a0c6-f15909a52b35"
-        message:
-          type: string
-          example: "Visit created. Continue intake for this visit only."
-
-    IntakeSubmitRequest:
-      type: object
-      required:
-        - patient_id
-        - visit_id
-        - answers
-      properties:
-        patient_id:
-          type: string
-          description: Patient UUID
-        visit_id:
-          type: string
-          description: Visit UUID
-        answers:
-          type: object
-          additionalProperties: true
-          description: Key-value answers payload
-
-    IntakeSubmitResponse:
-      type: object
-      required:
-        - visit_id
-        - status
-        - total_questions
-        - message
-      properties:
-        visit_id:
-          type: string
-          description: Visit UUID
-        status:
-          type: string
-          enum: ["open", "in_progress", "completed", "cancelled"]
-        total_questions:
-          type: integer
-          minimum: 0
-        message:
-          type: string
-
-    VisitSummary:
-      type: object
-      required:
-        - visit_id
-        - status
-        - created_at
-        - total_questions
-      properties:
-        visit_id:
-          type: string
-        status:
-          type: string
-          enum: ["open", "in_progress", "completed", "cancelled"]
-        created_at:
-          type: string
-          format: date-time
-        completed_at:
-          type: string
-          format: date-time
-          nullable: true
-        total_questions:
-          type: integer
-        intake_duration_seconds:
-          type: integer
-          nullable: true
-
-    VisitHistoryResponse:
-      type: object
-      required:
-        - patient_id
-        - total_visits
-        - visits
-      properties:
-        patient_id:
-          type: string
-        total_visits:
-          type: integer
-        visits:
-          type: array
-          items:
-            $ref: "#/components/schemas/VisitSummary"
     RegisterPatientRequest:
       type: object
       required:
@@ -778,7 +502,7 @@ components:
         message:
           type: string
           description: Status message
-          example: "Question 2 of 12"
+          example: "Question 2 of 8"
 
     HealthResponse:
       type: object
@@ -896,7 +620,7 @@ components:
         max_questions:
           type: integer
           description: Maximum questions allowed
-          example: 12
+          example: 8
         intake_status:
           type: string
           enum: ["in_progress", "completed", "cancelled"]
