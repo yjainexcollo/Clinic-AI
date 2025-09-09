@@ -132,6 +132,7 @@ class MongoPatientRepository(PatientRepository):
                 created_at=visit.created_at,
                 updated_at=visit.updated_at,
                 intake_session=intake_session_mongo,
+                pre_visit_summary=visit.pre_visit_summary,
             )
             visits_mongo.append(visit_mongo)
 
@@ -198,6 +199,7 @@ class MongoPatientRepository(PatientRepository):
                 created_at=visit_mongo.created_at,
                 updated_at=visit_mongo.updated_at,
                 intake_session=intake_session,
+                pre_visit_summary=visit_mongo.pre_visit_summary,
             )
             visits.append(visit)
 
