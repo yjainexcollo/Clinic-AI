@@ -82,6 +82,9 @@ paths:
                       answer_intake:
                         type: string
                         example: "POST /patients/consultations/answer"
+                      pre_visit_summary:
+                        type: string
+                        example: "POST /patients/summary/previsit"
 
   /health/:
     get:
@@ -386,6 +389,80 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /patients/summary/previsit:
+    post:
+      tags:
+        - patients
+      summary: Generate pre-visit clinical summary
+      description: |
+        Generate a clinical pre-visit summary from completed intake data.
+
+        This endpoint:
+        1. Validates patient and visit exist
+        2. Checks intake is completed
+        3. Generates AI-powered clinical summary in SOAP format
+        4. Returns structured summary for doctor review
+      operationId: generate_pre_visit_summary
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PreVisitSummaryRequest"
+            examples:
+              summary_request:
+                summary: Generate Summary Request
+                value:
+                  patient_id: "JOHNDOE_9123456789"
+                  visit_id: "CONSULT-20250103-001"
+      responses:
+        "200":
+          description: Summary generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PreVisitSummaryResponse"
+              examples:
+                success_response:
+                  summary: Successful Summary Generation
+                  value:
+                    patient_id: "JOHNDOE_9123456789"
+                    visit_id: "CONSULT-20250103-001"
+                    summary: "## PRE-VISIT SUMMARY\n\n### Chief Complaint\nPatient presents with hypertension...\n\n### History of Present Illness\nPatient reports high blood pressure for 3 months..."
+                    structured_data:
+                      chief_complaint: "Hypertension"
+                      key_findings:
+                        ["High blood pressure", "Headaches", "Dizziness"]
+                      recommendations:
+                        ["Blood pressure monitoring", "Lifestyle modifications"]
+                    generated_at: "2025-01-03T12:30:00Z"
+                    message: "Pre-visit summary generated successfully"
+        "404":
+          description: Patient or visit not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Intake not completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                intake_not_completed:
+                  summary: Intake Not Completed
+                  value:
+                    error: "INTAKE_NOT_COMPLETED"
+                    message: "Cannot generate summary for incomplete intake"
+                    details: {}
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     RegisterPatientRequest:
@@ -637,6 +714,72 @@ components:
           nullable: true
           description: When intake completed (null if not completed)
           example: "2025-01-03T12:15:00Z"
+
+    PreVisitSummaryRequest:
+      type: object
+      required:
+        - patient_id
+        - visit_id
+      properties:
+        patient_id:
+          type: string
+          pattern: '^[A-Z0-9]+_\d+$'
+          description: Patient ID from registration
+          example: "JOHNDOE_9123456789"
+        visit_id:
+          type: string
+          pattern: '^CONSULT-\d{8}-\d{3}$'
+          description: Visit ID from registration
+          example: "CONSULT-20250103-001"
+
+    PreVisitSummaryResponse:
+      type: object
+      required:
+        - patient_id
+        - visit_id
+        - summary
+        - structured_data
+        - generated_at
+        - message
+      properties:
+        patient_id:
+          type: string
+          description: Patient ID
+          example: "JOHNDOE_9123456789"
+        visit_id:
+          type: string
+          description: Visit ID
+          example: "CONSULT-20250103-001"
+        summary:
+          type: string
+          description: Clinical summary in markdown format
+          example: "## PRE-VISIT SUMMARY\n\n### Chief Complaint\nPatient presents with hypertension..."
+        structured_data:
+          type: object
+          description: Structured clinical data
+          properties:
+            chief_complaint:
+              type: string
+              example: "Hypertension"
+            key_findings:
+              type: array
+              items:
+                type: string
+              example: ["High blood pressure", "Headaches", "Dizziness"]
+            recommendations:
+              type: array
+              items:
+                type: string
+              example: ["Blood pressure monitoring", "Lifestyle modifications"]
+        generated_at:
+          type: string
+          format: date-time
+          description: Summary generation timestamp
+          example: "2025-01-03T12:30:00Z"
+        message:
+          type: string
+          description: Status message
+          example: "Pre-visit summary generated successfully"
 
   securitySchemes:
     # Future authentication schemes can be added here

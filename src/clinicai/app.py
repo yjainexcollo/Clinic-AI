@@ -140,5 +140,6 @@ async def root():
             "health": "/health",
             "register_patient": "POST /patients/",
             "answer_intake": "POST /patients/consultations/answer",
+            "pre_visit_summary": "POST /patients/summary/previsit",
         },
     }

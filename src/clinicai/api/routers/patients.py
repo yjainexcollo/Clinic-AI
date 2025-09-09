@@ -7,9 +7,11 @@ from fastapi import APIRouter, HTTPException, status
 
 from clinicai.application.dto.patient_dto import (
     AnswerIntakeRequest,
+    PreVisitSummaryRequest,
     RegisterPatientRequest,
 )
 from clinicai.application.use_cases.answer_intake import AnswerIntakeUseCase
+from clinicai.application.use_cases.generate_pre_visit_summary import GeneratePreVisitSummaryUseCase
 from clinicai.application.use_cases.register_patient import RegisterPatientUseCase
 from clinicai.domain.errors import (
     DuplicatePatientError,
@@ -25,6 +27,7 @@ from ..deps import PatientRepositoryDep, QuestionServiceDep
 from ..schemas.patient import AnswerIntakeResponse, ErrorResponse
 from ..schemas.patient import (
     PatientSummarySchema,
+    PreVisitSummaryResponse,
     RegisterPatientResponse,
 )
 
@@ -187,6 +190,89 @@ async def answer_intake_question(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"error": e.error_code, "message": e.message, "details": e.details},
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "INTERNAL_ERROR",
+                "message": "An unexpected error occurred",
+                "details": {"exception": str(e)},
+            },
+        )
+
+
+@router.post(
+    "/summary/previsit",
+    response_model=PreVisitSummaryResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {"model": ErrorResponse, "description": "Validation error"},
+        404: {"model": ErrorResponse, "description": "Patient or visit not found"},
+        422: {"model": ErrorResponse, "description": "Intake not completed"},
+        500: {"model": ErrorResponse, "description": "Internal server error"},
+    },
+)
+async def generate_pre_visit_summary(
+    request: PreVisitSummaryRequest,
+    patient_repo: PatientRepositoryDep,
+    question_service: QuestionServiceDep,
+):
+    """
+    Generate pre-visit clinical summary from completed intake data.
+
+    This endpoint:
+    1. Validates patient and visit exist
+    2. Checks intake is completed
+    3. Generates AI-powered clinical summary
+    4. Returns structured summary for doctor review
+    """
+    try:
+        # Convert Pydantic model to DTO
+        dto_request = PreVisitSummaryRequest(
+            patient_id=request.patient_id,
+            visit_id=request.visit_id,
+        )
+
+        # Execute use case
+        use_case = GeneratePreVisitSummaryUseCase(patient_repo, question_service)
+        result = await use_case.execute(dto_request)
+
+        return PreVisitSummaryResponse(
+            patient_id=result.patient_id,
+            visit_id=result.visit_id,
+            summary=result.summary,
+            structured_data=result.structured_data,
+            generated_at=result.generated_at,
+            message=result.message,
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error": "INTAKE_NOT_COMPLETED",
+                "message": str(e),
+                "details": {},
+            },
+        )
+    except PatientNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": "PATIENT_NOT_FOUND",
+                "message": e.message,
+                "details": e.details,
+            },
+        )
+    except VisitNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": "VISIT_NOT_FOUND",
+                "message": e.message,
+                "details": e.details,
+            },
         )
     except Exception as e:
         raise HTTPException(

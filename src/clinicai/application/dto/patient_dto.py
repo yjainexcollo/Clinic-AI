@@ -136,3 +136,24 @@ class FamilyMemberSelectionResponse:
     visit_id: str
     first_question: str
     message: str
+
+
+# Step-02: Pre-Visit Summary DTOs
+@dataclass
+class PreVisitSummaryRequest:
+    """Request DTO for generating pre-visit summary."""
+
+    patient_id: str
+    visit_id: str
+
+
+@dataclass
+class PreVisitSummaryResponse:
+    """Response DTO for pre-visit summary."""
+
+    patient_id: str
+    visit_id: str
+    summary: str
+    structured_data: dict
+    generated_at: str
+    message: str

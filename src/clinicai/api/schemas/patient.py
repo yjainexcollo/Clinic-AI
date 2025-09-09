@@ -121,3 +121,22 @@ class ErrorResponse(BaseModel):
     error: str = Field(..., description="Error type")
     message: str = Field(..., description="Error message")
     details: Optional[dict] = Field(None, description="Additional error details")
+
+
+# Step-02: Pre-Visit Summary Schemas
+class PreVisitSummaryRequest(BaseModel):
+    """Request schema for generating pre-visit summary."""
+
+    patient_id: str = Field(..., pattern='^[A-Z0-9]+_\d+$', description="Patient ID")
+    visit_id: str = Field(..., pattern='^CONSULT-\d{8}-\d{3}$', description="Visit ID")
+
+
+class PreVisitSummaryResponse(BaseModel):
+    """Response schema for pre-visit summary."""
+
+    patient_id: str = Field(..., description="Patient ID")
+    visit_id: str = Field(..., description="Visit ID")
+    summary: str = Field(..., description="Clinical summary in markdown format")
+    structured_data: dict = Field(..., description="Structured clinical data")
+    generated_at: str = Field(..., description="Summary generation timestamp")
+    message: str = Field(..., description="Status message")

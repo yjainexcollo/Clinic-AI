@@ -3,7 +3,7 @@ Question service interface for AI-powered question generation.
 """
 
 from abc import ABC, abstractmethod
-from typing import List
+from typing import Dict, Any, List
 
 
 class QuestionService(ABC):
@@ -35,4 +35,13 @@ class QuestionService(ABC):
         max_count: int,
     ) -> bool:
         """Determine if sufficient information has been collected."""
+        pass
+
+    @abstractmethod
+    async def generate_pre_visit_summary(
+        self, 
+        patient_data: Dict[str, Any], 
+        intake_answers: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Generate pre-visit clinical summary from intake data."""
         pass

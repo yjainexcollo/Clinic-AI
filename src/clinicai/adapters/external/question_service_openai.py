@@ -3,7 +3,7 @@ OpenAI implementation of QuestionService for AI-powered question generation.
 """
 
 import asyncio
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from openai import OpenAI
 
@@ -203,3 +203,132 @@ class OpenAIQuestionService(QuestionService):
             return fallback_questions[current_count]
         else:
             return "Is there anything else you'd like to tell us about your condition?"
+
+    async def generate_pre_visit_summary(
+        self, 
+        patient_data: Dict[str, Any], 
+        intake_answers: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Generate pre-visit clinical summary from intake data."""
+        prompt = f"""
+        Generate a clinical pre-visit summary for the following patient data:
+        
+        Patient Information:
+        - Name: {patient_data.get('name', 'N/A')}
+        - Age: {patient_data.get('age', 'N/A')}
+        - Mobile: {patient_data.get('mobile', 'N/A')}
+        - Disease/Complaint: {patient_data.get('disease', 'N/A')}
+        
+        Intake Responses:
+        {self._format_intake_answers(intake_answers)}
+        
+        Generate a SOAP-compatible clinical summary with the following structure:
+        
+        ## PRE-VISIT SUMMARY
+        
+        ### Chief Complaint
+        [Primary reason for visit based on intake responses]
+        
+        ### History of Present Illness
+        [Detailed description of symptoms, duration, severity, and associated factors]
+        
+        ### Review of Systems
+        [Systematic review based on intake questions and answers]
+        
+        ### Past Medical History
+        [Any chronic conditions, previous illnesses mentioned]
+        
+        ### Medications
+        [Current medications mentioned in intake]
+        
+        ### Allergies
+        [Any allergies mentioned in intake]
+        
+        ### Social History
+        [Relevant social factors mentioned]
+        
+        ### Assessment & Plan
+        [Preliminary assessment and recommended next steps]
+        
+        ### Key Clinical Points
+        - [Highlight 3-5 most important clinical findings]
+        - [Note any red flags or urgent concerns]
+        - [Suggest areas for focused examination]
+        
+        Return the summary as a structured JSON object with 'summary' (markdown text) and 'structured_data' (key-value pairs for easy parsing).
+        """
+        
+        try:
+            response = await self._chat_completion(
+                messages=[
+                    {
+                        "role": "system", 
+                        "content": "You are a clinical assistant generating pre-visit summaries. Focus on accuracy, completeness, and clinical relevance. Do not make diagnoses."
+                    },
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=min(2000, self._settings.openai.max_tokens),
+                temperature=0.3  # Lower temperature for more consistent medical summaries
+            )
+            
+            # Parse the response and return structured data
+            return self._parse_summary_response(response)
+            
+        except Exception as e:
+            # Fallback to basic summary
+            return self._generate_fallback_summary(patient_data, intake_answers)
+
+    def _format_intake_answers(self, intake_answers: Dict[str, Any]) -> str:
+        """Format intake answers for prompt."""
+        if isinstance(intake_answers, dict) and 'questions_asked' in intake_answers:
+            # Handle structured intake data
+            formatted = []
+            for qa in intake_answers['questions_asked']:
+                formatted.append(f"Q: {qa.get('question', 'N/A')}")
+                formatted.append(f"A: {qa.get('answer', 'N/A')}")
+                formatted.append("")
+            return "\n".join(formatted)
+        else:
+            # Handle simple key-value answers
+            return "\n".join([f"{k}: {v}" for k, v in intake_answers.items()])
+
+    def _parse_summary_response(self, response: str) -> Dict[str, Any]:
+        """Parse LLM response into structured format."""
+        try:
+            import json
+            # Try to extract JSON from response
+            if "```json" in response:
+                json_start = response.find("```json") + 7
+                json_end = response.find("```", json_start)
+                json_str = response[json_start:json_end].strip()
+                return json.loads(json_str)
+            else:
+                # Fallback to basic structure
+                return {
+                    "summary": response,
+                    "structured_data": {
+                        "chief_complaint": "See summary",
+                        "key_findings": ["See summary"],
+                        "recommendations": ["See summary"]
+                    }
+                }
+        except Exception:
+            return {
+                "summary": response,
+                "structured_data": {
+                    "chief_complaint": "Unable to parse",
+                    "key_findings": ["See summary"],
+                    "recommendations": ["See summary"]
+                }
+            }
+
+    def _generate_fallback_summary(self, patient_data: Dict[str, Any], intake_answers: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate basic fallback summary."""
+        return {
+            "summary": f"Pre-visit summary for {patient_data.get('name', 'Patient')} - {patient_data.get('disease', 'Complaint')}",
+            "structured_data": {
+                "chief_complaint": patient_data.get('disease', 'N/A'),
+                "key_findings": ["See intake responses"],
+                "recommendations": ["Complete clinical examination"]
+            }
+        }
