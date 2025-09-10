@@ -76,12 +76,146 @@ AI-powered clinic management system with speech-to-text, large language model in
    # Edit .env with your configuration
    ```
 
-5. **Run the application**
+5. **Install system dependency for transcription (ffmpeg)**
+
+   macOS (Homebrew):
+
+   ```bash
+   brew install ffmpeg
+   ```
+
+   Ubuntu/Debian:
+
+   ```bash
+   sudo apt update && sudo apt install -y ffmpeg
+   ```
+
+6. **Run the application**
    ```bash
    make dev
    ```
 
 The API will be available at `http://localhost:8000`
+
+### Environment configuration (.env)
+
+Key variables you should set (see `.env.example` for the full list):
+
+```bash
+# Application
+APP_ENV=development
+DEBUG=true
+PORT=8000
+
+# Database
+MONGO_URI=mongodb://localhost:27017
+MONGO_DB_NAME=clinicai
+
+# OpenAI (Intake Q&A – Step‑01)
+OPENAI_API_KEY=sk-REPLACE_ME
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_MAX_TOKENS=800
+OPENAI_TEMPERATURE=0.6
+
+# SOAP generation (Step‑03)
+SOAP_MODEL=gpt-4
+SOAP_MAX_TOKENS=2000
+SOAP_TEMPERATURE=0.3
+
+# Whisper (Transcription – Step‑03)
+WHISPER_MODEL=base
+WHISPER_LANGUAGE=en
+
+# Audio/File
+AUDIO_MAX_SIZE_MB=50
+AUDIO_ALLOWED_FORMATS=["mp3","wav","m4a","flac","ogg"]
+FILE_STORAGE_TYPE=local
+```
+
+Model choices:
+- Intake questions (Step‑01): defaults to `gpt-4o-mini` (fast/cost‑effective). Change via `OPENAI_MODEL`.
+- SOAP generation (Step‑03): defaults to `gpt-4` for higher quality. Change via `SOAP_MODEL`.
+
+### Key API endpoints
+
+Step‑01 & Step‑02 (Patients):
+
+- `POST /patients/` – Register patient and start intake. Returns `patient_id`, `visit_id`, and first question.
+- `POST /patients/consultations/answer` – Submit an answer, get next question or completion.
+- `POST /patients/summary/previsit` – Generate pre‑visit summary once intake is completed.
+- `GET /patients/{patient_id}/visits/{visit_id}/summary` – Retrieve stored pre‑visit summary.
+
+Step‑03 (Notes):
+
+- `POST /notes/transcribe` – Upload audio (multipart/form‑data) to transcribe a visit.
+- `POST /notes/soap/generate` – Generate SOAP note using stored transcript + intake + pre‑visit summary.
+- `GET /notes/{patient_id}/visits/{visit_id}/transcript` – Get stored transcript for a visit.
+- `GET /notes/{patient_id}/visits/{visit_id}/soap` – Get stored SOAP note for a visit.
+
+### Example requests
+
+Register a patient (Step‑01):
+
+```bash
+curl -X POST http://localhost:8000/patients/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "John Doe",
+    "mobile": "9999999999",
+    "age": 35,
+    "disease": "Fever"
+  }'
+```
+
+Answer an intake question:
+
+```bash
+curl -X POST http://localhost:8000/patients/consultations/answer \
+  -H "Content-Type: application/json" \
+  -d '{
+    "patient_id": "<PID>",
+    "visit_id": "<VID>",
+    "answer": "It started 3 days ago"
+  }'
+```
+
+Transcribe audio (Step‑03):
+
+```bash
+curl -X POST http://localhost:8000/notes/transcribe \
+  -F patient_id=<PID> \
+  -F visit_id=<VID> \
+  -F audio_file=@sample.m4a
+```
+
+Generate SOAP note (Step‑03):
+
+```bash
+curl -X POST http://localhost:8000/notes/soap/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "patient_id": "<PID>",
+    "visit_id": "<VID>"
+  }'
+```
+
+## 🩺 Troubleshooting
+
+- ffmpeg not found during transcription
+  - Install ffmpeg (see Quick Start) and restart the app.
+
+- 500 INTERNAL_ERROR on intake/notes routes
+  - Check server logs – the app now logs exception types and traces in development.
+  - Verify `.env` is loaded and `OPENAI_API_KEY` is set in the running shell/process.
+
+- 400 invalid_request_error about `response_format`
+  - Fixed: SOAP generator no longer passes unsupported `response_format` to some models (e.g., 4o/mini).
+
+- SOAP generation failed validation
+  - Fixed: output normalization ensures required fields are present; validation thresholds relaxed for concise outputs.
+
+- Port 8000 already in use
+  - Stop previous instance: `pkill -f uvicorn` (macOS/Linux) or use a different port.
 
 ## 📚 Documentation
 

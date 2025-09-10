@@ -126,6 +126,7 @@ celerybeat.pid
 .env.production.local
 .env.local
 !.env.example
+.venv311
 .venv
 env/
 venv/
