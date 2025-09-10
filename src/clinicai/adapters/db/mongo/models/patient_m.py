@@ -31,6 +31,31 @@ class IntakeSessionMongo(Document):
     completed_at: Optional[datetime] = None
 
 
+class TranscriptionSessionMongo(Document):
+    """MongoDB model for transcription session."""
+    audio_file_path: Optional[str] = Field(None, description="Path to audio file")
+    transcript: Optional[str] = Field(None, description="Transcribed text")
+    transcription_status: str = Field(default="pending", description="Status: pending, processing, completed, failed")
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    error_message: Optional[str] = Field(None, description="Error message if failed")
+    audio_duration_seconds: Optional[float] = Field(None, description="Audio duration in seconds")
+    word_count: Optional[int] = Field(None, description="Word count of transcript")
+
+
+class SoapNoteMongo(Document):
+    """MongoDB model for SOAP note."""
+    subjective: str = Field(..., description="Subjective section")
+    objective: str = Field(..., description="Objective section")
+    assessment: str = Field(..., description="Assessment section")
+    plan: str = Field(..., description="Plan section")
+    highlights: List[str] = Field(default_factory=list, description="Key highlights")
+    red_flags: List[str] = Field(default_factory=list, description="Red flags")
+    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    model_info: Optional[dict] = Field(None, description="Model information")
+    confidence_score: Optional[float] = Field(None, description="Confidence score")
+
+
 class VisitMongo(Document):
     """MongoDB model for visit."""
     visit_id: str = Field(..., description="Visit ID")
@@ -47,6 +72,10 @@ class VisitMongo(Document):
     
     # Step 2: Pre-Visit Summary (EHR Storage)
     pre_visit_summary: Optional[dict] = None
+    
+    # Step 3: Audio Transcription & SOAP Generation
+    transcription_session: Optional[TranscriptionSessionMongo] = None
+    soap_note: Optional[SoapNoteMongo] = None
 
 
 class PatientMongo(Document):

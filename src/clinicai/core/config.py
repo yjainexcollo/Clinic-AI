@@ -127,6 +127,81 @@ class LoggingSettings(BaseSettings):
         return v.upper()
 
 
+class WhisperSettings(BaseSettings):
+    """Whisper transcription configuration settings."""
+
+    model_config = SettingsConfigDict(env_prefix="WHISPER_")
+
+    model: str = Field(default="base", description="Whisper model size")
+    language: str = Field(default="en", description="Audio language")
+    medical_context: bool = Field(default=True, description="Enable medical context processing")
+
+    @validator("model")
+    def validate_model(cls, v: str) -> str:
+        """Validate Whisper model."""
+        valid_models = ["tiny", "base", "small", "medium", "large"]
+        if v not in valid_models:
+            raise ValueError(f"Whisper model must be one of: {valid_models}")
+        return v
+
+
+class AudioSettings(BaseSettings):
+    """Audio file processing configuration settings."""
+
+    model_config = SettingsConfigDict(env_prefix="AUDIO_")
+
+    max_size_mb: int = Field(default=50, description="Maximum audio file size in MB")
+    allowed_formats: List[str] = Field(
+        default=["mp3", "wav", "m4a", "flac", "ogg"], 
+        description="Allowed audio formats"
+    )
+    temp_dir: str = Field(default="/tmp/clinicai_audio", description="Temporary directory for audio files")
+
+    @validator("max_size_mb")
+    def validate_max_size(cls, v: int) -> int:
+        """Validate max file size."""
+        if v <= 0 or v > 500:
+            raise ValueError("Max file size must be between 1 and 500 MB")
+        return v
+
+
+class SoapSettings(BaseSettings):
+    """SOAP note generation configuration settings."""
+
+    model_config = SettingsConfigDict(env_prefix="SOAP_")
+
+    model: str = Field(default="gpt-4", description="Model for SOAP generation")
+    max_tokens: int = Field(default=2000, description="Maximum tokens for SOAP generation")
+    temperature: float = Field(default=0.3, description="Temperature for SOAP generation")
+    include_highlights: bool = Field(default=True, description="Include highlights in SOAP")
+    include_red_flags: bool = Field(default=True, description="Include red flags in SOAP")
+
+    @validator("temperature")
+    def validate_temperature(cls, v: float) -> float:
+        """Validate temperature."""
+        if not 0.0 <= v <= 2.0:
+            raise ValueError("Temperature must be between 0.0 and 2.0")
+        return v
+
+
+class FileStorageSettings(BaseSettings):
+    """File storage configuration settings."""
+
+    model_config = SettingsConfigDict(env_prefix="FILE_")
+
+    storage_type: str = Field(default="local", description="Storage type (local, s3, azure)")
+    storage_path: str = Field(default="./storage", description="Local storage path")
+    cleanup_after_hours: int = Field(default=24, description="Cleanup files after hours")
+
+    @validator("storage_type")
+    def validate_storage_type(cls, v: str) -> str:
+        """Validate storage type."""
+        valid_types = ["local", "s3", "azure"]
+        if v not in valid_types:
+            raise ValueError(f"Storage type must be one of: {valid_types}")
+        return v
+
+
 class Settings(BaseSettings):
     """Main application settings."""
 
@@ -148,6 +223,10 @@ class Settings(BaseSettings):
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     cors: CORSSettings = Field(default_factory=CORSSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
+    whisper: WhisperSettings = Field(default_factory=WhisperSettings)
+    audio: AudioSettings = Field(default_factory=AudioSettings)
+    soap: SoapSettings = Field(default_factory=SoapSettings)
+    file_storage: FileStorageSettings = Field(default_factory=FileStorageSettings)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -157,6 +236,10 @@ class Settings(BaseSettings):
         self.security = SecuritySettings()
         self.cors = CORSSettings()
         self.logging = LoggingSettings()
+        self.whisper = WhisperSettings()
+        self.audio = AudioSettings()
+        self.soap = SoapSettings()
+        self.file_storage = FileStorageSettings()
 
     @validator("app_env")
     def validate_app_env(cls, v: str) -> str:

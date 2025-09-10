@@ -112,6 +112,35 @@ class IntakeSession:
 
 
 @dataclass
+class TranscriptionSession:
+    """Transcription session data for Step-03."""
+    
+    audio_file_path: Optional[str] = None
+    transcript: Optional[str] = None
+    transcription_status: str = "pending"  # pending, processing, completed, failed
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    error_message: Optional[str] = None
+    audio_duration_seconds: Optional[float] = None
+    word_count: Optional[int] = None
+
+
+@dataclass
+class SoapNote:
+    """SOAP note data for Step-03."""
+    
+    subjective: str
+    objective: str
+    assessment: str
+    plan: str
+    highlights: List[str] = field(default_factory=list)
+    red_flags: List[str] = field(default_factory=list)
+    generated_at: datetime = field(default_factory=datetime.utcnow)
+    model_info: Optional[Dict[str, Any]] = None
+    confidence_score: Optional[float] = None
+
+
+@dataclass
 class Visit:
     """Visit domain entity."""
 
@@ -129,6 +158,10 @@ class Visit:
     
     # Step 2: Pre-Visit Summary (EHR Storage)
     pre_visit_summary: Optional[Dict[str, Any]] = None
+    
+    # Step 3: Audio Transcription & SOAP Generation
+    transcription_session: Optional[TranscriptionSession] = None
+    soap_note: Optional[SoapNote] = None
 
     def __post_init__(self) -> None:
         """Initialize intake session."""
@@ -203,3 +236,90 @@ class Visit:
     def has_pre_visit_summary(self) -> bool:
         """Check if pre-visit summary exists."""
         return self.pre_visit_summary is not None
+
+    # Step-03: Audio Transcription & SOAP Generation Methods
+
+    def start_transcription(self, audio_file_path: str) -> None:
+        """Start the transcription process."""
+        if self.status != "transcription":
+            raise ValueError(f"Cannot start transcription. Current status: {self.status}")
+        
+        self.transcription_session = TranscriptionSession(
+            audio_file_path=audio_file_path,
+            transcription_status="processing",
+            started_at=datetime.utcnow()
+        )
+        self.status = "transcription"
+        self.updated_at = datetime.utcnow()
+
+    def complete_transcription(self, transcript: str, audio_duration: Optional[float] = None) -> None:
+        """Complete the transcription process."""
+        if not self.transcription_session:
+            raise ValueError("No active transcription session")
+        
+        self.transcription_session.transcript = transcript
+        self.transcription_session.transcription_status = "completed"
+        self.transcription_session.completed_at = datetime.utcnow()
+        self.transcription_session.audio_duration_seconds = audio_duration
+        self.transcription_session.word_count = len(transcript.split()) if transcript else 0
+        
+        # Move to SOAP generation status
+        self.status = "soap_generation"
+        self.updated_at = datetime.utcnow()
+
+    def fail_transcription(self, error_message: str) -> None:
+        """Mark transcription as failed."""
+        if not self.transcription_session:
+            raise ValueError("No active transcription session")
+        
+        self.transcription_session.transcription_status = "failed"
+        self.transcription_session.error_message = error_message
+        self.transcription_session.completed_at = datetime.utcnow()
+        self.updated_at = datetime.utcnow()
+
+    def store_soap_note(self, soap_data: Dict[str, Any]) -> None:
+        """Store generated SOAP note."""
+        if self.status != "soap_generation":
+            raise ValueError(f"Cannot store SOAP note. Current status: {self.status}")
+        
+        self.soap_note = SoapNote(
+            subjective=soap_data.get("subjective", ""),
+            objective=soap_data.get("objective", ""),
+            assessment=soap_data.get("assessment", ""),
+            plan=soap_data.get("plan", ""),
+            highlights=soap_data.get("highlights", []),
+            red_flags=soap_data.get("red_flags", []),
+            model_info=soap_data.get("model_info", {}),
+            confidence_score=soap_data.get("confidence_score")
+        )
+        
+        # Move to prescription analysis status
+        self.status = "prescription_analysis"
+        self.updated_at = datetime.utcnow()
+
+    def get_transcript(self) -> Optional[str]:
+        """Get the transcript if available."""
+        if self.transcription_session and self.transcription_session.transcript:
+            return self.transcription_session.transcript
+        return None
+
+    def get_soap_note(self) -> Optional[SoapNote]:
+        """Get the SOAP note if available."""
+        return self.soap_note
+
+    def is_transcription_complete(self) -> bool:
+        """Check if transcription is complete."""
+        return (self.transcription_session and 
+                self.transcription_session.transcription_status == "completed")
+
+    def is_soap_generated(self) -> bool:
+        """Check if SOAP note is generated."""
+        return self.soap_note is not None
+
+    def can_start_transcription(self) -> bool:
+        """Check if transcription can be started."""
+        return self.status == "transcription"
+
+    def can_generate_soap(self) -> bool:
+        """Check if SOAP can be generated."""
+        return self.status == "soap_generation" and self.is_transcription_complete()

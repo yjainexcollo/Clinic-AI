@@ -7,7 +7,7 @@ from typing import List, Optional
 
 from clinicai.application.ports.repositories.patient_repo import PatientRepository
 from clinicai.domain.entities.patient import Patient
-from clinicai.domain.entities.visit import IntakeSession, QuestionAnswer, Visit
+from clinicai.domain.entities.visit import IntakeSession, QuestionAnswer, Visit, TranscriptionSession, SoapNote
 from clinicai.domain.value_objects.patient_id import PatientId
 from clinicai.domain.value_objects.question_id import QuestionId
 from clinicai.domain.value_objects.visit_id import VisitId
@@ -17,6 +17,8 @@ from ..models.patient_m import (
     PatientMongo,
     QuestionAnswerMongo,
     VisitMongo,
+    TranscriptionSessionMongo,
+    SoapNoteMongo,
 )
 
 
@@ -124,6 +126,35 @@ class MongoPatientRepository(PatientRepository):
                     completed_at=visit.intake_session.completed_at,
                 )
 
+            # Convert transcription session
+            transcription_session_mongo = None
+            if visit.transcription_session:
+                transcription_session_mongo = TranscriptionSessionMongo(
+                    audio_file_path=visit.transcription_session.audio_file_path,
+                    transcript=visit.transcription_session.transcript,
+                    transcription_status=visit.transcription_session.transcription_status,
+                    started_at=visit.transcription_session.started_at,
+                    completed_at=visit.transcription_session.completed_at,
+                    error_message=visit.transcription_session.error_message,
+                    audio_duration_seconds=visit.transcription_session.audio_duration_seconds,
+                    word_count=visit.transcription_session.word_count,
+                )
+
+            # Convert SOAP note
+            soap_note_mongo = None
+            if visit.soap_note:
+                soap_note_mongo = SoapNoteMongo(
+                    subjective=visit.soap_note.subjective,
+                    objective=visit.soap_note.objective,
+                    assessment=visit.soap_note.assessment,
+                    plan=visit.soap_note.plan,
+                    highlights=visit.soap_note.highlights,
+                    red_flags=visit.soap_note.red_flags,
+                    generated_at=visit.soap_note.generated_at,
+                    model_info=visit.soap_note.model_info,
+                    confidence_score=visit.soap_note.confidence_score,
+                )
+
             visit_mongo = VisitMongo(
                 visit_id=visit.visit_id.value,
                 patient_id=visit.patient_id,
@@ -133,6 +164,8 @@ class MongoPatientRepository(PatientRepository):
                 updated_at=visit.updated_at,
                 intake_session=intake_session_mongo,
                 pre_visit_summary=visit.pre_visit_summary,
+                transcription_session=transcription_session_mongo,
+                soap_note=soap_note_mongo,
             )
             visits_mongo.append(visit_mongo)
 
@@ -191,6 +224,35 @@ class MongoPatientRepository(PatientRepository):
                     completed_at=visit_mongo.intake_session.completed_at,
                 )
 
+            # Convert transcription session
+            transcription_session = None
+            if visit_mongo.transcription_session:
+                transcription_session = TranscriptionSession(
+                    audio_file_path=visit_mongo.transcription_session.audio_file_path,
+                    transcript=visit_mongo.transcription_session.transcript,
+                    transcription_status=visit_mongo.transcription_session.transcription_status,
+                    started_at=visit_mongo.transcription_session.started_at,
+                    completed_at=visit_mongo.transcription_session.completed_at,
+                    error_message=visit_mongo.transcription_session.error_message,
+                    audio_duration_seconds=visit_mongo.transcription_session.audio_duration_seconds,
+                    word_count=visit_mongo.transcription_session.word_count,
+                )
+
+            # Convert SOAP note
+            soap_note = None
+            if visit_mongo.soap_note:
+                soap_note = SoapNote(
+                    subjective=visit_mongo.soap_note.subjective,
+                    objective=visit_mongo.soap_note.objective,
+                    assessment=visit_mongo.soap_note.assessment,
+                    plan=visit_mongo.soap_note.plan,
+                    highlights=visit_mongo.soap_note.highlights,
+                    red_flags=visit_mongo.soap_note.red_flags,
+                    generated_at=visit_mongo.soap_note.generated_at,
+                    model_info=visit_mongo.soap_note.model_info,
+                    confidence_score=visit_mongo.soap_note.confidence_score,
+                )
+
             visit = Visit(
                 visit_id=VisitId(visit_mongo.visit_id),
                 patient_id=visit_mongo.patient_id,
@@ -200,6 +262,8 @@ class MongoPatientRepository(PatientRepository):
                 updated_at=visit_mongo.updated_at,
                 intake_session=intake_session,
                 pre_visit_summary=visit_mongo.pre_visit_summary,
+                transcription_session=transcription_session,
+                soap_note=soap_note,
             )
             visits.append(visit)
 

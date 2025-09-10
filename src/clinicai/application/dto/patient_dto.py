@@ -4,7 +4,7 @@ Removed unused imports; behavior unchanged.
 """
 
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 from ...domain.entities.patient import Patient
 
@@ -157,3 +157,76 @@ class PreVisitSummaryResponse:
     structured_data: dict
     generated_at: str
     message: str
+
+
+# Step-03: Audio Transcription & SOAP Generation DTOs
+@dataclass
+class AudioTranscriptionRequest:
+    """Request DTO for audio transcription."""
+    
+    patient_id: str
+    visit_id: str
+    audio_file_path: str
+    audio_duration: Optional[float] = None
+
+
+@dataclass
+class AudioTranscriptionResponse:
+    """Response DTO for audio transcription."""
+    
+    patient_id: str
+    visit_id: str
+    transcript: str
+    word_count: int
+    audio_duration: Optional[float]
+    transcription_status: str
+    message: str
+
+
+@dataclass
+class SoapGenerationRequest:
+    """Request DTO for SOAP generation."""
+    
+    patient_id: str
+    visit_id: str
+    transcript: Optional[str] = None  # If not provided, will use stored transcript
+
+
+@dataclass
+class SoapGenerationResponse:
+    """Response DTO for SOAP generation."""
+    
+    patient_id: str
+    visit_id: str
+    soap_note: Dict[str, Any]
+    generated_at: str
+    message: str
+
+
+@dataclass
+class SoapNoteDTO:
+    """DTO for SOAP note data."""
+    
+    subjective: str
+    objective: str
+    assessment: str
+    plan: str
+    highlights: List[str]
+    red_flags: List[str]
+    generated_at: str
+    model_info: Optional[Dict[str, Any]]
+    confidence_score: Optional[float]
+
+
+@dataclass
+class TranscriptionSessionDTO:
+    """DTO for transcription session data."""
+    
+    audio_file_path: Optional[str]
+    transcript: Optional[str]
+    transcription_status: str
+    started_at: Optional[str]
+    completed_at: Optional[str]
+    error_message: Optional[str]
+    audio_duration_seconds: Optional[float]
+    word_count: Optional[int]

@@ -4,6 +4,8 @@ Formatting-only changes; behavior preserved.
 """
 
 from fastapi import APIRouter, HTTPException, status
+import logging
+import traceback
 
 from clinicai.application.dto.patient_dto import (
     AnswerIntakeRequest,
@@ -32,6 +34,7 @@ from ..schemas.patient import (
 )
 
 router = APIRouter(prefix="/patients", tags=["patients"])
+logger = logging.getLogger("clinicai")
 
 
 @router.post(
@@ -99,12 +102,13 @@ async def register_patient(
             },
         )
     except Exception as e:
+        logger.error("Unhandled error in register_patient", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={
                 "error": "INTERNAL_ERROR",
                 "message": "An unexpected error occurred",
-                "details": {"exception": str(e)},
+                "details": {"exception": str(e) or repr(e), "type": e.__class__.__name__},
             },
         )
 
@@ -192,12 +196,13 @@ async def answer_intake_question(
             detail={"error": e.error_code, "message": e.message, "details": e.details},
         )
     except Exception as e:
+        logger.error("Unhandled error in answer_intake_question", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={
                 "error": "INTERNAL_ERROR",
                 "message": "An unexpected error occurred",
-                "details": {"exception": str(e)},
+                "details": {"exception": str(e) or repr(e), "type": e.__class__.__name__},
             },
         )
 
@@ -275,12 +280,13 @@ async def generate_pre_visit_summary(
             },
         )
     except Exception as e:
+        logger.error("Unhandled error in generate_pre_visit_summary", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={
                 "error": "INTERNAL_ERROR",
                 "message": "An unexpected error occurred",
-                "details": {"exception": str(e)},
+                "details": {"exception": str(e) or repr(e), "type": e.__class__.__name__},
             },
         )
 
@@ -363,12 +369,13 @@ async def get_pre_visit_summary(
             },
         )
     except Exception as e:
+        logger.error("Unhandled error in get_pre_visit_summary", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={
                 "error": "INTERNAL_ERROR",
                 "message": "An unexpected error occurred",
-                "details": {"exception": str(e)},
+                "details": {"exception": str(e) or repr(e), "type": e.__class__.__name__},
             },
         )
 

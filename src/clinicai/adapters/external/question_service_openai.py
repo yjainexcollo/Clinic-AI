@@ -6,6 +6,7 @@ import asyncio
 from typing import Any, Dict, List
 
 from openai import OpenAI
+import logging
 
 from clinicai.application.ports.services.question_service import QuestionService
 from clinicai.core.config import get_settings
@@ -50,13 +51,28 @@ class OpenAIQuestionService(QuestionService):
         """Run sync OpenAI chat.completions in a thread to keep async API."""
 
         def _run():
-            resp = self._client.chat.completions.create(
-                model=self._settings.openai.model,
-                messages=messages,
-                max_tokens=max_tokens,
-                temperature=temperature,
+            logger = logging.getLogger("clinicai")
+            logger.info(
+                "[QuestionService] Calling OpenAI chat.completions",
+                extra={
+                    "model": self._settings.openai.model,
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                },
             )
-            return resp.choices[0].message.content.strip()
+            try:
+                resp = self._client.chat.completions.create(
+                    model=self._settings.openai.model,
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
+                text = resp.choices[0].message.content.strip()
+                logger.info("[QuestionService] OpenAI call succeeded")
+                return text
+            except Exception as e:
+                logger.error("[QuestionService] OpenAI call failed", exc_info=True)
+                raise
 
         return await asyncio.to_thread(_run)
 

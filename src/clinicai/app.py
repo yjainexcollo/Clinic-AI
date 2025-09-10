@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from clinicai.api.routers import health, patients
+from clinicai.api.routers import health, patients, notes
 from clinicai.core.config import get_settings
 from clinicai.domain.errors import DomainError
 
@@ -32,6 +32,8 @@ async def lifespan(app: FastAPI):
             PatientMongo,
             QuestionAnswerMongo,
             VisitMongo,
+            TranscriptionSessionMongo,
+            SoapNoteMongo,
         )
         from clinicai.adapters.db.mongo.models.stable_patient_m import (
             IdempotencyRecordMongo,
@@ -53,6 +55,8 @@ async def lifespan(app: FastAPI):
                 VisitMongo,
                 IntakeSessionMongo,
                 QuestionAnswerMongo,
+                TranscriptionSessionMongo,
+                SoapNoteMongo,
                 # Stable patient models
                 StablePatientMongo,
                 StableVisitMongo,
@@ -97,6 +101,7 @@ def create_app() -> FastAPI:
     # Include routers
     app.include_router(health.router)
     app.include_router(patients.router)
+    app.include_router(notes.router)
 
     # Global exception handler for domain errors
     @app.exception_handler(DomainError)
@@ -142,5 +147,10 @@ async def root():
             "answer_intake": "POST /patients/consultations/answer",
             "pre_visit_summary": "POST /patients/summary/previsit",
             "get_summary": "GET /patients/{patient_id}/visits/{visit_id}/summary",
+            # Step-03 endpoints
+            "transcribe_audio": "POST /notes/transcribe",
+            "generate_soap": "POST /notes/soap/generate",
+            "get_transcript": "GET /notes/{patient_id}/visits/{visit_id}/transcript",
+            "get_soap": "GET /notes/{patient_id}/visits/{visit_id}/soap",
         },
     }
