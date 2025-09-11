@@ -5,7 +5,7 @@ import {
   Route,
   Navigate,
 } from "react-router-dom";
-import PatientDetailsForm from "./components/PatientDetailsForm";
+import PersonalForm from "./components/PersonalForm";
 import Index from "./pages/Index";
 
 const App: React.FC = () => {
@@ -33,11 +33,7 @@ const PatientRegistrationPage: React.FC = () => {
     window.location.href = `/intake/${patientId}`;
   };
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-medical-primary-light to-gray-50 flex items-center justify-center p-4">
-      <PatientDetailsForm onPatientCreated={handlePatientCreated} />
-    </div>
-  );
+  return <PersonalForm onPatientCreated={handlePatientCreated} />;
 };
 
 // Intake Page Component

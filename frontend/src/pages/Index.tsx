@@ -45,9 +45,23 @@ const Index = () => {
       const sessionId = SessionManager.getSessionId();
       console.log("Session ID:", sessionId);
 
+      // Get symptoms from localStorage if available
+      const symptomsData = patientId ? localStorage.getItem(`symptoms_${patientId}`) : null;
+      let symptoms = null;
+      if (symptomsData) {
+        try {
+          symptoms = JSON.parse(symptomsData);
+        } catch (e) {
+          // Fallback for old string format
+          symptoms = symptomsData;
+        }
+      }
+      console.log("Retrieved symptoms:", symptoms);
+
       const request: IntakeRequest = {
         session_id: sessionId,
         patient_id: patientId, // Include patient ID in the request
+        initial_symptoms: symptoms || undefined, // Include symptoms if available
       };
 
       const response = await intakeAPI.sendIntakeData(request);
@@ -177,6 +191,41 @@ const Index = () => {
               intake interview. This will help us understand your health
               concerns and prepare for your visit.
             </p>
+            {patientId && (() => {
+              const symptomsData = localStorage.getItem(`symptoms_${patientId}`);
+              if (symptomsData) {
+                let symptoms;
+                try {
+                  symptoms = JSON.parse(symptomsData);
+                } catch (e) {
+                  symptoms = symptomsData;
+                }
+                return (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                    <h3 className="font-semibold text-blue-800 mb-2">
+                      Your Reported Symptoms:
+                    </h3>
+                    <div className="text-blue-700 text-sm">
+                      {Array.isArray(symptoms) ? (
+                        <div className="flex flex-wrap gap-2">
+                          {symptoms.map((symptom, index) => (
+                            <span
+                              key={index}
+                              className="inline-block px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs"
+                            >
+                              {symptom}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p>{symptoms}</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
               <h3 className="font-semibold text-blue-800 mb-2">
                 What to expect:

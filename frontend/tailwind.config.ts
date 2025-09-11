@@ -69,7 +69,15 @@ export default {
 					'primary-light': '#e6f3f8',
 					secondary: '#f8fafc',
 					error: '#ef4444',
-					success: '#10b981'
+					success: '#10b981',
+					'200': '#e0f2fe',
+					'300': '#b3e5fc',
+					'400': '#81d4fa',
+					'500': '#4fc3f7',
+					'600': '#29b6f6',
+					'700': '#0288d1',
+					'800': '#0277bd',
+					'900': '#01579b'
 				}
 			},
 			borderRadius: {

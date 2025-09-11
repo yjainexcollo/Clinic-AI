@@ -8,6 +8,7 @@ export interface IntakeRequest {
   patient_id?: string;
   last_question?: string;
   last_answer?: string;
+  initial_symptoms?: string;
 }
 
 export interface IntakeResponse {

@@ -1,0 +1,246 @@
+import React, { useState } from "react";
+import { createPatient, PatientData } from "../services/patientService.ts";
+import SymptomSelector from "./SymptomSelector";
+
+interface PersonalFormProps {
+  onPatientCreated?: (patientId: string) => void;
+}
+
+interface PersonalFormData {
+  name: string;
+  mobileNumber: string;
+  gender: string;
+  age: string;
+  symptoms: string[];
+}
+
+const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
+  const [form, setForm] = useState<PersonalFormData>({
+    name: "",
+    mobileNumber: "",
+    gender: "",
+    age: "",
+    symptoms: [],
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleChange = (
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+    >
+  ) => {
+    setForm({ ...form, [e.target.name]: e.target.value });
+  };
+
+  const handleSymptomsChange = (symptoms: string[]) => {
+    setForm({ ...form, symptoms });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+
+    // Validate symptoms
+    if (form.symptoms.length === 0) {
+      setError("Please select or add at least one symptom.");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      // Convert age to number for proper data type
+      const ageNumber = form.age ? Number(form.age) : 0;
+      
+      // Create PatientData object with required fields
+      const patientData: PatientData = {
+        fullName: form.name,
+        age: ageNumber,
+        dob: "", // Not required for personal form
+        gender: form.gender,
+        email: "", // Not required for personal form
+        phone: form.mobileNumber,
+        address: undefined,
+        emergencyContact: undefined,
+      };
+
+      const result = await createPatient(patientData);
+
+      if (result.success && result.patient_id) {
+        // Store symptoms in localStorage for the intake process
+        localStorage.setItem(`symptoms_${result.patient_id}`, JSON.stringify(form.symptoms));
+        
+        if (onPatientCreated) onPatientCreated(result.patient_id);
+      } else {
+        setError(result.message || "Failed to create patient");
+      }
+    } catch (err) {
+      setError("Failed to create patient. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-medical-primary-light to-gray-50 flex items-center justify-center p-4">
+      <div className="medical-card max-w-md w-full">
+        <div className="text-center mb-6">
+          <div className="w-16 h-16 bg-medical-primary rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg
+              className="w-8 h-8 text-white"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+              />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">
+            Personal Information
+          </h2>
+          <p className="text-gray-600 text-sm">
+            Please provide your basic information to get started
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Name Field */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Name *
+            </label>
+            <input
+              name="name"
+              value={form.name}
+              onChange={handleChange}
+              placeholder="Enter your full name"
+              required
+              className="medical-input"
+            />
+          </div>
+
+          {/* Mobile Number Field */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Mobile Number *
+            </label>
+            <input
+              name="mobileNumber"
+              value={form.mobileNumber}
+              onChange={handleChange}
+              placeholder="Enter your mobile number"
+              type="tel"
+              required
+              className="medical-input"
+            />
+          </div>
+
+          {/* Gender and Age in a row */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Gender *
+              </label>
+              <select
+                name="gender"
+                value={form.gender}
+                onChange={handleChange}
+                required
+                className="medical-select"
+              >
+                <option value="">Select Gender</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Age *
+              </label>
+              <input
+                name="age"
+                value={form.age}
+                onChange={handleChange}
+                placeholder="Age"
+                type="number"
+                min="0"
+                max="150"
+                required
+                className="medical-input"
+              />
+            </div>
+          </div>
+
+          {/* Symptoms Field */}
+          <SymptomSelector
+            selectedSymptoms={form.symptoms}
+            onSymptomsChange={handleSymptomsChange}
+            placeholder="Select or type your symptoms..."
+          />
+
+          {/* Submit Button */}
+          <button
+            type="submit"
+            disabled={loading}
+            className="medical-button w-full flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                Creating Patient...
+              </>
+            ) : (
+              <>
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13 7l5 5m0 0l-5 5m5-5H6"
+                  />
+                </svg>
+                Continue to Intake
+              </>
+            )}
+          </button>
+
+          {/* Error Message */}
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+              <div className="flex items-start gap-2">
+                <svg
+                  className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                <p className="text-red-700 text-sm">{error}</p>
+              </div>
+            </div>
+          )}
+        </form>
+      </div>
+    </div>
+  );
+};
+
+export default PersonalForm;

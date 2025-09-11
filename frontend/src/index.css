@@ -101,3 +101,25 @@ All colors MUST be HSL.
     line-height: 1.5;
   }
 }
+
+@layer components {
+  .medical-card {
+    @apply bg-white rounded-lg shadow-lg border border-gray-100 p-6;
+  }
+  
+  .medical-button {
+    @apply bg-medical-primary text-white px-6 py-3 rounded-md font-medium hover:bg-medical-primary-hover transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-medical-primary focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  .medical-input {
+    @apply w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-medical-primary focus:border-transparent transition-colors duration-200;
+  }
+  
+  .medical-select {
+    @apply w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-medical-primary focus:border-transparent transition-colors duration-200 bg-white;
+  }
+  
+  .medical-textarea {
+    @apply w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-medical-primary focus:border-transparent transition-colors duration-200 resize-none;
+  }
+}
