@@ -1,0 +1,137 @@
+
+# Doctor AI - Dynamic Smart Intake Form
+
+An intelligent medical intake application that conducts adaptive interviews using AI-powered question generation.
+
+## Features
+
+- **Dynamic Question Flow**: AI-powered questions that adapt based on previous answers
+- **Session Management**: UUID-based session tracking with localStorage persistence
+- **Progress Tracking**: Visual progress indicator with question numbering
+- **Responsive Design**: Mobile-first design optimized for all screen sizes
+- **Error Handling**: Graceful error handling with retry mechanisms
+- **Privacy-Focused**: No PHI stored client-side, encrypted data transmission
+- **Accessibility**: Screen reader friendly with proper focus management
+
+## Tech Stack
+
+- **Frontend**: React 18 + TypeScript
+- **Styling**: Tailwind CSS with custom medical theme
+- **HTTP Client**: Axios for API communication
+- **Build Tool**: Vite
+- **Deployment**: Vercel-ready
+
+## Quick Start
+
+```bash
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+
+# Build for production
+npm run build
+
+# Deploy to Vercel
+npm run deploy
+```
+
+## API Integration
+
+The application integrates with the intake webhook endpoint:
+- **Endpoint**: `https://n8n-excollo.azurewebsites.net/webhook/intake-dynamic-doctor`
+- **Method**: POST
+- **Content-Type**: application/json
+
+### Request Format
+```json
+{
+  "session_id": "<uuid>",
+  "last_question": "<string>",
+  "last_answer": "<string>"
+}
+```
+
+### Response Format
+```json
+{
+  "next_question": "<string|COMPLETE>",
+  "summary": "<string|null>",
+  "type": "text"
+}
+```
+
+## Configuration
+
+### Environment Variables
+No environment variables required - the application uses a hardcoded API endpoint as specified in requirements.
+
+### Customization
+- **Colors**: Edit `tailwind.config.ts` to modify the medical theme colors
+- **Copy**: Edit `src/copy.ts` for internationalization and text changes
+- **Styling**: Modify `src/index.css` for global styles
+
+## Security & Privacy
+
+- **Data Encryption**: All data transmitted over HTTPS
+- **Session Management**: Only session UUID stored locally
+- **No PHI Storage**: No personal health information stored client-side
+- **Error Handling**: Secure error messages without exposing sensitive information
+
+## Browser Support
+
+- Chrome/Edge 88+
+- Firefox 85+
+- Safari 14+
+- Mobile browsers (iOS Safari, Chrome Mobile)
+
+## Performance
+
+- **Bundle Size**: <200kb JavaScript bundle
+- **Loading**: Progressive loading with skeleton screens
+- **Responsive**: Optimized for 360px+ screen widths
+- **Accessibility**: WCAG 2.1 AA compliant
+
+## Development
+
+```bash
+# Install dependencies
+npm install
+
+# Start development server with hot reload
+npm run dev
+
+# Type checking
+npm run type-check
+
+# Build for production
+npm run build
+
+# Preview production build
+npm run preview
+```
+
+## Deployment
+
+### Vercel (Recommended)
+```bash
+# Install Vercel CLI
+npm i -g vercel
+
+# Deploy
+vercel --prod
+```
+
+### Manual Build
+```bash
+# Build the application
+npm run build
+
+# The built files will be in the 'dist' directory
+# Upload the contents to your web server
+```
+
+## License
+
+MIT License - see LICENSE file for details.

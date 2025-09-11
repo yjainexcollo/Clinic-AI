@@ -1,0 +1,150 @@
+const API_ENDPOINT =
+  "https://n8n-excollo.azurewebsites.net/webhook";
+
+export interface PatientData {
+  fullName: string;
+  age: number;
+  dob: string;
+  gender: string;
+  email: string;
+  phone?: string;
+  address?: string;
+  emergencyContact?: string;
+}
+
+export interface PatientResponse {
+  patient_id: string;
+  success: boolean;
+  message?: string;
+}
+
+// Function to generate patient ID on frontend
+function generatePatientId(): string {
+  const counterKey = "patient_counter";
+  const currentCounter = localStorage.getItem(counterKey);
+  const nextCounter = currentCounter ? parseInt(currentCounter) + 1 : 1;
+
+  // Store the updated counter
+  localStorage.setItem(counterKey, nextCounter.toString());
+
+  // Generate patient ID in format CLINIC01-0001, CLINIC01-0002, etc.
+  return `CLINIC01-${String(nextCounter).padStart(4, "0")}`;
+}
+
+export async function createPatient(
+  patientData: PatientData
+): Promise<PatientResponse> {
+  try {
+    // Generate patient ID on frontend
+    const patient_id = generatePatientId();
+
+    // Prepare the payload for n8n webhook with patient_id included
+    const payload = {
+      patient_id: patient_id,
+      ...patientData,
+      summary: "", 
+      soapSummary:"",
+      patientRecapSummary:"",
+      doctorRecapSummary:"",
+      diagnosis_summary: "...",
+      prescription_summary: "...",
+      EHR_summary:"",
+      status: "incomplete", // Track patient status
+      createdAt: new Date().toISOString(),
+    };
+
+    console.log("Sending patient data to n8n:", payload);
+
+    const response = await fetch(`${API_ENDPOINT}/api/patient`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    console.log("Received response from n8n:", result);
+
+    // Return the patient_id that was generated on frontend
+    return {
+      patient_id: patient_id,
+      success: true,
+      message: "Patient created successfully",
+    };
+  } catch (error) {
+    console.error("Error creating patient:", error);
+    throw new Error("Failed to create patient. Please try again.");
+  }
+}
+
+// Function to update patient summary when intake is complete
+export async function updatePatientSummary(
+  patientId: string,
+  summary: string
+): Promise<PatientResponse> {
+  try {
+    const payload = {
+      patient_id: patientId,
+      summary: summary,
+      status: "complete",
+      updatedAt: new Date().toISOString(),
+    };
+
+    console.log("Updating patient summary:", payload);
+
+    const response = await fetch(`${API_ENDPOINT}/api-patient-update`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    console.log("Received update response from n8n:", result);
+
+    return result;
+  } catch (error) {
+    console.error("Error updating patient summary:", error);
+    throw new Error("Failed to update patient summary. Please try again.");
+  }
+}
+
+// Function to get patient details by patient_id
+export async function getPatient(
+  patientId: string
+): Promise<PatientData & { patient_id: string }> {
+  try {
+    const response = await fetch(`${API_ENDPOINT}/api-patient-get`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ patient_id: patientId }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    console.log("Received patient data from n8n:", result);
+
+    return result;
+  } catch (error) {
+    console.error("Error getting patient:", error);
+    throw new Error("Failed to get patient details. Please try again.");
+  }
+}
