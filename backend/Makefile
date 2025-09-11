@@ -76,11 +76,11 @@ pre-commit: ## Run pre-commit checks
 # Development targets
 dev: ## Start development server
 	@echo "🚀 Starting development server..."
-	uvicorn src.clinicai.app:app --reload --host 0.0.0.0 --port 8000
+	PYTHONPATH=./src python3 -m uvicorn clinicai.app:app --reload --host 0.0.0.0 --port 8000
 
 dev-debug: ## Start development server with debug logging
 	@echo "🚀 Starting development server with debug logging..."
-	LOG_LEVEL=DEBUG uvicorn src.clinicai.app:app --reload --host 0.0.0.0 --port 8000
+	LOG_LEVEL=DEBUG PYTHONPATH=./src python3 -m uvicorn clinicai.app:app --reload --host 0.0.0.0 --port 8000
 
 # Docker targets
 docker-build: ## Build Docker image

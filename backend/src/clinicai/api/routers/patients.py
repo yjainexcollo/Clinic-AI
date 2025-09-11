@@ -6,6 +6,7 @@ Formatting-only changes; behavior preserved.
 from fastapi import APIRouter, HTTPException, status, UploadFile, File, Form, Request
 import logging
 import traceback
+from typing import Union, Optional
 
 from clinicai.application.dto.patient_dto import (
     AnswerIntakeRequest,
@@ -133,10 +134,10 @@ async def answer_intake_question(
     patient_repo: PatientRepositoryDep,
     question_service: QuestionServiceDep,
     # Optional multipart fields (used only if content-type is multipart/form-data)
-    patient_id: str | None = Form(None),
-    visit_id: str | None = Form(None),
-    answer: str | None = Form(None),
-    medication_image: UploadFile | None = File(None),
+    patient_id: Optional[str] = Form(None),
+    visit_id: Optional[str] = Form(None),
+    answer: Optional[str] = Form(None),
+    medication_image: Optional[UploadFile] = File(None),
 ):
     """
     Answer an intake question and get the next question.

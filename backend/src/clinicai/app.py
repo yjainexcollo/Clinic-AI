@@ -8,9 +8,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from clinicai.api.routers import health, patients, notes
-from clinicai.core.config import get_settings
-from clinicai.domain.errors import DomainError
+from .api.routers import health, patients, notes
+from .core.config import get_settings
+from .domain.errors import DomainError
 
 
 @asynccontextmanager
@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
         from motor.motor_asyncio import AsyncIOMotorClient  # type: ignore
 
         # Import models for registration
-        from clinicai.adapters.db.mongo.models.patient_m import (
+        from .adapters.db.mongo.models.patient_m import (
             IntakeSessionMongo,
             PatientMongo,
             QuestionAnswerMongo,
@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
             TranscriptionSessionMongo,
             SoapNoteMongo,
         )
-        from clinicai.adapters.db.mongo.models.stable_patient_m import (
+        from .adapters.db.mongo.models.stable_patient_m import (
             IdempotencyRecordMongo,
             IntakeSnapshotMongo,
             StablePatientMongo,
