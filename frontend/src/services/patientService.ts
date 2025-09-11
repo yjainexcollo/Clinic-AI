@@ -35,7 +35,7 @@ export async function registerPatientBackend(payload: {
   mobile: string;
   gender: string;
   age: number;
-  travel_history: boolean;
+  recently_travelled: boolean;
 }): Promise<BackendRegisterResponse> {
   const resp = await fetch(`${BACKEND_BASE_URL}/patients/`, {
     method: "POST",

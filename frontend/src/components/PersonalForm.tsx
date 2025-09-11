@@ -52,14 +52,16 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
         mobile: form.mobileNumber,
         gender: form.gender,
         age: ageNumber,
-        travel_history: form.travelHistory,
+        recently_travelled: form.travelHistory,
       });
 
       if (backendResp.patient_id) {
         // Persist travel history flag for later use if needed
         localStorage.setItem(`travel_${backendResp.patient_id}`, JSON.stringify(form.travelHistory));
 
-        if (onPatientCreated) onPatientCreated(backendResp.patient_id);
+        // Redirect including first question so it shows immediately
+        const q = encodeURIComponent(backendResp.first_question || "");
+        window.location.href = `/intake/${backendResp.patient_id}?q=${q}`;
       } else {
         setError("Failed to create patient");
       }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useLocation } from "react-router-dom";
 import { intakeAPI, IntakeRequest, IntakeResponse } from "../api";
 import { SessionManager } from "../utils/session";
 import { COPY } from "../copy";
@@ -11,6 +11,7 @@ interface Question {
 
 const Index = () => {
   const { patientId } = useParams<{ patientId: string }>();
+  const location = useLocation();
   const [currentQuestion, setCurrentQuestion] = useState<string>("");
   const [currentAnswer, setCurrentAnswer] = useState<string>("");
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -23,6 +24,17 @@ const Index = () => {
   const [showStartScreen, setShowStartScreen] = useState<boolean>(true);
 
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // On mount, if q is present in URL, show it immediately
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const q = params.get("q");
+    if (q && q.trim()) {
+      setCurrentQuestion(q);
+      setShowStartScreen(false);
+      setIsInitialized(true);
+    }
+  }, [location.search]);
 
   // Auto-focus input when question changes
   useEffect(() => {
