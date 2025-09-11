@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { createPatient, PatientData } from "../services/patientService.ts";
+import { registerPatientBackend } from "../services/patientService.ts";
 
 interface PersonalFormProps {
   onPatientCreated?: (patientId: string) => void;
@@ -46,27 +46,22 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
       // Convert age to number for proper data type
       const ageNumber = form.age ? Number(form.age) : 0;
       
-      // Create PatientData object with required fields
-      const patientData: PatientData = {
-        fullName: form.name,
-        age: ageNumber,
-        dob: "", // Not required for personal form
+      // Backend payload with required fields
+      const backendResp = await registerPatientBackend({
+        name: form.name,
+        mobile: form.mobileNumber,
         gender: form.gender,
-        email: "", // Not required for personal form
-        phone: form.mobileNumber,
-        address: undefined,
-        emergencyContact: undefined,
-      };
+        age: ageNumber,
+        travel_history: form.travelHistory,
+      });
 
-      const result = await createPatient(patientData);
-
-      if (result.success && result.patient_id) {
+      if (backendResp.patient_id) {
         // Persist travel history flag for later use if needed
-        localStorage.setItem(`travel_${result.patient_id}`, JSON.stringify(form.travelHistory));
+        localStorage.setItem(`travel_${backendResp.patient_id}`, JSON.stringify(form.travelHistory));
 
-        if (onPatientCreated) onPatientCreated(result.patient_id);
+        if (onPatientCreated) onPatientCreated(backendResp.patient_id);
       } else {
-        setError(result.message || "Failed to create patient");
+        setError("Failed to create patient");
       }
     } catch (err) {
       setError("Failed to create patient. Please try again.");

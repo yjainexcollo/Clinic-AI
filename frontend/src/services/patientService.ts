@@ -1,6 +1,9 @@
 const API_ENDPOINT =
   "https://n8n-excollo.azurewebsites.net/webhook";
 
+// Backend API base URL (FastAPI)
+const BACKEND_BASE_URL = "http://localhost:8000";
+
 export interface PatientData {
   fullName: string;
   age: number;
@@ -16,6 +19,34 @@ export interface PatientResponse {
   patient_id: string;
   success: boolean;
   message?: string;
+}
+
+// Backend register response
+export interface BackendRegisterResponse {
+  patient_id: string;
+  visit_id: string;
+  first_question: string;
+  message: string;
+}
+
+// Register patient against backend FastAPI
+export async function registerPatientBackend(payload: {
+  name: string;
+  mobile: string;
+  gender: string;
+  age: number;
+  travel_history: boolean;
+}): Promise<BackendRegisterResponse> {
+  const resp = await fetch(`${BACKEND_BASE_URL}/patients/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Backend error ${resp.status}: ${text}`);
+  }
+  return resp.json();
 }
 
 // Function to generate patient ID on frontend
