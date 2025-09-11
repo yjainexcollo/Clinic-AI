@@ -41,7 +41,7 @@ class RegisterPatientUseCase:
                 visit_id=visit_id, patient_id=existing_patient.patient_id.value, symptom=""
             )
             # First consultation question should ask for primary symptom
-            first_question = "What is your primary symptom or chief complaint today?"
+            first_question = "What symptoms are you experiencing today?"
             existing_patient.add_visit(visit)
             await self._patient_repository.save(existing_patient)
             return RegisterPatientResponse(
@@ -79,7 +79,7 @@ class RegisterPatientUseCase:
 
         # Generate first question
         # First consultation question asks for symptom
-        first_question = "What is your primary symptom or chief complaint today?"
+        first_question = "What symptoms are you experiencing today?"
 
         # Add visit to patient
         patient.add_visit(visit)
