@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { createPatient, PatientData } from "../services/patientService.ts";
-import SymptomSelector from "./SymptomSelector";
 
 interface PersonalFormProps {
   onPatientCreated?: (patientId: string) => void;
@@ -11,7 +10,7 @@ interface PersonalFormData {
   mobileNumber: string;
   gender: string;
   age: string;
-  symptoms: string[];
+  travelHistory: boolean;
 }
 
 const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
@@ -20,7 +19,7 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
     mobileNumber: "",
     gender: "",
     age: "",
-    symptoms: [],
+    travelHistory: false,
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -33,21 +32,15 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  const handleSymptomsChange = (symptoms: string[]) => {
-    setForm({ ...form, symptoms });
+  const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, checked } = e.target;
+    setForm((prev) => ({ ...prev, [name]: checked }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
-
-    // Validate symptoms
-    if (form.symptoms.length === 0) {
-      setError("Please select or add at least one symptom.");
-      setLoading(false);
-      return;
-    }
 
     try {
       // Convert age to number for proper data type
@@ -68,9 +61,9 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
       const result = await createPatient(patientData);
 
       if (result.success && result.patient_id) {
-        // Store symptoms in localStorage for the intake process
-        localStorage.setItem(`symptoms_${result.patient_id}`, JSON.stringify(form.symptoms));
-        
+        // Persist travel history flag for later use if needed
+        localStorage.setItem(`travel_${result.patient_id}`, JSON.stringify(form.travelHistory));
+
         if (onPatientCreated) onPatientCreated(result.patient_id);
       } else {
         setError(result.message || "Failed to create patient");
@@ -178,12 +171,20 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
             </div>
           </div>
 
-          {/* Symptoms Field */}
-          <SymptomSelector
-            selectedSymptoms={form.symptoms}
-            onSymptomsChange={handleSymptomsChange}
-            placeholder="Select or type your symptoms..."
-          />
+          {/* Travel History Checkbox */}
+          <div className="flex items-center gap-3">
+            <input
+              id="travelHistory"
+              name="travelHistory"
+              type="checkbox"
+              checked={form.travelHistory}
+              onChange={handleCheckboxChange}
+              className="h-4 w-4 rounded border-gray-300 text-medical-primary focus:ring-medical-primary"
+            />
+            <label htmlFor="travelHistory" className="text-sm text-gray-700">
+              I have travelled recently (last 30 days)
+            </label>
+          </div>
 
           {/* Submit Button */}
           <button
