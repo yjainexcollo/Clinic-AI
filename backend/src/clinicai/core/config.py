@@ -7,6 +7,9 @@ for environment-based configuration management.
 
 from typing import List, Optional
 
+import os
+from pathlib import Path
+
 from pydantic import Field, validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -17,7 +20,7 @@ class DatabaseSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="MONGO_")
 
     uri: str = Field(
-        default="mongodb://localhost:27017", description="MongoDB connection URI"
+        default="mongodb+srv://vishrutrela:Vishrut123@cluster0.idwtat0.mongodb.net/", description="MongoDB connection URI"
     )
     db_name: str = Field(default="clinicai", description="MongoDB database name")
     collection: str = Field(default="clinicAi", description="MongoDB collection name")
@@ -272,10 +275,37 @@ class Settings(BaseSettings):
         return self.app_env == "testing"
 
 
-# Global settings instance
-settings = Settings()
+# Global settings instance (loaded after attempting to read .env)
+_settings: Optional[Settings] = None
+
+
+def _load_env_file_if_available() -> None:
+    """Best-effort load of .env by searching current and parent directories.
+
+    This helps in environments where the working directory isn't the backend folder
+    and pydantic's env_file doesn't get resolved as expected.
+    """
+    try:
+        from dotenv import load_dotenv  # type: ignore
+    except Exception:
+        load_dotenv = None
+
+    if load_dotenv is None:
+        return
+
+    cwd = Path(os.getcwd()).resolve()
+    for parent in [cwd, *cwd.parents]:
+        candidate = parent / ".env"
+        if candidate.exists():
+            # Do not override already-set environment variables
+            load_dotenv(dotenv_path=str(candidate), override=False)
+            break
 
 
 def get_settings() -> Settings:
-    """Get application settings instance."""
-    return settings
+    """Get application settings instance (lazy-init with .env discovery)."""
+    global _settings
+    if _settings is None:
+        _load_env_file_if_available()
+        _settings = Settings()
+    return _settings

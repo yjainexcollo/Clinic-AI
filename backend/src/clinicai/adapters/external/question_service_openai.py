@@ -60,28 +60,8 @@ class OpenAIQuestionService(QuestionService):
     # Question generation
     # ----------------------
     async def generate_first_question(self, disease: str) -> str:
-        """Generate the first question based on primary symptom (param retained for compatibility)."""
-        prompt = (
-            f"You are a clinical intake assistant. The patient's primary symptom is: {disease}.\n"
-            "Generate the very first, single, clear, symptom-focused question a general physician would ask to start HPI.\n"
-            "Be professional and friendly.\n"
-            "Return ONLY the question text."
-        )
-        try:
-            text = await self._chat_completion(
-                messages=[
-                    {"role": "system", "content": "You are a helpful medical assistant."},
-                    {"role": "user", "content": prompt},
-                ],
-                max_tokens=min(256, self._settings.openai.max_tokens),
-                temperature=float(self._settings.openai.temperature),
-            )
-            text = text.replace("\n", " ").strip()
-            if not text.endswith("?"):
-                text = text.rstrip(".") + "?"
-            return text
-        except Exception:
-            return self._get_fallback_first_question(disease)
+        """First question is fixed to collect symptom; ignore param."""
+        return "What is your primary symptom or chief complaint today?"
 
     async def generate_next_question(
         self,

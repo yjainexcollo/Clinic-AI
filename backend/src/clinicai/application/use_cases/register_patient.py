@@ -27,8 +27,8 @@ class RegisterPatientUseCase:
 
     async def execute(self, request: RegisterPatientRequest) -> RegisterPatientResponse:
         """Execute the register patient use case."""
-        # Accept any primary symptom; trim whitespace
-        request.symptom = request.symptom.strip() if request.symptom else ""
+        # Normalize gender string
+        request.gender = request.gender.strip() if request.gender else ""
 
         # Check if patient already exists (exact match)
         existing_patient = await self._patient_repository.find_by_name_and_mobile(
@@ -38,11 +38,10 @@ class RegisterPatientUseCase:
             # Start a new visit for the existing patient instead of raising duplicate
             visit_id = VisitId.generate()
             visit = Visit(
-                visit_id=visit_id, patient_id=existing_patient.patient_id.value, symptom=request.symptom
+                visit_id=visit_id, patient_id=existing_patient.patient_id.value, symptom=""
             )
-            first_question = await self._question_service.generate_first_question(
-                request.symptom
-            )
+            # First consultation question should ask for primary symptom
+            first_question = "What is your primary symptom or chief complaint today?"
             existing_patient.add_visit(visit)
             await self._patient_repository.save(existing_patient)
             return RegisterPatientResponse(
@@ -66,6 +65,8 @@ class RegisterPatientUseCase:
             name=request.name,
             mobile=request.mobile,
             age=request.age,
+            gender=request.gender,
+            recently_travelled=request.recently_travelled,
         )
 
         # Generate visit ID
@@ -73,13 +74,12 @@ class RegisterPatientUseCase:
 
         # Create visit entity
         visit = Visit(
-            visit_id=visit_id, patient_id=patient_id.value, symptom=request.symptom
+            visit_id=visit_id, patient_id=patient_id.value, symptom=""
         )
 
         # Generate first question
-        first_question = await self._question_service.generate_first_question(
-            request.symptom
-        )
+        # First consultation question asks for symptom
+        first_question = "What is your primary symptom or chief complaint today?"
 
         # Add visit to patient
         patient.add_visit(visit)

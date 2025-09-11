@@ -70,7 +70,8 @@ async def register_patient(
             name=request.name,
             mobile=request.mobile,
             age=request.age,
-            symptom=request.symptom,
+            gender=request.gender,
+            recently_travelled=request.recently_travelled,
         )
 
         # Execute use case

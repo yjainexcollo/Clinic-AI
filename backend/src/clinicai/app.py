@@ -43,9 +43,10 @@ async def lifespan(app: FastAPI):
             VisitSummaryMongo,
         )
 
+        # Use configured URI and fail fast in dev with shorter selection timeout
         mongo_uri = settings.database.uri
         db_name = settings.database.db_name
-        client = AsyncIOMotorClient(mongo_uri)
+        client = AsyncIOMotorClient(mongo_uri, serverSelectionTimeoutMS=5000)
         db = client[db_name]
         await init_beanie(
             database=db,

@@ -14,7 +14,8 @@ class RegisterPatientRequest(BaseModel):
     name: str = Field(..., min_length=2, max_length=80, description="Patient name")
     mobile: str = Field(..., min_length=10, max_length=15, description="Mobile number")
     age: int = Field(..., ge=0, le=120, description="Patient age")
-    symptom: str = Field(..., description="Primary symptom")
+    gender: str = Field(..., description="Patient gender (e.g., male, female, other)")
+    recently_travelled: bool = Field(False, description="Has the patient travelled recently")
 
     @validator("name")
     def validate_name(cls, v):
@@ -30,10 +31,10 @@ class RegisterPatientRequest(BaseModel):
             raise ValueError("Mobile number must be 10-15 digits")
         return clean_mobile
 
-    @validator("symptom")
-    def validate_symptom(cls, v):
+    @validator("gender")
+    def validate_gender(cls, v):
         if not v or not v.strip():
-            raise ValueError("Symptom cannot be empty")
+            raise ValueError("Gender cannot be empty")
         return v.strip()
 
 
@@ -108,6 +109,7 @@ class PatientSummarySchema(BaseModel):
     name: str = Field(..., description="Patient name")
     mobile: str = Field(..., description="Mobile number")
     age: int = Field(..., description="Patient age")
+    gender: Optional[str] = Field(None, description="Patient gender")
     created_at: datetime = Field(..., description="Registration date")
     total_visits: int = Field(..., description="Total number of visits")
     latest_visit: Optional[IntakeSummarySchema] = Field(

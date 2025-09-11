@@ -43,9 +43,8 @@ class AnswerIntakeUseCase:
         # Get the current question being answered
         # If this is the first answer, we need to generate the first question
         if visit.intake_session.current_question_count == 0:
-            current_question = await self._question_service.generate_first_question(
-                visit.symptom
-            )
+            # First question is fixed: ask for primary symptom
+            current_question = "What is your primary symptom or chief complaint today?"
         else:
             # For subsequent answers, we need to get the question that was just asked
             # This should be stored in the visit's current_question field
@@ -67,6 +66,9 @@ class AnswerIntakeUseCase:
 
         # Add the question and answer
         visit.add_question_answer(current_question, request.answer, attachment_image_path=request.attachment_image_path)
+        # If this is the first answer, set the visit.symptom from patient's response
+        if visit.symptom == "" and visit.intake_session.current_question_count == 1:
+            visit.symptom = request.answer.strip()
 
         # Check if we should stop asking questions
         should_stop = await self._question_service.should_stop_asking(

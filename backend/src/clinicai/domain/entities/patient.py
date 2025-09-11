@@ -22,6 +22,8 @@ class Patient:
     name: str
     mobile: str
     age: int
+    gender: Optional[str] = None
+    recently_travelled: bool = False
     visits: List["Visit"] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
