@@ -16,7 +16,8 @@ class RegisterPatientRequest:
     name: str
     mobile: str
     age: int
-    symptom: str
+    gender: str
+    recently_travelled: bool = False
 
 
 @dataclass
