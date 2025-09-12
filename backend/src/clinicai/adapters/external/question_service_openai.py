@@ -162,6 +162,44 @@ class OpenAIQuestionService(QuestionService):
         except Exception:
             return current_count >= 5 or current_count >= max_count
 
+    async def assess_completion_percent(
+        self,
+        disease: str,
+        previous_answers: List[str],
+        asked_questions: List[str],
+        current_count: int,
+        max_count: int,
+    ) -> int:
+        """Assess completion percentage based on coverage using the LLM with a safe fallback."""
+        prompt = (
+            "You are evaluating how complete a medical intake is.\n"
+            f"Chief complaint: {disease or 'N/A'}\n"
+            f"Questions asked: {current_count}/{max_count}\n"
+            f"Asked: {asked_questions}\n"
+            f"Patient answers: {previous_answers}\n\n"
+            "Assess coverage of: Allergies, Current medications/treatments, Past history of same problem, "
+            "Family history when relevant (asthma, chest pain, diabetes, hypertension, cancer), Duration, "
+            "Severity, Triggers, Associated symptoms, Impact on daily life, and other essential GP details.\n"
+            "Return ONLY an integer 0-100 indicating completion percentage."
+        )
+        try:
+            text = await self._chat_completion(
+                messages=[
+                    {"role": "system", "content": "Output only a number from 0 to 100."},
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=6,
+                temperature=0.0,
+            )
+            import re
+            m = re.search(r"\d{1,3}", text or "")
+            pct = int(m.group(0)) if m else 0
+            return max(0, min(100, pct))
+        except Exception:
+            # Deterministic fallback based on progress bounds (caps at 60%)
+            base = int(min(100, (max(current_count, 1) / max(max_count or 8, 1)) * 60))
+            return base
+
     def _get_fallback_first_question(self, disease: str) -> str:
         """Fallback first question if OpenAI fails - always returns the same question."""
         return "Why have you come in today? What is the main concern you want help with?"

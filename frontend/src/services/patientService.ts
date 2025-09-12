@@ -40,6 +40,7 @@ export interface BackendAnswerResponse {
   is_complete: boolean;
   question_count: number;
   max_questions: number;
+  completion_percent: number;
   message: string;
 }
 

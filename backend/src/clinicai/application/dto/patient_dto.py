@@ -66,6 +66,7 @@ class AnswerIntakeResponse:
     is_complete: bool
     question_count: int
     max_questions: int
+    completion_percent: int
     message: str
     allows_image_upload: bool = False
 

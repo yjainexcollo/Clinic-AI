@@ -191,6 +191,18 @@ async def answer_intake_question(
                             f.write(await medication_image.read())
                         image_paths.append(dest_path)
 
+                # OCR extraction step (simple placeholder using pytesseract if installed)
+                try:
+                    import pytesseract  # type: ignore
+                    from PIL import Image  # type: ignore
+                    ocr_text = pytesseract.image_to_string(Image.open(dest_path))
+                    # Attach OCR text back into the answer as a suffix so downstream can use
+                    if answer:
+                        answer = f"{answer}\n[OCR]: {ocr_text.strip()}"
+                except Exception:
+                    # If OCR not available, continue without blocking
+                    pass
+
             dto_request = AnswerIntakeRequest(
                 patient_id=patient_id,
                 visit_id=visit_id,
@@ -207,6 +219,7 @@ async def answer_intake_question(
             is_complete=result.is_complete,
             question_count=result.question_count,
             max_questions=result.max_questions,
+            completion_percent=result.completion_percent,
             message=result.message,
             allows_image_upload=result.allows_image_upload,
         )

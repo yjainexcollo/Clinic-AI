@@ -73,6 +73,7 @@ class AnswerIntakeResponse(BaseModel):
     is_complete: bool = Field(..., description="Whether intake is complete")
     question_count: int = Field(..., description="Current question count")
     max_questions: int = Field(..., description="Maximum questions allowed")
+    completion_percent: int = Field(..., ge=0, le=100, description="LLM-assessed completion percent")
     message: str = Field(..., description="Status message")
     allows_image_upload: bool = Field(False, description="Whether the next question allows image upload")
 

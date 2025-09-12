@@ -45,3 +45,15 @@ class QuestionService(ABC):
     ) -> Dict[str, Any]:
         """Generate pre-visit clinical summary from intake data."""
         pass
+
+    @abstractmethod
+    async def assess_completion_percent(
+        self,
+        disease: str,
+        previous_answers: List[str],
+        asked_questions: List[str],
+        current_count: int,
+        max_count: int,
+    ) -> int:
+        """Return completion percent (0-100) based on information coverage."""
+        pass

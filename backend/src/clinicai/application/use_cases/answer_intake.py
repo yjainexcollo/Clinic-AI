@@ -77,8 +77,8 @@ class AnswerIntakeUseCase:
         next_question = None
         is_complete = False
 
-        # Enforce minimum of 3 questions before completion unless service decides to stop after >=3
-        min_questions_required = 3
+        # Enforce minimum of 5 questions before completion unless service decides to stop after >=5
+        min_questions_required = 5
         reached_minimum = visit.intake_session.current_question_count >= min_questions_required
 
         if (should_stop and reached_minimum) or not visit.can_ask_more_questions():
@@ -106,6 +106,19 @@ class AnswerIntakeUseCase:
                 f"of {visit.intake_session.max_questions}"
             )
 
+        # Compute completion percent (LLM or deterministic fallback)
+        completion_percent = await self._question_service.assess_completion_percent(
+            disease=visit.symptom,
+            previous_answers=[qa.answer for qa in visit.intake_session.questions_asked],
+            asked_questions=[qa.question for qa in visit.intake_session.questions_asked],
+            current_count=visit.intake_session.current_question_count,
+            max_count=visit.intake_session.max_questions,
+        )
+
+        # Force 100% on completion
+        if is_complete:
+            completion_percent = 100
+
         # Save the updated patient
         await self._patient_repository.save(patient)
 
@@ -122,6 +135,7 @@ class AnswerIntakeUseCase:
             is_complete=is_complete,
             question_count=visit.intake_session.current_question_count,
             max_questions=visit.intake_session.max_questions,
+            completion_percent=completion_percent,
             message=message,
             allows_image_upload=allows_image_upload,
         )

@@ -28,6 +28,9 @@ const Index = () => {
   const [patientName, setPatientName] = useState<string | null>(null);
   const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>([]);
   const pendingNextQuestionRef = useRef<string>("");
+  const [completionPercent, setCompletionPercent] = useState<number>(0);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingValue, setEditingValue] = useState<string>("");
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -123,8 +126,11 @@ const Index = () => {
     }
   };
 
-  const handleResponse = (response: IntakeResponse) => {
+  const handleResponse = (response: IntakeResponse & { completion_percent?: number }) => {
     console.log("Backend response:", response);
+    if (typeof response.completion_percent === "number") {
+      setCompletionPercent(Math.max(0, Math.min(100, response.completion_percent)));
+    }
     if (response.next_question === "COMPLETE") {
       setIsComplete(true);
       setSummary(
@@ -174,11 +180,26 @@ const Index = () => {
         return next;
       });
 
-      const response = await answerIntakeBackend({
-        patient_id: patientId,
-        visit_id: effectiveVisitId!,
-        answer: answerToSend,
-      });
+      // If the question suggests medication/photo, we will collect an optional image
+      const medsHint = currentQuestion.includes("You can upload a clear photo") || /medication|medicine|prescription/i.test(currentQuestion);
+      let response;
+      if (medsHint && (window as any).clinicaiMedicationFile) {
+        const form = new FormData();
+        form.append("patient_id", patientId);
+        form.append("visit_id", effectiveVisitId!);
+        form.append("answer", answerToSend);
+        form.append("medication_image", (window as any).clinicaiMedicationFile);
+        response = await fetch("/patients/consultations/answer", {
+          method: "POST",
+          body: form,
+        }).then(r => r.json());
+      } else {
+        response = await answerIntakeBackend({
+          patient_id: patientId,
+          visit_id: effectiveVisitId!,
+          answer: answerToSend,
+        });
+      }
       if (response && typeof response.max_questions === "number") {
         localStorage.setItem(`maxq_${effectiveVisitId}`, String(response.max_questions));
       }
@@ -187,6 +208,7 @@ const Index = () => {
         next_question: response.next_question || "",
         summary: undefined,
         type: "text",
+        completion_percent: response.completion_percent,
       });
     } catch (err) {
       console.error("Submit error:", err);
@@ -408,19 +430,16 @@ const Index = () => {
             </div>
           )}
 
-          {/* Dynamic Progress Bar */}
+          {/* Dynamic Progress Bar (percentage only) */}
           {!isComplete && (
             <div className="mb-6">
-              <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
-                <span>
-                  Question {Math.min(currentQuestionNumber, totalEstimatedQuestions)} / {totalEstimatedQuestions}
-                </span>
-                <span>{progressPct}%</span>
+              <div className="flex items-center justify-end text-sm text-gray-600 mb-2">
+                <span>{isComplete ? 100 : completionPercent}%</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
                 <div
                   className="h-2 rounded-full transition-all duration-300 bg-medical-primary"
-                  style={{ width: `${progressPct}%` }}
+                  style={{ width: `${Math.min(100, Math.max(0, isComplete ? 100 : completionPercent))}%` }}
                 />
               </div>
             </div>
@@ -441,16 +460,31 @@ const Index = () => {
                         onSymptomsChange={setSelectedSymptoms}
                       />
                     ) : (
-                      <input
-                        ref={inputRef}
-                        type="text"
-                        value={currentAnswer}
-                        onChange={(e) => setCurrentAnswer(e.target.value)}
-                        onKeyPress={handleKeyPress}
-                        className="medical-input"
-                        placeholder="Type your answer here..."
-                        required
-                      />
+                      <div className="space-y-3">
+                        <input
+                          ref={inputRef}
+                          type="text"
+                          value={currentAnswer}
+                          onChange={(e) => setCurrentAnswer(e.target.value)}
+                          onKeyPress={handleKeyPress}
+                          className="medical-input"
+                          placeholder="Type your answer here..."
+                          required
+                        />
+                        {(/medication|medicine|prescription/i.test(currentQuestion)) && (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="file"
+                              accept="image/*;capture=camera"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                (window as any).clinicaiMedicationFile = f || null;
+                              }}
+                              className="block w-full text-sm text-gray-700"
+                            />
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                   <div className="flex justify-end">
@@ -471,6 +505,77 @@ const Index = () => {
                   </span>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Previous answers with inline edit */}
+          {!isComplete && questions.length > 0 && (
+            <div className="medical-card mt-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-3">Previous answers</h3>
+              <div className="space-y-3">
+                {questions.map((qa, idx) => (
+                  <div key={idx} className="border border-gray-200 rounded-md p-3">
+                    <div className="text-sm text-gray-700 font-medium mb-1">Q{idx + 1}. {qa.text}</div>
+                    {editingIndex === idx ? (
+                      <div className="flex gap-2 items-center">
+                        <input
+                          type="text"
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          className="medical-input flex-1"
+                        />
+                        <button
+                          onClick={async () => {
+                            const effectiveVisitId = visitId || (patientId ? localStorage.getItem(`visit_${patientId}`) : null);
+                            if (!patientId || !effectiveVisitId) return;
+                            try {
+                              setIsLoading(true);
+                              await editAnswerBackend({
+                                patient_id: patientId,
+                                visit_id: effectiveVisitId,
+                                question_number: idx + 1,
+                                new_answer: editingValue.trim(),
+                              });
+                              setQuestions((prev) => {
+                                const copy = [...prev];
+                                copy[idx] = { ...copy[idx], answer: editingValue.trim() };
+                                return copy;
+                              });
+                              setEditingIndex(null);
+                              setEditingValue("");
+                            } catch (e) {
+                              console.error(e);
+                            } finally {
+                              setIsLoading(false);
+                            }
+                          }}
+                          className="medical-button"
+                          disabled={!editingValue.trim() || isLoading}
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={() => { setEditingIndex(null); setEditingValue(""); }}
+                          className="px-3 py-2 rounded-md bg-gray-200 text-gray-800"
+                          disabled={isLoading}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm text-gray-600">A: {qa.answer}</div>
+                        <button
+                          onClick={() => { setEditingIndex(idx); setEditingValue(qa.answer); }}
+                          className="text-blue-600 hover:underline text-sm"
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

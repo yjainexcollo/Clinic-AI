@@ -35,7 +35,7 @@ class IntakeSession:
     symptom: str
     questions_asked: List[QuestionAnswer] = field(default_factory=list)
     current_question_count: int = 0
-    max_questions: int = 8
+    max_questions: int = 10
     status: str = "in_progress"  # in_progress, completed, cancelled
     started_at: datetime = field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = None
