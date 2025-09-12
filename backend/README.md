@@ -15,6 +15,7 @@ AI-powered clinic management system with speech-to-text, large language model in
   - Large Language Model integration for medical documentation
   - OCR capabilities for document processing
   - Intelligent SOAP note generation
+  - Prescription image analysis with Mistral AI
 
 - **🏥 Healthcare Management**
 
@@ -134,6 +135,9 @@ SOAP_TEMPERATURE=0.3
 WHISPER_MODEL=base
 WHISPER_LANGUAGE=en
 
+# Mistral AI (Prescription Analysis)
+MISTRAL_API_KEY=your_mistral_api_key_here
+
 # Audio/File
 AUDIO_MAX_SIZE_MB=50
 AUDIO_ALLOWED_FORMATS=["mp3","wav","m4a","flac","ogg"]
@@ -159,6 +163,10 @@ Step‑03 (Notes):
 - `POST /notes/soap/generate` – Generate SOAP note using stored transcript + intake + pre‑visit summary.
 - `GET /notes/{patient_id}/visits/{visit_id}/transcript` – Get stored transcript for a visit.
 - `GET /notes/{patient_id}/visits/{visit_id}/soap` – Get stored SOAP note for a visit.
+
+Prescriptions:
+
+- `POST /prescriptions/upload` – Upload prescription images for AI analysis and structured data extraction.
 
 ### Example requests
 
@@ -207,6 +215,50 @@ curl -X POST http://localhost:8000/notes/soap/generate \
   }'
 ```
 
+Upload prescription images:
+
+```bash
+curl -X POST http://localhost:8000/prescriptions/upload \
+  -F patient_id=<PID> \
+  -F visit_id=<VID> \
+  -F files=@prescription1.jpg \
+  -F files=@prescription2.png
+```
+
+**Response example:**
+```json
+{
+  "patient_id": "ABC123_001",
+  "visit_id": "CONSULT-20241201-001",
+  "medicines": [
+    {
+      "name": "Amoxicillin",
+      "dose": "500mg",
+      "frequency": "Three times daily",
+      "duration": "7 days"
+    },
+    {
+      "name": "Ibuprofen",
+      "dose": "400mg",
+      "frequency": "As needed for pain",
+      "duration": "3 days"
+    }
+  ],
+  "tests": [
+    "Complete Blood Count (CBC)",
+    "C-Reactive Protein"
+  ],
+  "instructions": [
+    "Take with food",
+    "Complete full course of antibiotics",
+    "Return if symptoms worsen"
+  ],
+  "raw_text": "Dr. Smith - Amoxicillin 500mg TID x 7 days...",
+  "processing_status": "success",
+  "message": "Successfully processed 2 prescription images"
+}
+```
+
 ## 🩺 Troubleshooting
 
 - ffmpeg not found during transcription
@@ -224,6 +276,15 @@ curl -X POST http://localhost:8000/notes/soap/generate \
 
 - Port 8000 already in use
   - Stop previous instance: `pkill -f uvicorn` (macOS/Linux) or use a different port.
+
+- Prescription upload fails with 401 Unauthorized
+  - Check that `MISTRAL_API_KEY` is set in your `.env` file.
+  - Verify the API key is valid and has sufficient credits.
+
+- Prescription analysis returns empty results
+  - Ensure uploaded images are clear and readable.
+  - Check that images are in supported formats (JPG, PNG, GIF, BMP, WebP, TIFF).
+  - Try with higher resolution images for better OCR accuracy.
 
 ## 📚 Documentation
 

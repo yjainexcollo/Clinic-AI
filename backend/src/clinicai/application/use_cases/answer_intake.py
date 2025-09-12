@@ -61,7 +61,7 @@ class AnswerIntakeUseCase:
             )
 
         # Add the question and answer
-        visit.add_question_answer(current_question, request.answer, attachment_image_path=request.attachment_image_path)
+        visit.add_question_answer(current_question, request.answer, attachment_image_paths=request.attachment_image_paths)
         # If this is the first answer, set the visit.symptom from patient's response
         if visit.symptom == "" and visit.intake_session.current_question_count == 1:
             visit.symptom = request.answer.strip()

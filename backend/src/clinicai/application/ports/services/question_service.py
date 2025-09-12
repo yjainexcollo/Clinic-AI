@@ -45,3 +45,8 @@ class QuestionService(ABC):
     ) -> Dict[str, Any]:
         """Generate pre-visit clinical summary from intake data."""
         pass
+
+    @abstractmethod
+    def is_medication_question(self, question: str) -> bool:
+        """Check if a question is about medications and allows image upload."""
+        pass

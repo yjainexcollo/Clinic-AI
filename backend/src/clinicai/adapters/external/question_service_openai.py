@@ -1,11 +1,12 @@
-"""OpenAI implementation of QuestionService for AI-powered question generation."""
+"""
+OpenAI implementation of QuestionService for AI-powered question generation.
+"""
+
 import asyncio
-import os
-import logging
-from pathlib import Path
 from typing import Any, Dict, List
 
 from openai import OpenAI
+import logging
 
 from clinicai.application.ports.services.question_service import QuestionService
 from clinicai.core.config import get_settings
@@ -15,6 +16,9 @@ class OpenAIQuestionService(QuestionService):
     """OpenAI implementation of QuestionService."""
 
     def __init__(self):
+        import os
+        from pathlib import Path
+
         try:
             from dotenv import load_dotenv  # type: ignore
         except Exception:
@@ -94,18 +98,25 @@ class OpenAIQuestionService(QuestionService):
             "You are a medical intake assistant.\n\n"
             "TASK:\n"
             "- Ask ONE clear, symptom-focused, professional question.\n"
-            "- Do NOT repeat questions already asked.\n"
-            "- Do NOT ask again about topics already present in the patient's answers.\n"
-            "- Mandatory coverage (prioritize if not covered yet):\n"
-            "  1) Allergies\n"
-            "  2) Current medicines/treatments for this problem\n"
-            "  3) Past history of the same problem\n"
-            "  4) Family history (only if symptom suggests hereditary/serious concern: asthma, chest pain, diabetes, hypertension, cancer)\n"
-            "  5) Other essential intake details for a general physician\n"
-            "- Focus areas: duration, severity, triggers, associated symptoms, impact on daily life, relevant past history.\n"
-            "- If asking about current medicines/treatments, append this EXACT hint at the end to cue the client UI to show camera/file picker: [You can upload a clear photo of the medication/ prescription label.]\n"
-            "Return ONLY the question text (include the bracketed hint ONLY for the meds/treatments question)."
+            "- Do NOT repeat questions or topics already covered in answers or 'Already asked'.\n"
+            "- Do NOT ask demographics or travel again.\n"
+            "- Select the next UNMET item from this exact sequence (skip any already answered):\n"
+            "  1) Duration of symptoms.\n"
+            "  2) Triggers / aggravating factors (exertion, food, stress, environment).\n"
+            "  3) Pain assessment (only if pain is a symptom): location, duration (for pain), intensity (0–10), character, radiation, relieving/aggravating factors.\n"
+            "  4) Travel history (ask if symptom suggests infectious relevance: fever/diarrhea/cough/breathlessness/rash/jaundice/etc.). Ask about last 1–3 months (domestic/international), endemic exposure, sick contacts.\n"
+            "  5) Allergies (ask ONLY if symptom suggests allergic relevance: rash, swelling, hives, wheeze, sneezing, runny nose).\n"
+            "  6) Medications & remedies used: prescribed and OTC (drug, dose, frequency, adherence) and any home/alternative remedies with effect (helped/worsened/no effect).\n"
+            "  7) Past medical history (ONLY chronic diseases) and prior surgeries/hospitalizations when relevant.\n"
+            "  8) Family history (ONLY for chronic/hereditary disease relevance).\n"
+            "  9) Social history: smoking, alcohol, substances; diet and exercise; occupation and exposure risks.\n"
+            " 10) Gynecologic / obstetric (ask only if relevant to a female patient).\n"
+            " 11) Functional status (ask only if pain/mobility or neurologic impairment is likely—e.g., joint/back pain, arthritis, weakness, stroke, advanced COPD/CHF, or elderly): daily activities and caregiver/assistive needs.\n"
+            "- Keep the question concise, specific, and clinically useful.\n"
+            "- After finishing all applicable items or reaching the limit, stop.\n\n"
+            "Return only the question text."
         )
+
         try:
             text = await self._chat_completion(
                 messages=[
@@ -146,6 +157,7 @@ class OpenAIQuestionService(QuestionService):
             f"Patient answers: {', '.join(previous_answers)}.\n"
             "Reply with only YES (sufficient) or NO (need more)."
         )
+
         try:
             reply = await self._chat_completion(
                 messages=[
@@ -182,6 +194,7 @@ class OpenAIQuestionService(QuestionService):
             "Are the symptoms constant or do they come and go?",
             "Have you noticed any patterns with these symptoms?",
         ]
+
         # Return a question based on current count
         if current_count < len(fallback_questions):
             return fallback_questions[current_count]
@@ -189,9 +202,13 @@ class OpenAIQuestionService(QuestionService):
             return "Is there anything else you'd like to tell us about your condition?"
 
     async def generate_pre_visit_summary(
-        self, patient_data: Dict[str, Any], intake_answers: Dict[str, Any]
+        self, 
+        patient_data: Dict[str, Any], 
+        intake_answers: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Generate pre-visit clinical summary from intake data."""
+        gender = (patient_data.get('gender') or '').strip().lower()
+        recently_travelled = bool(patient_data.get('recently_travelled', False))
         prompt = f"""
 You are a clinical assistant. Create a concise pre-visit summary from the data below.
 
@@ -200,115 +217,86 @@ Patient Information:
 - Age: {patient_data.get('age', 'N/A')}
 - Gender: {patient_data.get('gender', 'N/A')}
 - Mobile: {patient_data.get('mobile', 'N/A')}
-- Complaint: {patient_data.get('disease') or patient_data.get('complaint', 'N/A')}
+- Recently travelled: {recently_travelled}
 
 Intake Responses:
 {self._format_intake_answers(intake_answers)}
 
-Generate a SOAP-compatible clinical summary with the following structure:
+STRICT REQUIREMENTS:
+- Output MUST be MARKDOWN with section headings and bullet lists; no paragraphs.
+- Every content line must start with "- ".
+- REMOVE duplicate/repeated information.
+- LENGTH must be 180 to 220 words total.
+- Clinical, neutral tone; do not diagnose.
+- Include a section ONLY if there is information for it; omit empty sections.
+- Include Gynecologic / Obstetric History only if gender is female.
+- Include Travel History only if Recently travelled is true and details exist.
 
-## PRE-VISIT SUMMARY
+Use these exact headings, in this order (skip any that have no data):
+1) Chief Complaint
+2) History of Present Illness
+3) Pain Assessment
+4) Travel History
+5) Allergies
+6) Medications and Remedies Used
+7) Past Medical History
+8) Family History
+9) Social History
+10) Gynecologic / Obstetric History
+11) Functional Status
+12) Key Clinical Points
 
-### Chief Complaint
-[Primary reason for visit]
+Content guidance per section:
+- History of Present Illness: duration, severity, triggers, associated symptoms, impact on daily life.
+- Pain Assessment: location, duration (for pain), intensity (0–10), character, radiation, relieving/aggravating factors.
+- Travel History: only include if recently_travelled true and relevant details exist.
+- Allergies: include only when clinically relevant; specify agent and reaction.
+- Medications and Remedies Used: drug, dose, frequency, adherence; remedies and effect.
+- Past Medical History: chronic diseases; prior surgeries/hospitalizations; special exposure risks (recent hospitals/surgeries, occupational hazards, animal bites/pets).
+- Family History: only include for chronic/hereditary disease relevance.
 
-### History of Present Illness
-[Description of symptoms, duration, severity, factors]
-
-### Review of Systems
-[Systematic review based on answers]
-
-### Past Medical History
-[Chronic conditions, prior illnesses]
-
-### Medications
-[Current treatments]
-
-### Allergies
-[Reported allergies]
-
-### Social History
-[Relevant social factors]
-
-### Assessment & Plan
-[Preliminary assessment and recommended steps]
-
-### Key Clinical Points
-- [3-5 most important findings]
-- [Any red flags]
-- [Areas for focused exam]
-
-Return JSON with keys: "summary" (markdown text) and "structured_data" (key-value pairs).
-""".strip()
-
+OUTPUT FORMAT (JSON fenced exactly):
+```json
+{{
+  "summary": "<markdown with headings and bullet points only>",
+  "structured_data": {{
+    "chief_complaint": "...",
+    "key_findings": ["..."]
+  }}
+}}
+```
+"""
+        
         try:
-            # Collect attached images (e.g., medication photos)
-            image_paths: List[str] = []
-            if isinstance(intake_answers, dict):
-                for qa in intake_answers.get("questions_asked", []) or []:
-                    img = qa.get("attachment_image_path")
-                    if img:
-                        image_paths.append(img)
-
-            if image_paths:
-                # Vision-style message: text + image_url parts (data URLs)
-                def _encode_image_to_data_url(image_path: str) -> str:
-                    try:
-                        mime_type, _ = mimetypes.guess_type(image_path)
-                        if not mime_type:
-                            mime_type = "image/jpeg"
-                        with open(image_path, "rb") as f:
-                            b64 = base64.b64encode(f.read()).decode("utf-8")
-                        return f"data:{mime_type};base64,{b64}"
-                    except Exception:
-                        return ""
-
-                content_parts: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
-                for p in image_paths[:4]:
-                    data_url = _encode_image_to_data_url(p)
-                    if data_url:
-                        content_parts.append({"type": "image_url", "image_url": {"url": data_url}})
-
-                def _run_vision():
-                    resp = self._client.chat.completions.create(
-                        model=self._settings.openai.model,
-                        messages=[
-                            {"role": "system", "content": "You are a clinical assistant generating pre-visit summaries. Do not make diagnoses."},
-                            {"role": "user", "content": content_parts},
-                        ],
-                        max_tokens=min(2000, self._settings.openai.max_tokens),
-                        temperature=0.3,
-                    )
-                    return resp.choices[0].message.content.strip()
-
-                response = await asyncio.to_thread(_run_vision)
-                return self._parse_summary_response(response)
-            else:
-                response = await self._chat_completion(
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": "You are a clinical assistant generating pre-visit summaries. Do not make diagnoses.",
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                    max_tokens=min(2000, self._settings.openai.max_tokens),
-                    temperature=0.3,
-                )
-                return self._parse_summary_response(response)
-        except Exception:
+            response = await self._chat_completion(
+                messages=[
+                    {
+                        "role": "system", 
+                        "content": "You are a clinical assistant generating pre-visit summaries. Focus on accuracy, completeness, and clinical relevance. Do not make diagnoses."
+                    },
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=min(2000, self._settings.openai.max_tokens),
+                temperature=0.3  # Lower temperature for more consistent medical summaries
+            )
+            
+            # Parse and normalize the response
+            raw = self._parse_summary_response(response)
+            return self._normalize_summary_result(raw)
+            
+        except Exception as e:
+            # Fallback to basic summary
             return self._generate_fallback_summary(patient_data, intake_answers)
 
     def _format_intake_answers(self, intake_answers: Dict[str, Any]) -> str:
         """Format intake answers for prompt."""
-        if isinstance(intake_answers, dict) and "questions_asked" in intake_answers:
-            formatted: List[str] = []
-            for qa in intake_answers.get("questions_asked", []):
-                q = qa.get("question", "N/A")
-                a = qa.get("answer", "N/A")
-                img = qa.get("attachment_image_path")
-                img_note = " (image attached)" if img else ""
-                formatted.append(f"Q: {q}\nA: {a}{img_note}\n")
+        if isinstance(intake_answers, dict) and 'questions_asked' in intake_answers:
+            # Handle structured intake data
+            formatted = []
+            for qa in intake_answers['questions_asked']:
+                formatted.append(f"Q: {qa.get('question', 'N/A')}")
+                formatted.append(f"A: {qa.get('answer', 'N/A')}")
+                formatted.append("")
             return "\n".join(formatted)
         else:
             # Handle simple key-value answers
@@ -347,19 +335,78 @@ Return JSON with keys: "summary" (markdown text) and "structured_data" (key-valu
     def _generate_fallback_summary(self, patient_data: Dict[str, Any], intake_answers: Dict[str, Any]) -> Dict[str, Any]:
         """Generate basic fallback summary."""
         return {
-            "summary": f"Pre-visit summary for {patient_data.get('name', 'Patient')} - {patient_data.get('disease', 'Complaint')}",
+            "summary": f"Pre-visit summary for {patient_data.get('name', 'Patient')}",
             "structured_data": {
-                "chief_complaint": patient_data.get('disease', 'N/A'),
+                "chief_complaint": patient_data.get('symptom') or patient_data.get('complaint') or "N/A",
                 "key_findings": ["See intake responses"]
             }
         }
 
+    def _normalize_summary_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """Ensure result contains 'summary' and 'structured_data' keys with sane defaults."""
+        normalized: Dict[str, Any] = {}
+        if not isinstance(result, dict):
+            return self._generate_fallback_summary({}, {})
+
+        # Map possible variants
+        summary = result.get("summary") or result.get("markdown") or result.get("content") or ""
+        structured = result.get("structured_data") or result.get("structuredData") or result.get("data") or {}
+
+        # Ensure types
+        if not isinstance(summary, str):
+            summary = str(summary)
+        if not isinstance(structured, dict):
+            structured = {"raw": structured}
+
+        # Minimal required fields
+        if "chief_complaint" not in structured:
+            structured["chief_complaint"] = "See summary"
+        if "key_findings" not in structured:
+            structured["key_findings"] = ["See summary"]
+
+        normalized["summary"] = summary
+        normalized["structured_data"] = structured
+        return normalized
+
     def is_medication_question(self, question: str) -> bool:
-        """Check if a question is medication-related and should allow image upload."""
-        medication_keywords = [
-            "medication", "medicine", "prescription", "drug", "pill", "tablet", 
-            "capsule", "injection", "dose", "dosage", "treatment", "therapy",
-            "current medicines", "taking any", "prescribed", "pharmacy"
-        ]
+        """Check if a question is about medications and allows image upload."""
+        if not question:
+            return False
+        
         question_lower = question.lower()
-        return any(keyword in question_lower for keyword in medication_keywords) or "[You can upload" in question
+        
+        # Keywords that indicate medication-related questions
+        medication_keywords = [
+            "medication", "medicine", "drug", "prescription", "tablet", "pill", 
+            "dose", "dosage", "treatment", "remedy", "medication", "pharmacy",
+            "over-the-counter", "otc", "prescribed", "taking", "current medications",
+            "what medications", "any medications", "medications you", "drugs you"
+        ]
+        
+        # Check if any medication keywords are present
+        for keyword in medication_keywords:
+            if keyword in question_lower:
+                return True
+        
+        # Check for specific patterns that suggest medication questions
+        medication_patterns = [
+            "what are you taking",
+            "are you taking any",
+            "current treatments",
+            "any remedies",
+            "home remedies",
+            "alternative treatments",
+            "over the counter",
+            "prescribed medications",
+            "medication adherence",
+            "how often do you take",
+            "when do you take",
+            "medication side effects",
+            "drug interactions"
+        ]
+        
+        for pattern in medication_patterns:
+            if pattern in question_lower:
+                return True
+        
+        return False

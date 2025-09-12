@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .api.routers import health, patients, notes
+from .api.routers import health, patients, notes, prescriptions
 from .core.config import get_settings
 from .domain.errors import DomainError
 
@@ -103,6 +103,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(patients.router)
     app.include_router(notes.router)
+    app.include_router(prescriptions.router)
 
     # Global exception handler for domain errors
     @app.exception_handler(DomainError)
@@ -153,5 +154,7 @@ async def root():
             "generate_soap": "POST /notes/soap/generate",
             "get_transcript": "GET /notes/{patient_id}/visits/{visit_id}/transcript",
             "get_soap": "GET /notes/{patient_id}/visits/{visit_id}/soap",
+            # Prescription endpoints
+            "upload_prescriptions": "POST /prescriptions/upload",
         },
     }

@@ -187,6 +187,33 @@ class SoapSettings(BaseSettings):
         return v
 
 
+class MistralSettings(BaseSettings):
+    """Mistral AI configuration settings."""
+
+    model_config = SettingsConfigDict(env_prefix="MISTRAL_")
+
+    api_key: str = Field(default="", description="Mistral API key")
+    vision_model: str = Field(default="pixtral-12b-2409", description="Vision model for image analysis")
+    chat_model: str = Field(default="mistral-large-latest", description="Chat model for text parsing")
+    max_tokens: int = Field(default=2000, description="Maximum tokens for responses")
+    temperature: float = Field(default=0.1, description="Temperature for model responses")
+
+    @validator("api_key")
+    def validate_api_key(cls, v: str) -> str:
+        """Validate Mistral API key format."""
+        # Mistral API keys are alphanumeric strings, no specific prefix required
+        if v and len(v) < 10:
+            raise ValueError("Mistral API key appears to be too short")
+        return v
+
+    @validator("temperature")
+    def validate_temperature(cls, v: float) -> float:
+        """Validate temperature."""
+        if not 0.0 <= v <= 2.0:
+            raise ValueError("Temperature must be between 0.0 and 2.0")
+        return v
+
+
 class FileStorageSettings(BaseSettings):
     """File storage configuration settings."""
 
@@ -229,6 +256,7 @@ class Settings(BaseSettings):
     whisper: WhisperSettings = Field(default_factory=WhisperSettings)
     audio: AudioSettings = Field(default_factory=AudioSettings)
     soap: SoapSettings = Field(default_factory=SoapSettings)
+    mistral: MistralSettings = Field(default_factory=MistralSettings)
     file_storage: FileStorageSettings = Field(default_factory=FileStorageSettings)
 
     def __init__(self, **kwargs):
@@ -242,6 +270,7 @@ class Settings(BaseSettings):
         self.whisper = WhisperSettings()
         self.audio = AudioSettings()
         self.soap = SoapSettings()
+        self.mistral = MistralSettings()
         self.file_storage = FileStorageSettings()
 
     @validator("app_env")
