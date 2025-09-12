@@ -213,7 +213,7 @@ class Visit:
                     "answer": qa.answer,
                     "timestamp": qa.timestamp.isoformat(),
                     "question_number": qa.question_number,
-                    "attachment_image_path": qa.attachment_image_path,
+                    "attachment_image_paths": qa.attachment_image_paths,
                 }
                 for qa in self.intake_session.questions_asked
             ],

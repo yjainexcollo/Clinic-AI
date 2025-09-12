@@ -57,3 +57,20 @@ class QuestionService(ABC):
     ) -> int:
         """Return completion percent (0-100) based on information coverage."""
         pass
+
+    @abstractmethod
+    async def assess_completion_percent(
+        self,
+        disease: str,
+        previous_answers: List[str],
+        asked_questions: List[str],
+        current_count: int,
+        max_count: int,
+    ) -> int:
+        """Return completion percent (0-100) based on information coverage."""
+        pass
+
+    @abstractmethod
+    def is_medication_question(self, question: str) -> bool:
+        """Check if a question is about medications and allows image upload."""
+        pass
