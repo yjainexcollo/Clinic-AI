@@ -64,18 +64,19 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
         // Seed predefined symptoms as first question options for intake page
         const predefined = [
           "Fever",
-          "Cold Symptoms",
-          "Cough",
-          "Sore throat",
-          "Body aches",
-          "Fatigue",
-          "Hypertension",
-          "Diabetes"
+          "Cough / Cold",
+          "Headache",
+          "Stomach Pain",
+          "Chest Pain",
+          "Breathing Difficulty",
+          "Fatigue / Weakness",
+          "Body Pain / Joint Pain",
+          "Skin Rash / Itching"
         ];
         localStorage.setItem(`symptoms_${backendResp.patient_id}`, JSON.stringify(predefined));
 
         // Redirect including first question so it shows immediately
-        const q = encodeURIComponent(backendResp.first_question || "What brings you in today? Please select symptoms from the list.");
+        const q = encodeURIComponent(backendResp.first_question || "What symptoms are you experiencing today? Please select from the list below.");
         const v = encodeURIComponent(backendResp.visit_id);
         window.location.href = `/intake/${backendResp.patient_id}?q=${q}&v=${v}`;
       } else {

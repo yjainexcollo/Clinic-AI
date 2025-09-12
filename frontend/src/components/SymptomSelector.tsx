@@ -7,17 +7,18 @@ interface SymptomSelectorProps {
   placeholder?: string;
 }
 
-// Concise set of common general physician symptoms
+// Common symptoms for intake form
 const SYMPTOM_CATEGORIES = {
   "Common": [
-    "Diabetes",
-    "Hypertension",
     "Fever",
-    "Cold Symptoms",
-    "Cough",
-    "Sore throat",
-    "Body aches",
-    "Fatigue"
+    "Cough / Cold",
+    "Headache",
+    "Stomach Pain",
+    "Chest Pain",
+    "Breathing Difficulty",
+    "Fatigue / Weakness",
+    "Body Pain / Joint Pain",
+    "Skin Rash / Itching"
   ]
 };
 

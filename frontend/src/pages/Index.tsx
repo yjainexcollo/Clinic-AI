@@ -26,7 +26,6 @@ const Index = () => {
   const [showStartScreen, setShowStartScreen] = useState<boolean>(true);
   const [visitId, setVisitId] = useState<string | null>(null);
   const [patientName, setPatientName] = useState<string | null>(null);
-  const [currentIndex, setCurrentIndex] = useState<number>(0); // 0-based index into questions array for Prev/Next
   const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>([]);
   const pendingNextQuestionRef = useRef<string>("");
 
@@ -53,13 +52,7 @@ const Index = () => {
     if (patientId) {
       const storedName = localStorage.getItem(`patient_name_${patientId}`);
       if (storedName) setPatientName(storedName);
-      const storedSymptoms = localStorage.getItem(`symptoms_${patientId}`);
-      if (storedSymptoms) {
-        try {
-          const parsed = JSON.parse(storedSymptoms);
-          if (Array.isArray(parsed)) setSelectedSymptoms(parsed);
-        } catch {}
-      }
+      // Don't pre-select symptoms - let user choose from scratch
     }
   }, [location.search]);
 
@@ -152,8 +145,7 @@ const Index = () => {
 
   const handleNext = async (e: React.FormEvent) => {
     e.preventDefault();
-    const isFirstUnanswered = questions.length === 0;
-    const isEditing = questions[currentIndex] && currentQuestion === questions[currentIndex].text;
+    const isFirstQuestion = questions.length === 0;
     const effectiveVisitId = visitId || (patientId ? localStorage.getItem(`visit_${patientId}`) : null);
     if (!patientId || !effectiveVisitId) {
       setError("Missing visit info. Please go back to registration to start a new visit.");
@@ -162,66 +154,40 @@ const Index = () => {
 
     // First question: use predefined symptoms if available/selected
     let answerToSend = currentAnswer.trim();
-    if (isFirstUnanswered) {
+    if (isFirstQuestion) {
       if (selectedSymptoms.length === 0 && !answerToSend) return;
       if (selectedSymptoms.length > 0) {
         answerToSend = selectedSymptoms.join(", ");
         localStorage.setItem(`symptoms_${patientId}`, JSON.stringify(selectedSymptoms));
       }
     } else {
-      if (!isEditing && !answerToSend) return;
+      if (!answerToSend) return;
     }
 
     try {
       setIsLoading(true);
       setError("");
-      if (isEditing) {
-        // Save edit
-        await editAnswerBackend({
-          patient_id: patientId,
-          visit_id: effectiveVisitId,
-          question_number: currentIndex + 1,
-          new_answer: answerToSend,
-        });
-        setQuestions((prev) => {
-          const copy = [...prev];
-          copy[currentIndex] = { ...copy[currentIndex], answer: answerToSend };
-          return copy;
-        });
-        // Move forward to next stored question if exists, else pending next question
-        const hasNextStored = currentIndex + 1 < questions.length;
-        if (hasNextStored) {
-          const nextQA = questions[currentIndex + 1];
-          setCurrentIndex(currentIndex + 1);
-          setCurrentQuestion(nextQA.text);
-          setCurrentAnswer(nextQA.answer);
-        } else if (pendingNextQuestionRef.current) {
-          setCurrentQuestion(pendingNextQuestionRef.current);
-          setCurrentAnswer("");
-        }
-      } else {
-        // Append current Q&A locally
-        setQuestions((prev) => {
-          const next = [...prev, { text: currentQuestion, answer: answerToSend }];
-          setCurrentIndex(next.length - 1);
-          return next;
-        });
 
-        const response = await answerIntakeBackend({
-          patient_id: patientId,
-          visit_id: effectiveVisitId!,
-          answer: answerToSend,
-        });
-        if (response && typeof response.max_questions === "number") {
-          localStorage.setItem(`maxq_${effectiveVisitId}`, String(response.max_questions));
-        }
-        console.log("Received response from backend:", response);
-        handleResponse({
-          next_question: response.next_question || "",
-          summary: undefined,
-          type: "text",
-        });
+      // Append current Q&A locally
+      setQuestions((prev) => {
+        const next = [...prev, { text: currentQuestion, answer: answerToSend }];
+        return next;
+      });
+
+      const response = await answerIntakeBackend({
+        patient_id: patientId,
+        visit_id: effectiveVisitId!,
+        answer: answerToSend,
+      });
+      if (response && typeof response.max_questions === "number") {
+        localStorage.setItem(`maxq_${effectiveVisitId}`, String(response.max_questions));
       }
+      console.log("Received response from backend:", response);
+      handleResponse({
+        next_question: response.next_question || "",
+        summary: undefined,
+        type: "text",
+      });
     } catch (err) {
       console.error("Submit error:", err);
       setError(err instanceof Error ? err.message : COPY.errors.generic);
@@ -230,40 +196,6 @@ const Index = () => {
     }
   };
 
-  const handlePrev = () => {
-    if (currentIndex > 0) {
-      const prevQA = questions[currentIndex - 1];
-      setCurrentIndex(currentIndex - 1);
-      setCurrentQuestion(prevQA.text);
-      setCurrentAnswer(prevQA.answer);
-    }
-  };
-
-  // handleNext submit already defined above; remove unused nav-only handler
-
-  const handleSaveEdit = async () => {
-    const effectiveVisitId = visitId || (patientId ? localStorage.getItem(`visit_${patientId}`) : null);
-    if (!patientId || !effectiveVisitId || currentIndex < 0 || currentIndex >= questions.length) return;
-    try {
-      setIsLoading(true);
-      await editAnswerBackend({
-        patient_id: patientId,
-        visit_id: effectiveVisitId,
-        question_number: currentIndex + 1,
-        new_answer: currentAnswer.trim(),
-      });
-      setQuestions((prev) => {
-        const copy = [...prev];
-        copy[currentIndex] = { ...copy[currentIndex], answer: currentAnswer.trim() };
-        return copy;
-      });
-      setError("");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : COPY.errors.generic);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !isLoading) {
@@ -521,22 +453,13 @@ const Index = () => {
                       />
                     )}
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={handlePrev}
-                      disabled={currentIndex <= 0}
-                      className="w-1/3 bg-gray-200 text-gray-800 py-3 px-4 rounded-md disabled:opacity-50"
-                    >
-                      Prev
-                    </button>
-                    
+                  <div className="flex justify-end">
                     <button
                       type="submit"
                       disabled={questions.length === 0 ? selectedSymptoms.length === 0 : !currentAnswer.trim()}
-                      className="medical-button w-2/3 flex items-center justify-center gap-2"
+                      className="medical-button w-full flex items-center justify-center gap-2"
                     >
-                      {currentIndex < questions.length && currentQuestion === questions[currentIndex]?.text ? "Save & Continue" : COPY.form.nextButton}
+                      {COPY.form.nextButton}
                     </button>
                   </div>
                 </form>
