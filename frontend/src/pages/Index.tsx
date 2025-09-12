@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, useLocation } from "react-router-dom";
 import { intakeAPI, IntakeRequest, IntakeResponse } from "../api";
+import { answerIntakeBackend, editAnswerBackend } from "../services/patientService";
 import { SessionManager } from "../utils/session";
 import { COPY } from "../copy";
+import SymptomSelector from "../components/SymptomSelector";
 
 interface Question {
   text: string;
@@ -22,19 +24,53 @@ const Index = () => {
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
   const [retryCount, setRetryCount] = useState<number>(0);
   const [showStartScreen, setShowStartScreen] = useState<boolean>(true);
+  const [visitId, setVisitId] = useState<string | null>(null);
+  const [patientName, setPatientName] = useState<string | null>(null);
+  const [currentIndex, setCurrentIndex] = useState<number>(0); // 0-based index into questions array for Prev/Next
+  const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>([]);
+  const pendingNextQuestionRef = useRef<string>("");
 
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // On mount, if q is present in URL, show it immediately
+  // On mount, if q is present in URL, show it immediately and cache visit id
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const q = params.get("q");
+    const v = params.get("v");
     if (q && q.trim()) {
       setCurrentQuestion(q);
       setShowStartScreen(false);
       setIsInitialized(true);
     }
+    if (patientId && v) {
+      localStorage.setItem(`visit_${patientId}`, v);
+      setVisitId(v);
+    }
+    if (patientId && !v) {
+      const storedV = localStorage.getItem(`visit_${patientId}`);
+      if (storedV) setVisitId(storedV);
+    }
+    if (patientId) {
+      const storedName = localStorage.getItem(`patient_name_${patientId}`);
+      if (storedName) setPatientName(storedName);
+      const storedSymptoms = localStorage.getItem(`symptoms_${patientId}`);
+      if (storedSymptoms) {
+        try {
+          const parsed = JSON.parse(storedSymptoms);
+          if (Array.isArray(parsed)) setSelectedSymptoms(parsed);
+        } catch {}
+      }
+    }
   }, [location.search]);
+
+  // Also load visitId and patient name when patientId changes (e.g., direct navigation)
+  useEffect(() => {
+    if (!patientId) return;
+    const storedV = localStorage.getItem(`visit_${patientId}`);
+    if (storedV) setVisitId(storedV);
+    const storedName = localStorage.getItem(`patient_name_${patientId}`);
+    if (storedName) setPatientName(storedName);
+  }, [patientId]);
 
   // Auto-focus input when question changes
   useEffect(() => {
@@ -70,14 +106,16 @@ const Index = () => {
       }
       console.log("Retrieved symptoms:", symptoms);
 
-      const request: IntakeRequest = {
-        session_id: sessionId,
-        patient_id: patientId, // Include patient ID in the request
-        initial_symptoms: symptoms || undefined, // Include symptoms if available
-      };
-
-      const response = await intakeAPI.sendIntakeData(request);
-      handleResponse(response);
+      // If we already have first question via q param, skip initialization call
+      if (!currentQuestion) {
+        const request: IntakeRequest = {
+          session_id: sessionId,
+          patient_id: patientId,
+          initial_symptoms: symptoms || undefined,
+        };
+        const response = await intakeAPI.sendIntakeData(request);
+        handleResponse(response);
+      }
       setIsInitialized(true);
       setRetryCount(0); // Reset retry count on success
       setShowStartScreen(false); // Hide start screen after successful initialization
@@ -105,46 +143,85 @@ const Index = () => {
       response.next_question.trim() !== ""
     ) {
       setCurrentQuestion(response.next_question);
+      pendingNextQuestionRef.current = response.next_question;
       setCurrentAnswer("");
     } else {
       setError("No next question received from backend. Please try again.");
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleNext = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!currentAnswer.trim()) {
+    const isFirstUnanswered = questions.length === 0;
+    const isEditing = questions[currentIndex] && currentQuestion === questions[currentIndex].text;
+    const effectiveVisitId = visitId || (patientId ? localStorage.getItem(`visit_${patientId}`) : null);
+    if (!patientId || !effectiveVisitId) {
+      setError("Missing visit info. Please go back to registration to start a new visit.");
       return;
+    }
+
+    // First question: use predefined symptoms if available/selected
+    let answerToSend = currentAnswer.trim();
+    if (isFirstUnanswered) {
+      if (selectedSymptoms.length === 0 && !answerToSend) return;
+      if (selectedSymptoms.length > 0) {
+        answerToSend = selectedSymptoms.join(", ");
+        localStorage.setItem(`symptoms_${patientId}`, JSON.stringify(selectedSymptoms));
+      }
+    } else {
+      if (!isEditing && !answerToSend) return;
     }
 
     try {
       setIsLoading(true);
       setError("");
+      if (isEditing) {
+        // Save edit
+        await editAnswerBackend({
+          patient_id: patientId,
+          visit_id: effectiveVisitId,
+          question_number: currentIndex + 1,
+          new_answer: answerToSend,
+        });
+        setQuestions((prev) => {
+          const copy = [...prev];
+          copy[currentIndex] = { ...copy[currentIndex], answer: answerToSend };
+          return copy;
+        });
+        // Move forward to next stored question if exists, else pending next question
+        const hasNextStored = currentIndex + 1 < questions.length;
+        if (hasNextStored) {
+          const nextQA = questions[currentIndex + 1];
+          setCurrentIndex(currentIndex + 1);
+          setCurrentQuestion(nextQA.text);
+          setCurrentAnswer(nextQA.answer);
+        } else if (pendingNextQuestionRef.current) {
+          setCurrentQuestion(pendingNextQuestionRef.current);
+          setCurrentAnswer("");
+        }
+      } else {
+        // Append current Q&A locally
+        setQuestions((prev) => {
+          const next = [...prev, { text: currentQuestion, answer: answerToSend }];
+          setCurrentIndex(next.length - 1);
+          return next;
+        });
 
-      const sessionId = SessionManager.getSessionId();
-
-      const request: IntakeRequest = {
-        session_id: sessionId,
-        last_question: currentQuestion,
-        last_answer: currentAnswer.trim(),
-        patient_id: patientId, // Include patient ID in the request
-      };
-
-      console.log("Sending request to backend:", request);
-
-      // Store the current Q&A
-      setQuestions((prev) => [
-        ...prev,
-        {
-          text: currentQuestion,
-          answer: currentAnswer.trim(),
-        },
-      ]);
-
-      const response = await intakeAPI.sendIntakeData(request);
-      console.log("Received response from backend:", response);
-      handleResponse(response);
+        const response = await answerIntakeBackend({
+          patient_id: patientId,
+          visit_id: effectiveVisitId!,
+          answer: answerToSend,
+        });
+        if (response && typeof response.max_questions === "number") {
+          localStorage.setItem(`maxq_${effectiveVisitId}`, String(response.max_questions));
+        }
+        console.log("Received response from backend:", response);
+        handleResponse({
+          next_question: response.next_question || "",
+          summary: undefined,
+          type: "text",
+        });
+      }
     } catch (err) {
       console.error("Submit error:", err);
       setError(err instanceof Error ? err.message : COPY.errors.generic);
@@ -153,9 +230,44 @@ const Index = () => {
     }
   };
 
+  const handlePrev = () => {
+    if (currentIndex > 0) {
+      const prevQA = questions[currentIndex - 1];
+      setCurrentIndex(currentIndex - 1);
+      setCurrentQuestion(prevQA.text);
+      setCurrentAnswer(prevQA.answer);
+    }
+  };
+
+  // handleNext submit already defined above; remove unused nav-only handler
+
+  const handleSaveEdit = async () => {
+    const effectiveVisitId = visitId || (patientId ? localStorage.getItem(`visit_${patientId}`) : null);
+    if (!patientId || !effectiveVisitId || currentIndex < 0 || currentIndex >= questions.length) return;
+    try {
+      setIsLoading(true);
+      await editAnswerBackend({
+        patient_id: patientId,
+        visit_id: effectiveVisitId,
+        question_number: currentIndex + 1,
+        new_answer: currentAnswer.trim(),
+      });
+      setQuestions((prev) => {
+        const copy = [...prev];
+        copy[currentIndex] = { ...copy[currentIndex], answer: currentAnswer.trim() };
+        return copy;
+      });
+      setError("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : COPY.errors.generic);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !isLoading) {
-      handleSubmit(e);
+      handleNext(e);
     }
   };
 
@@ -165,7 +277,20 @@ const Index = () => {
   };
 
   const currentQuestionNumber = questions.length + 1;
-  const totalEstimatedQuestions = 10;
+  // Dynamic progress: use backend-provided max when available via localStorage, fallback to 10
+  const storedMax = (() => {
+    if (!patientId) return null;
+    const v = localStorage.getItem(`visit_${patientId}`);
+    const k = v ? `maxq_${v}` : null;
+    if (!k) return null;
+    const n = localStorage.getItem(k);
+    return n ? Number(n) : null;
+  })();
+  const totalEstimatedQuestions = storedMax && storedMax > 0 ? storedMax : 10;
+  const progressPct = Math.min(
+    Math.round(((questions.length) / totalEstimatedQuestions) * 100),
+    100
+  );
 
   // Show start screen if not initialized and not loading
   if (showStartScreen && !isLoading) {
@@ -191,13 +316,7 @@ const Index = () => {
             <h2 className="text-2xl font-bold text-gray-900 mb-4">
               Welcome to {COPY.app.title}
             </h2>
-            {patientId && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
-                <p className="text-green-800 text-sm">
-                  <strong>Patient ID:</strong> {patientId}
-                </p>
-              </div>
-            )}
+            
             <p className="text-gray-600 mb-6 leading-relaxed">
               Our AI assistant will guide you through a comprehensive medical
               intake interview. This will help us understand your health
@@ -357,36 +476,20 @@ const Index = () => {
             </div>
           )}
 
-          {/* Progress Indicator */}
-          {!isComplete && currentQuestion && (
+          {/* Dynamic Progress Bar */}
+          {!isComplete && (
             <div className="mb-6">
-              {patientId && (
-                <div className="mb-2 text-sm text-gray-600">
-                  <strong>Patient ID:</strong> {patientId}
-                </div>
-              )}
               <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
                 <span>
-                  {COPY.form.progressLabel} {currentQuestionNumber} /{" "}
-                  {totalEstimatedQuestions}
+                  Question {Math.min(currentQuestionNumber, totalEstimatedQuestions)} / {totalEstimatedQuestions}
                 </span>
-                <span>
-                  {Math.round(
-                    (currentQuestionNumber / totalEstimatedQuestions) * 100
-                  )}
-                  %
-                </span>
+                <span>{progressPct}%</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
                 <div
-                  className="bg-medical-primary h-2 rounded-full transition-all duration-300"
-                  style={{
-                    width: `${Math.min(
-                      (currentQuestionNumber / totalEstimatedQuestions) * 100,
-                      100
-                    )}%`,
-                  }}
-                ></div>
+                  className="h-2 rounded-full transition-all duration-300 bg-medical-primary"
+                  style={{ width: `${progressPct}%` }}
+                />
               </div>
             </div>
           )}
@@ -395,29 +498,47 @@ const Index = () => {
           {!isComplete && currentQuestion && (
             <div className="medical-card">
               {!isLoading ? (
-                <form onSubmit={handleSubmit} className="space-y-6">
+                <form onSubmit={handleNext} className="space-y-6">
                   <div>
                     <label className="block text-gray-800 font-medium mb-3 text-lg leading-relaxed">
                       {currentQuestion}
                     </label>
-                    <input
-                      ref={inputRef}
-                      type="text"
-                      value={currentAnswer}
-                      onChange={(e) => setCurrentAnswer(e.target.value)}
-                      onKeyPress={handleKeyPress}
-                      className="medical-input"
-                      placeholder="Type your answer here..."
-                      required
-                    />
+                    {questions.length === 0 ? (
+                      <SymptomSelector
+                        selectedSymptoms={selectedSymptoms}
+                        onSymptomsChange={setSelectedSymptoms}
+                      />
+                    ) : (
+                      <input
+                        ref={inputRef}
+                        type="text"
+                        value={currentAnswer}
+                        onChange={(e) => setCurrentAnswer(e.target.value)}
+                        onKeyPress={handleKeyPress}
+                        className="medical-input"
+                        placeholder="Type your answer here..."
+                        required
+                      />
+                    )}
                   </div>
-                  <button
-                    type="submit"
-                    disabled={!currentAnswer.trim()}
-                    className="medical-button w-full flex items-center justify-center gap-2"
-                  >
-                    {COPY.form.nextButton}
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handlePrev}
+                      disabled={currentIndex <= 0}
+                      className="w-1/3 bg-gray-200 text-gray-800 py-3 px-4 rounded-md disabled:opacity-50"
+                    >
+                      Prev
+                    </button>
+                    
+                    <button
+                      type="submit"
+                      disabled={questions.length === 0 ? selectedSymptoms.length === 0 : !currentAnswer.trim()}
+                      className="medical-button w-2/3 flex items-center justify-center gap-2"
+                    >
+                      {currentIndex < questions.length && currentQuestion === questions[currentIndex]?.text ? "Save & Continue" : COPY.form.nextButton}
+                    </button>
+                  </div>
                 </form>
               ) : (
                 <div className="flex flex-col items-center justify-center py-8">
@@ -483,11 +604,7 @@ const Index = () => {
                 <h2 className="text-2xl font-bold text-gray-900 mb-2">
                   {COPY.summary.complete}
                 </h2>
-                {patientId && (
-                  <p className="text-gray-600 mb-4">
-                    Patient ID: <strong>{patientId}</strong>
-                  </p>
-                )}
+                
               </div>
 
               {summary && (

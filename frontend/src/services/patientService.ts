@@ -29,6 +29,20 @@ export interface BackendRegisterResponse {
   message: string;
 }
 
+export interface BackendAnswerRequest {
+  patient_id: string;
+  visit_id: string;
+  answer: string;
+}
+
+export interface BackendAnswerResponse {
+  next_question: string | null;
+  is_complete: boolean;
+  question_count: number;
+  max_questions: number;
+  message: string;
+}
+
 // Register patient against backend FastAPI
 export async function registerPatientBackend(payload: {
   name: string;
@@ -39,6 +53,40 @@ export async function registerPatientBackend(payload: {
 }): Promise<BackendRegisterResponse> {
   const resp = await fetch(`${BACKEND_BASE_URL}/patients/`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Backend error ${resp.status}: ${text}`);
+  }
+  return resp.json();
+}
+
+// Answer intake question via backend
+export async function answerIntakeBackend(
+  payload: BackendAnswerRequest
+): Promise<BackendAnswerResponse> {
+  const resp = await fetch(`${BACKEND_BASE_URL}/patients/consultations/answer`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Backend error ${resp.status}: ${text}`);
+  }
+  return resp.json();
+}
+
+export async function editAnswerBackend(payload: {
+  patient_id: string;
+  visit_id: string;
+  question_number: number;
+  new_answer: string;
+}): Promise<{ success: boolean; message: string }> {
+  const resp = await fetch(`${BACKEND_BASE_URL}/patients/consultations/answer`, {
+    method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });

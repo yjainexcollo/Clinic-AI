@@ -13,6 +13,7 @@ from clinicai.application.dto.patient_dto import (
     PreVisitSummaryRequest,
     RegisterPatientRequest,
 )
+from clinicai.application.dto.patient_dto import EditAnswerRequest
 from clinicai.application.use_cases.answer_intake import AnswerIntakeUseCase
 from clinicai.application.use_cases.generate_pre_visit_summary import GeneratePreVisitSummaryUseCase
 from clinicai.application.use_cases.register_patient import RegisterPatientUseCase
@@ -32,6 +33,8 @@ from ..schemas.patient import (
     PatientSummarySchema,
     PreVisitSummaryResponse,
     RegisterPatientResponse,
+    EditAnswerRequest as EditAnswerRequestSchema,
+    EditAnswerResponse as EditAnswerResponseSchema,
 )
 
 router = APIRouter(prefix="/patients", tags=["patients"])
@@ -245,7 +248,49 @@ async def answer_intake_question(
                 "details": {"exception": str(e) or repr(e), "type": e.__class__.__name__},
             },
         )
-    
+
+
+@router.patch(
+    "/consultations/answer",
+    response_model=EditAnswerResponseSchema,
+    status_code=status.HTTP_200_OK,
+)
+async def edit_intake_answer(
+    request: EditAnswerRequestSchema,
+    patient_repo: PatientRepositoryDep,
+    question_service: QuestionServiceDep,
+):
+    """Edit an existing answer by question number."""
+    try:
+        use_case = AnswerIntakeUseCase(patient_repo, question_service)
+        dto_request = EditAnswerRequest(
+            patient_id=request.patient_id,
+            visit_id=request.visit_id,
+            question_number=request.question_number,
+            new_answer=request.new_answer,
+        )
+        result = await use_case.edit(dto_request)
+        return EditAnswerResponseSchema(success=result.success, message=result.message)
+    except PatientNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "PATIENT_NOT_FOUND", "message": e.message, "details": e.details},
+        )
+    except VisitNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "VISIT_NOT_FOUND", "message": e.message, "details": e.details},
+        )
+    except Exception as e:
+        logger.error("Unhandled error in edit_intake_answer", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "INTERNAL_ERROR",
+                "message": "An unexpected error occurred",
+                "details": {"exception": str(e) or repr(e), "type": e.__class__.__name__},
+            },
+        )
 
 
 @router.post(

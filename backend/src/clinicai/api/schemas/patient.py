@@ -76,6 +76,20 @@ class AnswerIntakeResponse(BaseModel):
     message: str = Field(..., description="Status message")
 
 
+class EditAnswerRequest(BaseModel):
+    """Request schema for editing an existing answer."""
+
+    patient_id: str = Field(..., description="Patient ID")
+    visit_id: str = Field(..., description="Visit ID")
+    question_number: int = Field(..., ge=1, description="Question number to edit (1-based)")
+    new_answer: str = Field(..., min_length=1, max_length=1000, description="Replacement answer")
+
+
+class EditAnswerResponse(BaseModel):
+    success: bool = Field(...)
+    message: str = Field(...)
+
+
 class QuestionAnswerSchema(BaseModel):
     """Schema for question-answer pair."""
 

@@ -58,10 +58,26 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
       if (backendResp.patient_id) {
         // Persist travel history flag for later use if needed
         localStorage.setItem(`travel_${backendResp.patient_id}`, JSON.stringify(form.travelHistory));
+        // Persist visit id and patient name for intake
+        localStorage.setItem(`visit_${backendResp.patient_id}`, backendResp.visit_id);
+        localStorage.setItem(`patient_name_${backendResp.patient_id}`, form.name);
+        // Seed predefined symptoms as first question options for intake page
+        const predefined = [
+          "Fever",
+          "Cold Symptoms",
+          "Cough",
+          "Sore throat",
+          "Body aches",
+          "Fatigue",
+          "Hypertension",
+          "Diabetes"
+        ];
+        localStorage.setItem(`symptoms_${backendResp.patient_id}`, JSON.stringify(predefined));
 
         // Redirect including first question so it shows immediately
-        const q = encodeURIComponent(backendResp.first_question || "");
-        window.location.href = `/intake/${backendResp.patient_id}?q=${q}`;
+        const q = encodeURIComponent(backendResp.first_question || "What brings you in today? Please select symptoms from the list.");
+        const v = encodeURIComponent(backendResp.visit_id);
+        window.location.href = `/intake/${backendResp.patient_id}?q=${q}&v=${v}`;
       } else {
         setError("Failed to create patient");
       }

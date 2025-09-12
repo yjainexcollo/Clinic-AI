@@ -9,7 +9,7 @@ from ...domain.errors import (
     VisitNotFoundError,
 )
 from ...domain.value_objects.patient_id import PatientId
-from ..dto.patient_dto import AnswerIntakeRequest, AnswerIntakeResponse
+from ..dto.patient_dto import AnswerIntakeRequest, AnswerIntakeResponse, EditAnswerRequest, EditAnswerResponse
 from ..ports.repositories.patient_repo import PatientRepository
 from ..ports.services.question_service import QuestionService
 
@@ -124,3 +124,15 @@ class AnswerIntakeUseCase:
             max_questions=visit.intake_session.max_questions,
             message=message,
         )
+
+    async def edit(self, request: EditAnswerRequest) -> EditAnswerResponse:
+        patient_id = PatientId(request.patient_id)
+        patient = await self._patient_repository.find_by_id(patient_id)
+        if not patient:
+            raise PatientNotFoundError(request.patient_id)
+        visit = patient.get_visit_by_id(request.visit_id)
+        if not visit:
+            raise VisitNotFoundError(request.visit_id)
+        visit.update_answer(request.question_number, request.new_answer.strip())
+        await self._patient_repository.save(patient)
+        return EditAnswerResponse(success=True, message="Answer updated")

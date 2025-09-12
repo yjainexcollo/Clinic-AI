@@ -108,10 +108,12 @@ class OpenAIQuestionService(QuestionService):
             if not text.endswith("?"):
                 text = text.rstrip(".") + "?"
             if any(text.lower() == q.lower() for q in asked_questions):
-                return self._get_fallback_next_question(disease, current_count)
+                # Duplicate detection: do not fallback to canned questions
+                raise RuntimeError("Generated duplicate question")
             return text
-        except Exception:
-            return self._get_fallback_next_question(disease, current_count)
+        except Exception as e:
+            # Do not provide fallback questions; surface error to caller
+            raise e
 
     async def should_stop_asking(
         self,
@@ -145,42 +147,7 @@ class OpenAIQuestionService(QuestionService):
         except Exception:
             return current_count >= 5 or current_count >= max_count
 
-    # ----------------------
-    # Fallbacks
-    # ----------------------
-    def _get_fallback_first_question(self, disease: str) -> str:
-        fallback_questions = {
-            "Hypertension": "What symptoms are you experiencing related to your blood pressure?",
-            "Diabetes": "What symptoms are you experiencing related to your diabetes?",
-            "Chest Pain": "Can you describe the chest pain you're experiencing?",
-            "Fever": "What is your current temperature and how long have you had fever?",
-            "Cough": "Can you describe the type of cough you're experiencing?",
-            "Headache": "Can you describe the headache you're experiencing?",
-            "Back Pain": "Can you describe the back pain you're experiencing?",
-        }
-        return fallback_questions.get(
-            disease, f"What symptoms are you experiencing with your {disease.lower()}?"
-        )
-
-    def _get_fallback_next_question(self, disease: str, current_count: int) -> str:
-        fallback_questions = [
-            "How long have you been experiencing these symptoms?",
-            "On a scale of 1-10, how would you rate the severity?",
-            "Are there any activities that make the symptoms worse?",
-            "Have you tried any treatments or medications?",
-            "How is this affecting your daily activities?",
-            "Do you have any other medical conditions I should be aware of?",
-            "Are you allergic to any medications or other substances?",
-            "Are you experiencing any other associated symptoms?",
-            "Have you had similar symptoms before?",
-            "Does anyone in your immediate family have a history of similar health issues?",
-            "Is there anything that seems to trigger these symptoms?",
-            "Are the symptoms constant or do they come and go?",
-            "Have you noticed any patterns with these symptoms?",
-        ]
-        if current_count < len(fallback_questions):
-            return fallback_questions[current_count]
-        return "Is there anything else you'd like to tell us about your condition?"
+    # Note: Fallback question generation intentionally removed to avoid showing canned questions
 
     # ----------------------
     # Pre-visit summary

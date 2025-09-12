@@ -193,6 +193,13 @@ class Visit:
         """Get context for AI to generate next question."""
         return self.intake_session.get_question_context()
 
+    def update_answer(self, question_number: int, new_answer: str) -> None:
+        """Update an existing answer by question number."""
+        if not self.intake_session or question_number < 1 or question_number > len(self.intake_session.questions_asked):
+            raise ValueError("Invalid question number")
+        self.intake_session.questions_asked[question_number - 1].answer = new_answer
+        self.updated_at = datetime.utcnow()
+
     def get_intake_summary(self) -> Dict[str, Any]:
         """Get summary of intake session."""
         return {

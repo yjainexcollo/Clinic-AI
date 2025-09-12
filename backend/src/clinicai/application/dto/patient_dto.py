@@ -41,6 +41,24 @@ class AnswerIntakeRequest:
 
 
 @dataclass
+class EditAnswerRequest:
+    """Request DTO for editing an answer."""
+
+    patient_id: str
+    visit_id: str
+    question_number: int
+    new_answer: str
+
+
+@dataclass
+class EditAnswerResponse:
+    """Response DTO for editing an answer."""
+
+    success: bool
+    message: str
+
+
+@dataclass
 class AnswerIntakeResponse:
     """Response DTO for answering intake questions."""
 
