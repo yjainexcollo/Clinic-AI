@@ -55,8 +55,8 @@ class AnswerIntakeRequest(BaseModel):
     answer: str = Field(
         ..., min_length=1, max_length=1000, description="Answer to the question"
     )
-    attachment_image_path: Optional[str] = Field(
-        None, description="Optional path to a medication image if provided"
+    attachment_image_paths: Optional[List[str]] = Field(
+        None, description="Optional paths to medication images if provided"
     )
 
     @validator("answer")
@@ -74,6 +74,7 @@ class AnswerIntakeResponse(BaseModel):
     question_count: int = Field(..., description="Current question count")
     max_questions: int = Field(..., description="Maximum questions allowed")
     message: str = Field(..., description="Status message")
+    allows_image_upload: bool = Field(False, description="Whether the next question allows image upload")
 
 
 class EditAnswerRequest(BaseModel):
@@ -146,8 +147,8 @@ class ErrorResponse(BaseModel):
 class PreVisitSummaryRequest(BaseModel):
     """Request schema for generating pre-visit summary."""
 
-    patient_id: str = Field(..., pattern='^[A-Z0-9]+_\d+$', description="Patient ID")
-    visit_id: str = Field(..., pattern='^CONSULT-\d{8}-\d{3}$', description="Visit ID")
+    patient_id: str = Field(..., pattern=r'^[A-Z0-9]+_\d+$', description="Patient ID")
+    visit_id: str = Field(..., pattern=r'^CONSULT-\d{8}-\d{3}$', description="Visit ID")
 
 
 class PreVisitSummaryResponse(BaseModel):

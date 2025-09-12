@@ -6,7 +6,7 @@ Formatting-only changes; behavior preserved.
 from fastapi import APIRouter, HTTPException, status, UploadFile, File, Form, Request
 import logging
 import traceback
-from typing import Union, Optional
+from typing import Union, Optional, List
 
 from clinicai.application.dto.patient_dto import (
     AnswerIntakeRequest,
@@ -141,7 +141,7 @@ async def answer_intake_question(
     patient_id: Optional[str] = Form(None),
     visit_id: Optional[str] = Form(None),
     answer: Optional[str] = Form(None),
-    medication_image: Optional[UploadFile] = File(None),
+    medication_images: List[UploadFile] = File(None),
 ):
     """
     Answer an intake question and get the next question.
@@ -174,25 +174,28 @@ async def answer_intake_question(
                     },
                 )
 
-            image_path = None
-            if medication_image is not None:
+            image_paths = []
+            if medication_images:
                 import os
                 from uuid import uuid4
                 from clinicai.core.utils.file_utils import create_directory
 
                 uploads_dir = os.getenv("UPLOADS_DIR", "/tmp/clinicai_uploads")
                 create_directory(uploads_dir)
-                filename = f"med_{uuid4().hex}_{medication_image.filename}"
-                dest_path = os.path.join(uploads_dir, filename)
-                with open(dest_path, "wb") as f:
-                    f.write(await medication_image.read())
-                image_path = dest_path
+                
+                for medication_image in medication_images:
+                    if medication_image.filename:  # Skip empty files
+                        filename = f"med_{uuid4().hex}_{medication_image.filename}"
+                        dest_path = os.path.join(uploads_dir, filename)
+                        with open(dest_path, "wb") as f:
+                            f.write(await medication_image.read())
+                        image_paths.append(dest_path)
 
             dto_request = AnswerIntakeRequest(
                 patient_id=patient_id,
                 visit_id=visit_id,
                 answer=answer,
-                attachment_image_path=image_path,
+                attachment_image_paths=image_paths if image_paths else None,
             )
 
         # Execute use case
@@ -205,6 +208,7 @@ async def answer_intake_question(
             question_count=result.question_count,
             max_questions=result.max_questions,
             message=result.message,
+            allows_image_upload=result.allows_image_upload,
         )
     except PatientNotFoundError as e:
         raise HTTPException(

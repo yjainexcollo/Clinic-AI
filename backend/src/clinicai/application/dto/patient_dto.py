@@ -37,7 +37,7 @@ class AnswerIntakeRequest:
     patient_id: str
     visit_id: str
     answer: str
-    attachment_image_path: Optional[str] = None
+    attachment_image_paths: Optional[List[str]] = None
 
 
 @dataclass
@@ -67,6 +67,7 @@ class AnswerIntakeResponse:
     question_count: int
     max_questions: int
     message: str
+    allows_image_upload: bool = False
 
 
 @dataclass

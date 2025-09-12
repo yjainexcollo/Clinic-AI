@@ -94,37 +94,17 @@ class OpenAIQuestionService(QuestionService):
             "You are a medical intake assistant.\n\n"
             "TASK:\n"
             "- Ask ONE clear, symptom-focused, professional question.\n"
-            "- Never repeat a question already asked.\n"
-            "- Never ask again about a topic that the patient has ALREADY mentioned in previous answers. "
-            "For example, if the patient has already described frequent urination, weight loss, or fatigue, "
-            "do not ask about those again.\n"
-            "Adjust questions based on gender:\n"
-            " • Female: If relevant, ask about menstrual cycle, pregnancy, menopause, or gynecological history.\n"
-            " • Male: If relevant, ask about prostate health, sexual health, or male-specific issues.\n"
-            " • Other: Use neutral phrasing, avoid gender assumptions, and focus on universal health questions."
-            "- You must ensure the following mandatory areas are covered:\n"
-            " 1. Allergies (always ask)\n"
-            " 2. Current medicines or treatments taken for this problem (always ask)\n"
-            " 3. Past history of the same problem (always ask)\n"
-            " 4. Family history of similar health issues (ask only if the disease is serious or hereditary, "
-            "like asthma, chest pain, diabetes, hypertension, cancer)\n"
-            " 5. Impact on daily life (always ask, unless already answered)\n"
-            " 6. Key associated symptoms (always ask, unless already answered)\n"
-            " 7. Other essential intake details that a general physician would require.\n\n"
-            " 8. If any of these have not been asked yet, prioritize them first.\n"
-            "- IMPORTANT: When asking about past history:\n"
-            " • For chronic diseases (diabetes, hypertension, asthma, cancer), ask about diagnosis time or complications.\n"
-            " • For acute/recurrent problems (chest pain, fever, cough, headache), ask if similar episodes occurred before.\n"
-            "- Do NOT use the phrase 'previous episodes' for chronic diseases.\n\n"
-            "Focus on:\n"
-            " • Duration\n"
-            " • Severity\n"
-            " • Triggers\n"
-            " • Associated symptoms\n"
-            " • Impact on daily life\n"
-            " • Relevant past history\n"
-            "Once mandatory areas are covered, ask the next best follow-up based on what the patient shared.\n\n"
-            "Return only the question text."
+            "- Do NOT repeat questions already asked.\n"
+            "- Do NOT ask again about topics already present in the patient's answers.\n"
+            "- Mandatory coverage (prioritize if not covered yet):\n"
+            "  1) Allergies\n"
+            "  2) Current medicines/treatments for this problem\n"
+            "  3) Past history of the same problem\n"
+            "  4) Family history (only if symptom suggests hereditary/serious concern: asthma, chest pain, diabetes, hypertension, cancer)\n"
+            "  5) Other essential intake details for a general physician\n"
+            "- Focus areas: duration, severity, triggers, associated symptoms, impact on daily life, relevant past history.\n"
+            "- If asking about current medicines/treatments, append this EXACT hint at the end to cue the client UI to show camera/file picker: [You can upload a clear photo of the medication/ prescription label.]\n"
+            "Return ONLY the question text (include the bracketed hint ONLY for the meds/treatments question)."
         )
         try:
             text = await self._chat_completion(
@@ -225,62 +205,110 @@ Patient Information:
 Intake Responses:
 {self._format_intake_answers(intake_answers)}
 
-STRICT REQUIREMENTS:
-- The summary MUST be in MARKDOWN BULLET POINTS only (no paragraphs).
-- Use section headings with bullet lists under each. Every content line must start with "- " or "* ".
-- REMOVE duplicate/repeated information.
-- LENGTH must be 180 to 220 words total.
-- Clinical, neutral tone; do not diagnose.
+Generate a SOAP-compatible clinical summary with the following structure:
 
-Include these sections (with bullet points under each):
-- Chief Complaint
-- History of Present Illness (duration, severity, triggers, associated symptoms, explicit impact on daily life)
-- Review of Systems (list all symptoms mentioned)
-- Past Medical History (prior episodes or complications)
-- Medications (drug name, dosage, frequency, and how long taken)
-- Allergies (details)
-- Family History (affected relatives and their disease)
-- Social History
-- Key Clinical Points (3–5 bullets)
+## PRE-VISIT SUMMARY
 
-OUTPUT FORMAT (JSON fenced exactly):
-```json
-{{
-  "summary": "<markdown with headings and bullet points only>",
-  "structured_data": {{
-    "chief_complaint": "...",
-    "key_findings": ["..."]
-  }}
-}}
-```
-"""
+### Chief Complaint
+[Primary reason for visit]
+
+### History of Present Illness
+[Description of symptoms, duration, severity, factors]
+
+### Review of Systems
+[Systematic review based on answers]
+
+### Past Medical History
+[Chronic conditions, prior illnesses]
+
+### Medications
+[Current treatments]
+
+### Allergies
+[Reported allergies]
+
+### Social History
+[Relevant social factors]
+
+### Assessment & Plan
+[Preliminary assessment and recommended steps]
+
+### Key Clinical Points
+- [3-5 most important findings]
+- [Any red flags]
+- [Areas for focused exam]
+
+Return JSON with keys: "summary" (markdown text) and "structured_data" (key-value pairs).
+""".strip()
+
         try:
-            response = await self._chat_completion(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a clinical assistant generating pre-visit summaries. Focus on accuracy, completeness, and clinical relevance. Do not make diagnoses."
-                    },
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=min(2000, self._settings.openai.max_tokens),
-                temperature=0.3  # Lower temperature for more consistent medical summaries
-            )
-            # Parse the response and return structured data
-            return self._parse_summary_response(response)
-        except Exception as e:
-            # Fallback to basic summary
+            # Collect attached images (e.g., medication photos)
+            image_paths: List[str] = []
+            if isinstance(intake_answers, dict):
+                for qa in intake_answers.get("questions_asked", []) or []:
+                    img = qa.get("attachment_image_path")
+                    if img:
+                        image_paths.append(img)
+
+            if image_paths:
+                # Vision-style message: text + image_url parts (data URLs)
+                def _encode_image_to_data_url(image_path: str) -> str:
+                    try:
+                        mime_type, _ = mimetypes.guess_type(image_path)
+                        if not mime_type:
+                            mime_type = "image/jpeg"
+                        with open(image_path, "rb") as f:
+                            b64 = base64.b64encode(f.read()).decode("utf-8")
+                        return f"data:{mime_type};base64,{b64}"
+                    except Exception:
+                        return ""
+
+                content_parts: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
+                for p in image_paths[:4]:
+                    data_url = _encode_image_to_data_url(p)
+                    if data_url:
+                        content_parts.append({"type": "image_url", "image_url": {"url": data_url}})
+
+                def _run_vision():
+                    resp = self._client.chat.completions.create(
+                        model=self._settings.openai.model,
+                        messages=[
+                            {"role": "system", "content": "You are a clinical assistant generating pre-visit summaries. Do not make diagnoses."},
+                            {"role": "user", "content": content_parts},
+                        ],
+                        max_tokens=min(2000, self._settings.openai.max_tokens),
+                        temperature=0.3,
+                    )
+                    return resp.choices[0].message.content.strip()
+
+                response = await asyncio.to_thread(_run_vision)
+                return self._parse_summary_response(response)
+            else:
+                response = await self._chat_completion(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are a clinical assistant generating pre-visit summaries. Do not make diagnoses.",
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                    max_tokens=min(2000, self._settings.openai.max_tokens),
+                    temperature=0.3,
+                )
+                return self._parse_summary_response(response)
+        except Exception:
             return self._generate_fallback_summary(patient_data, intake_answers)
 
     def _format_intake_answers(self, intake_answers: Dict[str, Any]) -> str:
         """Format intake answers for prompt."""
-        if isinstance(intake_answers, dict) and 'questions_asked' in intake_answers:
-            # Handle structured intake data
-            formatted = []
-            for qa in intake_answers['questions_asked']:
-                formatted.append(f"Q: {qa.get('question', 'N/A')}")
-                formatted.append(f"A: {qa.get('answer', 'N/A')}")
-                formatted.append("")
+        if isinstance(intake_answers, dict) and "questions_asked" in intake_answers:
+            formatted: List[str] = []
+            for qa in intake_answers.get("questions_asked", []):
+                q = qa.get("question", "N/A")
+                a = qa.get("answer", "N/A")
+                img = qa.get("attachment_image_path")
+                img_note = " (image attached)" if img else ""
+                formatted.append(f"Q: {q}\nA: {a}{img_note}\n")
             return "\n".join(formatted)
         else:
             # Handle simple key-value answers
@@ -325,3 +353,13 @@ OUTPUT FORMAT (JSON fenced exactly):
                 "key_findings": ["See intake responses"]
             }
         }
+
+    def is_medication_question(self, question: str) -> bool:
+        """Check if a question is medication-related and should allow image upload."""
+        medication_keywords = [
+            "medication", "medicine", "prescription", "drug", "pill", "tablet", 
+            "capsule", "injection", "dose", "dosage", "treatment", "therapy",
+            "current medicines", "taking any", "prescribed", "pharmacy"
+        ]
+        question_lower = question.lower()
+        return any(keyword in question_lower for keyword in medication_keywords) or "[You can upload" in question

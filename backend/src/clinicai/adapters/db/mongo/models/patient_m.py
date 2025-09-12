@@ -18,7 +18,7 @@ class QuestionAnswerMongo(Document):
     answer: str = Field(..., description="Answer text")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     question_number: int = Field(..., description="Question number in sequence")
-    attachment_image_path: Optional[str] = Field(None, description="Local path to attached image, if any")
+    attachment_image_paths: Optional[List[str]] = Field(None, description="Local paths to attached images, if any")
 
 
 class IntakeSessionMongo(Document):
