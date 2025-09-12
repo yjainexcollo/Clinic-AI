@@ -89,7 +89,7 @@ class OpenAIQuestionService(QuestionService):
             "  4) Family history (only if symptom suggests hereditary/serious concern: asthma, chest pain, diabetes, hypertension, cancer)\n"
             "  5) Other essential intake details for a general physician\n"
             "- Focus areas: duration, severity, triggers, associated symptoms, impact on daily life, relevant past history.\n"
-            "- If asking about current medicines/treatments, append this EXACT hint at the end to cue the client UI to show camera/file picker: [You can upload a clear photo of the medication/ prescription label.]\n"
+            "- If asking about current medicines/treatments, append this EXACT hint at the end to cue the client UI to show camera/file picker: [You can upload clear photos of the medication/prescription labels.]\n"
             "Return ONLY the question text (include the bracketed hint ONLY for the meds/treatments question)."
         )
         try:
@@ -242,9 +242,9 @@ Return JSON with keys: "summary" (markdown text) and "structured_data" (key-valu
             image_paths: List[str] = []
             if isinstance(intake_answers, dict):
                 for qa in intake_answers.get("questions_asked", []) or []:
-                    img = qa.get("attachment_image_path")
-                    if img:
-                        image_paths.append(img)
+                    imgs = qa.get("attachment_image_paths")
+                    if imgs:
+                        image_paths.extend(imgs)
 
             if image_paths:
                 # Vision-style message: text + image_url parts (data URLs)
@@ -305,8 +305,8 @@ Return JSON with keys: "summary" (markdown text) and "structured_data" (key-valu
             for qa in intake_answers.get("questions_asked", []):
                 q = qa.get("question", "N/A")
                 a = qa.get("answer", "N/A")
-                img = qa.get("attachment_image_path")
-                img_note = " (image attached)" if img else ""
+                imgs = qa.get("attachment_image_paths")
+                img_note = f" ({len(imgs)} images attached)" if imgs else ""
                 formatted.append(f"Q: {q}\nA: {a}{img_note}\n")
             return "\n".join(formatted)
         return "\n".join([f"{k}: {v}" for k, v in intake_answers.items()])
@@ -346,3 +346,13 @@ Return JSON with keys: "summary" (markdown text) and "structured_data" (key-valu
                 "recommendations": ["Complete clinical examination"],
             },
         }
+
+    def is_medication_question(self, question: str) -> bool:
+        """Check if a question is medication-related and should allow image upload."""
+        medication_keywords = [
+            "medication", "medicine", "prescription", "drug", "pill", "tablet", 
+            "capsule", "injection", "dose", "dosage", "treatment", "therapy",
+            "current medicines", "taking any", "prescribed", "pharmacy"
+        ]
+        question_lower = question.lower()
+        return any(keyword in question_lower for keyword in medication_keywords) or "[You can upload" in question

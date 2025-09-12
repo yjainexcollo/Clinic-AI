@@ -65,7 +65,7 @@ class AnswerIntakeUseCase:
             )
 
         # Add the question and answer
-        visit.add_question_answer(current_question, request.answer, attachment_image_path=request.attachment_image_path)
+        visit.add_question_answer(current_question, request.answer, attachment_image_paths=request.attachment_image_paths)
         # If this is the first answer, set the visit.symptom from patient's response
         if visit.symptom == "" and visit.intake_session.current_question_count == 1:
             visit.symptom = request.answer.strip()
@@ -117,10 +117,16 @@ class AnswerIntakeUseCase:
         # Raise domain events
         # Note: In a real implementation, you'd have an event bus
 
+        # Check if next question allows image upload
+        allows_image_upload = False
+        if next_question:
+            allows_image_upload = self._question_service.is_medication_question(next_question)
+
         return AnswerIntakeResponse(
             next_question=next_question,
             is_complete=is_complete,
             question_count=visit.intake_session.current_question_count,
             max_questions=visit.intake_session.max_questions,
             message=message,
+            allows_image_upload=allows_image_upload,
         )
