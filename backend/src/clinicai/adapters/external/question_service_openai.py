@@ -87,7 +87,7 @@ class OpenAIQuestionService(QuestionService):
         asked_questions: List[str],
         current_count: int,
         max_count: int,
-        recently_travelled: bool,
+        recently_travelled: bool = False,
     ) -> str:
         """Generate the next question based on context."""
         import re
@@ -202,24 +202,20 @@ class OpenAIQuestionService(QuestionService):
             text = text.replace("\n", " ").strip()
             if not text.endswith("?"):
                 text = text.rstrip(".") + "?"
-            if _is_duplicate(text, asked_questions):
-                return self._get_fallback_next_question(disease, current_count, asked_questions)
-            # Avoid asking same category twice (e.g., triggers phrased differently)
-            cat = _classify_question(text)
-            if cat in _seen_categories(asked_questions):
-                return self._get_fallback_next_question(disease, current_count, asked_questions)
+            # Optionally, caller can decide how to handle duplicates/categories
+            # We just return the model output without fallback questions.
             return text
         except Exception:
-            return self._get_fallback_next_question(disease, current_count, asked_questions)
+            # Propagate errors to let upstream handler respond appropriately
+            raise
         
     async def should_stop_asking(
         self,
         disease: str,
         previous_answers: List[str],
-        asked_questions: List[str],
         current_count: int,
         max_count: int,
-        recently_travelled: bool,
+        recently_travelled: bool = False,
     ) -> bool:
         """Determine if sufficient information has been collected, allowing early stop when core coverage is met."""
         # Always stop at the hard cap
@@ -235,30 +231,7 @@ class OpenAIQuestionService(QuestionService):
         def _norm(t: str) -> str:
             return re.sub(r"\s+", " ", (t or "").lower().strip())
 
-        def _classify(text: str) -> str:
-            t = _norm(text)
-            buckets = [
-                ("duration", ["how long", "since when", "duration"]),
-                ("triggers", ["trigger", "worsen", "aggrav", "what makes", "factors that make"]),
-                ("pain", ["pain", "scale", "intensity", "sharp", "dull", "burning", "throbbing", "radiat"]),
-                ("travel", ["travel", "endemic", "abroad", "sick contact"]),
-                ("allergies", ["allerg", "hives", "rash", "swelling", "wheeze"]),
-                ("medications", ["medication", "medicine", "drug", "dose", "frequency", "otc", "remed"]),
-                ("pmh", ["past medical", "chronic", "history of", "surgery", "hospitalization"]),
-                ("family", ["family", "mother", "father", "heredit", "genetic"]),
-                ("social", ["smok", "alcohol", "diet", "exercise", "occupation", "work", "exposure"]),
-                ("ros", ["review of systems", "fever", "wheeze", "palpitation", "nausea", "headache"]),
-                ("gyn", ["menstru", "pregnan", "contracept", "obstet", "gyneco"]),
-                ("functional", ["daily activit", "assistive", "caregiver", "independent", "functional"]),
-            ]
-            for name, keys in buckets:
-                if any(k in t for k in keys):
-                    return name
-            return "other"
-
-        covered = {_classify(q) for q in (asked_questions or [])}
-
-        # Determine conditional relevance signals
+        # Determine conditional relevance signals (from symptom and recent answers)
         symptom_text = _norm(disease)
         last_answers = _norm(" ".join(previous_answers[-3:]))
         pain_relevant = ("pain" in symptom_text) or ("pain" in last_answers)
@@ -274,86 +247,81 @@ class OpenAIQuestionService(QuestionService):
         ]
         chronic_relevant = any(k in symptom_text or k in last_answers for k in chronic_keywords)
 
-        # Build the required minimal coverage set
-        required: set[str] = {"duration", "triggers", "medications"}
-        if pain_relevant:
-            required.add("pain")
-        if travel_relevant:
-            required.add("travel")
-        if allergy_relevant:
-            required.add("allergies")
-        if chronic_relevant:
-            # For chronic relevance, ensure PMH and at least one of family/social
-            required.add("pmh")
-            # We'll check family/social as a pair condition below
-
-        # Check required coverage
-        has_required = required.issubset(covered)
-        if chronic_relevant:
-            has_family_or_social = ("family" in covered) or ("social" in covered)
-            has_required = has_required and has_family_or_social
-
-        # Early stop if required coverage achieved
-        if has_required:
-            return True
-
         # Otherwise continue until near cap
         return current_count >= (max_count - 1)
 
-    def _get_fallback_first_question(self, disease: str) -> str:
-        """Fallback first question if OpenAI fails - always returns the same question."""
-        return "Why have you come in today? What is the main concern you want help with?"
+    async def assess_completion_percent(
+        self,
+        disease: str,
+        previous_answers: List[str],
+        asked_questions: List[str],
+        current_count: int,
+        max_count: int,
+    ) -> int:
+        """Estimate completion percent based on covered categories and progress.
 
-    def _get_fallback_next_question(self, disease: str, current_count: int, asked_questions: List[str]) -> str:
-        """Fallback next question selector that avoids duplicate categories."""
-        def _normalize(text: str) -> str:
-            t = (text or "").lower().strip()
-            return " ".join(t.split())
+        Heuristic: compute ratio of covered key categories and scale with progress.
+        """
+        try:
+            def normalize(text: str) -> str:
+                return (text or "").lower().strip()
 
-        def _classify(text: str) -> str:
-            t = _normalize(text)
-            if any(k in t for k in ["how long", "since when", "duration"]):
-                return "duration"
-            if any(k in t for k in ["trigger", "worse", "aggrav", "what makes", "factors"]):
-                return "triggers"
-            if any(k in t for k in ["medicat", "treatment", "drug", "remed"]):
-                return "medications"
-            if any(k in t for k in ["daily activit", "affecting your daily"]):
-                return "functional"
-            if any(k in t for k in ["similar symptoms before", "previously", "before"]):
-                return "pmh"
-            if any(k in t for k in ["associated symptoms"]):
-                return "ros"
-            return "other"
+            def classify(q: str) -> str:
+                t = normalize(q)
+                if any(k in t for k in ["how long", "since when", "duration"]):
+                    return "duration"
+                if any(k in t for k in ["trigger", "worse", "aggrav", "what makes", "factors"]):
+                    return "triggers"
+                if any(k in t for k in ["medicat", "treatment", "drug", "remed", "dose", "frequency"]):
+                    return "medications"
+                if "pain" in t or any(k in t for k in ["scale", "intensity", "sharp", "dull", "burning", "throbbing", "radiat"]):
+                    return "pain"
+                if any(k in t for k in ["travel", "endemic", "abroad", "sick contact"]):
+                    return "travel"
+                if any(k in t for k in ["allerg", "hives", "rash", "swelling", "wheeze"]):
+                    return "allergies"
+                if any(k in t for k in ["past medical", "history of", "surgery", "hospitalization", "chronic"]):
+                    return "pmh"
+                if "family" in t:
+                    return "family"
+                if any(k in t for k in ["smok", "alcohol", "diet", "exercise", "occupation", "work", "exposure"]):
+                    return "social"
+                return "other"
 
-        seen = {_classify(q) for q in (asked_questions or [])}
-        asked_set = { _normalize(q) for q in (asked_questions or []) }
+            covered = {classify(q) for q in (asked_questions or [])}
+            key_set = {"duration", "triggers", "medications", "pain", "travel", "allergies", "pmh", "family", "social"}
+            covered_keys = len(covered & key_set)
+            coverage_ratio = covered_keys / max(len(key_set), 1)
 
-        fallback_pool = [
-            "How long have you been experiencing these symptoms?",              # duration
-            "On a scale of 1-10, how would you rate the severity?",            # severity
-            "Have you tried any treatments or medications?",                   # medications
-            "How is this affecting your daily activities?",                    # functional
-            "Are you experiencing any other associated symptoms?",             # ros
-            "What time of day do the symptoms typically occur?",               # pattern
-            "Have you had similar symptoms before?",                           # pmh
-            "How would you describe the quality of the symptoms?",             # quality
-            "Are the symptoms constant or do they come and go?",               # pattern/temporal
+            progress_ratio = 0.0
+            if max_count > 0:
+                progress_ratio = min(max(current_count / max_count, 0.0), 1.0)
+
+            # Weight coverage more than raw progress
+            score = (0.7 * coverage_ratio + 0.3 * progress_ratio) * 100.0
+            score = max(0, min(int(round(score)), 100))
+            return score
+        except Exception:
+            # Safe fallback based on progress only
+            if max_count <= 0:
+                return 0
+            return max(0, min(int(round((current_count / max_count) * 100.0)), 100))
+
+    def is_medication_question(self, question: str) -> bool:
+        """Detect if a question pertains to medications, enabling image upload."""
+        text = (question or "").lower()
+        keywords = [
+            "medication",
+            "medicine",
+            "drug",
+            "dose",
+            "frequency",
+            "prescription",
+            "remedy",
+            "treatment",
         ]
+        return any(k in text for k in keywords)
 
-        for q in fallback_pool:
-            if _classify(q) not in seen and _normalize(q) not in asked_set:
-                return q
-        # Offer a single catch-all only if not already asked
-        catch_all = "Have we missed anything important about your condition or any concerns you want us to address?"
-        if _normalize(catch_all) not in asked_set:
-            return catch_all
-        # If catch-all already asked, select the first unasked fallback regardless of category
-        for q in fallback_pool:
-            if _normalize(q) not in asked_set:
-                return q
-        # Nothing left that's new; return the catch-all (frontend should treat as terminal)
-        return catch_all
 
     async def generate_pre_visit_summary(
         self, 

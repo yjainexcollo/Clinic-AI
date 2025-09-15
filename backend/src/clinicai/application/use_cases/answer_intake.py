@@ -7,7 +7,12 @@ from ...domain.errors import (
     VisitNotFoundError,
 )
 from ...domain.value_objects.patient_id import PatientId
-from ..dto.patient_dto import AnswerIntakeRequest, AnswerIntakeResponse
+from ..dto.patient_dto import (
+    AnswerIntakeRequest,
+    AnswerIntakeResponse,
+    EditAnswerRequest,
+    EditAnswerResponse,
+)
 from ..ports.repositories.patient_repo import PatientRepository
 from ..ports.services.question_service import QuestionService
 
@@ -139,3 +144,30 @@ class AnswerIntakeUseCase:
             message=message,
             allows_image_upload=allows_image_upload,
         )
+
+    async def edit(self, request: EditAnswerRequest) -> EditAnswerResponse:
+        """Edit an existing answer by question number (1-based)."""
+        # Find patient
+        patient_id = PatientId(request.patient_id)
+        patient = await self._patient_repository.find_by_id(patient_id)
+        if not patient:
+            raise PatientNotFoundError(request.patient_id)
+
+        # Find visit
+        visit = patient.get_visit_by_id(request.visit_id)
+        if not visit:
+            raise VisitNotFoundError(request.visit_id)
+
+        # Validate question number
+        idx = request.question_number - 1
+        if idx < 0 or idx >= len(visit.intake_session.questions_asked):
+            raise ValueError("Invalid question_number")
+
+        # Apply edit
+        qa = visit.intake_session.questions_asked[idx]
+        qa.answer = request.new_answer.strip()
+
+        # Persist changes
+        await self._patient_repository.save(patient)
+
+        return EditAnswerResponse(success=True, message="Answer updated successfully")

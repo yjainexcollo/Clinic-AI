@@ -58,8 +58,12 @@ async def transcribe_audio(
     temp_file_path = None
     
     try:
-        # Validate file type
-        if not audio_file.content_type or not audio_file.content_type.startswith('audio/'):
+        # Validate file type (allow common audio types and mpeg containers)
+        content_type = audio_file.content_type or ""
+        is_audio_like = content_type.startswith("audio/")
+        is_mpeg_container = content_type in ("video/mpeg",)
+        is_generic_stream = content_type in ("application/octet-stream",)
+        if not (is_audio_like or is_mpeg_container or is_generic_stream):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail={

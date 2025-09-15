@@ -3,7 +3,7 @@
 Formatting-only changes; behavior preserved.
 """
 
-from fastapi import APIRouter, HTTPException, status, UploadFile, File, Form, Request
+from fastapi import APIRouter, HTTPException, status, UploadFile, Request
 import logging
 import traceback
 from typing import Union, Optional, List
@@ -137,11 +137,6 @@ async def answer_intake_question(
     request: Request,
     patient_repo: PatientRepositoryDep,
     question_service: QuestionServiceDep,
-    # Optional multipart fields (used only if content-type is multipart/form-data)
-    patient_id: Optional[str] = Form(None),
-    visit_id: Optional[str] = Form(None),
-    answer: Optional[str] = Form(None),
-    medication_images: List[UploadFile] = File(None),
 ):
     """
     Answer an intake question and get the next question.
@@ -162,9 +157,13 @@ async def answer_intake_question(
                 visit_id=body["visit_id"],
                 answer=body["answer"],
             )
-        else:
-            # Multipart path
-            if not (patient_id and visit_id and answer):
+        elif content_type.startswith("multipart/form-data"):
+            form = await request.form()
+            form_patient_id = (form.get("patient_id") or "").strip()
+            form_visit_id = (form.get("visit_id") or "").strip()
+            form_answer = (form.get("answer") or "").strip()
+
+            if not (form_patient_id and form_visit_id and form_answer):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail={
@@ -174,40 +173,38 @@ async def answer_intake_question(
                     },
                 )
 
-            image_paths = []
-            if medication_images:
+            image_paths: List[str] = []
+            files = form.getlist("medication_images")
+            if files:
                 import os
                 from uuid import uuid4
                 from clinicai.core.utils.file_utils import create_directory
 
                 uploads_dir = os.getenv("UPLOADS_DIR", "/tmp/clinicai_uploads")
                 create_directory(uploads_dir)
-                
-                for medication_image in medication_images:
-                    if medication_image.filename:  # Skip empty files
-                        filename = f"med_{uuid4().hex}_{medication_image.filename}"
+
+                for file in files:
+                    if isinstance(file, UploadFile) and file.filename:
+                        filename = f"med_{uuid4().hex}_{file.filename}"
                         dest_path = os.path.join(uploads_dir, filename)
                         with open(dest_path, "wb") as f:
-                            f.write(await medication_image.read())
+                            f.write(await file.read())
                         image_paths.append(dest_path)
 
-                # OCR extraction step (simple placeholder using pytesseract if installed)
-                try:
-                    import pytesseract  # type: ignore
-                    from PIL import Image  # type: ignore
-                    ocr_text = pytesseract.image_to_string(Image.open(dest_path))
-                    # Attach OCR text back into the answer as a suffix so downstream can use
-                    if answer:
-                        answer = f"{answer}\n[OCR]: {ocr_text.strip()}"
-                except Exception:
-                    # If OCR not available, continue without blocking
-                    pass
-
             dto_request = AnswerIntakeRequest(
-                patient_id=patient_id,
-                visit_id=visit_id,
-                answer=answer,
+                patient_id=form_patient_id,
+                visit_id=form_visit_id,
+                answer=form_answer,
                 attachment_image_paths=image_paths if image_paths else None,
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail={
+                    "error": "UNSUPPORTED_MEDIA_TYPE",
+                    "message": "Content-Type must be application/json or multipart/form-data",
+                    "details": {"content_type": content_type},
+                },
             )
 
         # Execute use case
