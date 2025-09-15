@@ -3,7 +3,7 @@
 Formatting-only changes; behavior preserved.
 """
 
-from fastapi import APIRouter, HTTPException, status, UploadFile, Request
+from fastapi import APIRouter, HTTPException, status, UploadFile, Request, Form, File
 import logging
 import traceback
 from typing import Union, Optional, List
@@ -29,6 +29,7 @@ from clinicai.domain.errors import (
 
 from ..deps import PatientRepositoryDep, QuestionServiceDep
 from ..schemas.patient import AnswerIntakeResponse, ErrorResponse
+from ..schemas.patient import AnswerIntakeRequest as AnswerIntakeRequestSchema
 from ..schemas.patient import (
     PatientSummarySchema,
     PreVisitSummaryResponse,
@@ -137,6 +138,11 @@ async def answer_intake_question(
     request: Request,
     patient_repo: PatientRepositoryDep,
     question_service: QuestionServiceDep,
+    # Optional multipart fields (to enable Swagger file upload UI)
+    form_patient_id: Optional[str] = Form(None),
+    form_visit_id: Optional[str] = Form(None),
+    form_answer: Optional[str] = Form(None),
+    medication_images: Optional[List[UploadFile]] = File(None),
 ):
     """
     Answer an intake question and get the next question.
@@ -153,15 +159,17 @@ async def answer_intake_question(
         if content_type.startswith("application/json"):
             body = await request.json()
             dto_request = AnswerIntakeRequest(
-                patient_id=body["patient_id"],
-                visit_id=body["visit_id"],
-                answer=body["answer"],
+                patient_id=(body.get("patient_id", "").strip()),
+                visit_id=(body.get("visit_id", "").strip()),
+                answer=(body.get("answer", "").strip()),
             )
         elif content_type.startswith("multipart/form-data"):
-            form = await request.form()
-            form_patient_id = (form.get("patient_id") or "").strip()
-            form_visit_id = (form.get("visit_id") or "").strip()
-            form_answer = (form.get("answer") or "").strip()
+            # Prefer explicitly bound form fields first; fallback to reading the form
+            if form_patient_id is None or form_visit_id is None or form_answer is None:
+                form = await request.form()
+                form_patient_id = form_patient_id or (form.get("patient_id") or "").strip()
+                form_visit_id = form_visit_id or (form.get("visit_id") or "").strip()
+                form_answer = form_answer or (form.get("answer") or "").strip()
 
             if not (form_patient_id and form_visit_id and form_answer):
                 raise HTTPException(
@@ -174,7 +182,14 @@ async def answer_intake_question(
                 )
 
             image_paths: List[str] = []
-            files = form.getlist("medication_images")
+            files: List[UploadFile] = medication_images or []
+            if not files:
+                # Fallback to reading via form in case Swagger binds differently
+                try:
+                    form = await request.form()
+                    files = [f for f in form.getlist("medication_images") if isinstance(f, UploadFile)]
+                except Exception:
+                    files = []
             if files:
                 import os
                 from uuid import uuid4
@@ -191,11 +206,14 @@ async def answer_intake_question(
                             f.write(await file.read())
                         image_paths.append(dest_path)
 
+            # Pass images through the answer payload via a marker for downstream usage
+            # We keep DTO shape unchanged; images stored server-side at image_paths
+            if image_paths:
+                form_answer = f"{form_answer}\n[IMAGES]: {', '.join(image_paths)}"
             dto_request = AnswerIntakeRequest(
                 patient_id=form_patient_id,
                 visit_id=form_visit_id,
                 answer=form_answer,
-                attachment_image_paths=image_paths if image_paths else None,
             )
         else:
             raise HTTPException(

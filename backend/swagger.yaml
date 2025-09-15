@@ -320,6 +320,13 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/AnswerIntakeRequest"
+            examples:
+              json_example:
+                summary: JSON body example
+                value:
+                  patient_id: "JOHNDOE_9123456789"
+                  visit_id: "CONSULT-20250103-001"
+                  answer: "I have been experiencing high blood pressure for 3 months"
           multipart/form-data:
             schema:
               type: object
@@ -347,6 +354,11 @@ paths:
                     type: string
                     format: binary
                   description: Medication or prescription photos (optional)
+            encoding:
+              medication_images:
+                style: form
+                explode: true
+                contentType: image/*
             examples:
               first_answer:
                 summary: First Answer
@@ -1101,12 +1113,6 @@ components:
           maxLength: 1000
           description: Patient's answer to the question
           example: "I have been experiencing high blood pressure for 3 months"
-        attachment_image_paths:
-          type: array
-          items:
-            type: string
-          description: Optional paths to medication images if provided
-          example: ["/tmp/med_12345.jpg"]
 
     AnswerIntakeResponse:
       type: object

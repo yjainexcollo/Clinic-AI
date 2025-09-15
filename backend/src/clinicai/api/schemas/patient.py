@@ -55,9 +55,6 @@ class AnswerIntakeRequest(BaseModel):
     answer: str = Field(
         ..., min_length=1, max_length=1000, description="Answer to the question"
     )
-    attachment_image_paths: Optional[List[str]] = Field(
-        None, description="Optional paths to medication images if provided"
-    )
 
     @validator("answer")
     def validate_answer(cls, v):
