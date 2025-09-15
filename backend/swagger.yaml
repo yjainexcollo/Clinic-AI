@@ -97,6 +97,9 @@ paths:
                       answer_intake:
                         type: string
                         example: "POST /patients/consultations/answer"
+                      edit_answer:
+                        type: string
+                        example: "PATCH /patients/consultations/answer"
                       pre_visit_summary:
                         type: string
                         example: "POST /patients/summary/previsit"
@@ -221,21 +224,24 @@ paths:
                   name: "John Doe"
                   mobile: "9123456789"
                   age: 35
-                  symptom: "Chest pain"
+                  gender: "male"
+                  recently_travelled: false
               diabetes_patient:
                 summary: Diabetes Patient
                 value:
                   name: "Jane Smith"
                   mobile: "9876543210"
                   age: 45
-                  symptom: "High blood sugar"
+                  gender: "female"
+                  recently_travelled: true
               chest_pain_patient:
                 summary: Chest Pain Patient
                 value:
                   name: "Bob Johnson"
                   mobile: "5551234567"
                   age: 60
-                  symptom: "Chest pain"
+                  gender: "male"
+                  recently_travelled: false
       responses:
         "201":
           description: Patient registered successfully
@@ -335,11 +341,12 @@ paths:
                 answer:
                   type: string
                   description: Answer text
-                medication_image:
-                  type: string
-                  format: binary
-                  nullable: true
-                  description: Medication or prescription photo (optional)
+                medication_images:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  description: Medication or prescription photos (optional)
             examples:
               first_answer:
                 summary: First Answer
@@ -368,6 +375,8 @@ paths:
                     is_complete: false
                     question_count: 1
                     max_questions: 8
+                    completion_percent: 25
+                    allows_image_upload: false
                     message: "Question 2 of 8"
                 intake_complete:
                   summary: Intake Completed
@@ -376,6 +385,8 @@ paths:
                     is_complete: true
                     question_count: 5
                     max_questions: 8
+                    completion_percent: 100
+                    allows_image_upload: false
                     message: "Intake completed successfully. Ready for next step."
         "400":
           description: Validation error
@@ -447,7 +458,58 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
-  
+    patch:
+      tags:
+        - patients
+      summary: Edit an intake answer
+      description: |
+        Edit an existing answer by question number.
+
+        This endpoint:
+        1. Validates the patient and visit exist
+        2. Finds the question by number
+        3. Updates the answer
+        4. Returns success status
+      operationId: edit_intake_answer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditAnswerRequest"
+            examples:
+              edit_answer:
+                summary: Edit Answer Request
+                value:
+                  patient_id: "JOHNDOE_9123456789"
+                  visit_id: "CONSULT-20250103-001"
+                  question_number: 2
+                  new_answer: "I have been experiencing headaches for 2 weeks, not 3 months"
+      responses:
+        "200":
+          description: Answer edited successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EditAnswerResponse"
+              examples:
+                success_response:
+                  summary: Successful Edit
+                  value:
+                    success: true
+                    message: "Answer updated successfully"
+        "404":
+          description: Patient or visit not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   /patients/summary/previsit:
     post:
@@ -957,7 +1019,7 @@ components:
         - name
         - mobile
         - age
-        - symptom
+        - gender
       properties:
         name:
           type: string
@@ -978,10 +1040,15 @@ components:
           maximum: 120
           description: Patient's age in years
           example: 35
-        symptom:
+        gender:
           type: string
-          description: Primary symptom (free-text)
-          example: "Chest pain"
+          description: Patient's gender
+          example: "male"
+        recently_travelled:
+          type: boolean
+          default: false
+          description: Has the patient travelled recently
+          example: false
 
     RegisterPatientResponse:
       type: object
@@ -1033,6 +1100,12 @@ components:
           maxLength: 1000
           description: Patient's answer to the question
           example: "I have been experiencing high blood pressure for 3 months"
+        attachment_image_paths:
+          type: array
+          items:
+            type: string
+          description: Optional paths to medication images if provided
+          example: ["/tmp/med_12345.jpg"]
 
     AnswerIntakeResponse:
       type: object
@@ -1041,7 +1114,9 @@ components:
         - is_complete
         - question_count
         - max_questions
+        - completion_percent
         - message
+        - allows_image_upload
       properties:
         next_question:
           type: string
@@ -1062,10 +1137,65 @@ components:
           type: integer
           description: Maximum number of questions allowed
           example: 8
+        completion_percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: LLM-assessed completion percent
+          example: 25
         message:
           type: string
           description: Status message
           example: "Question 2 of 8"
+        allows_image_upload:
+          type: boolean
+          description: Whether the next question allows image upload
+          example: false
+
+    EditAnswerRequest:
+      type: object
+      required:
+        - patient_id
+        - visit_id
+        - question_number
+        - new_answer
+      properties:
+        patient_id:
+          type: string
+          pattern: '^[A-Z0-9]+_\d+$'
+          description: Patient ID from registration
+          example: "JOHNDOE_9123456789"
+        visit_id:
+          type: string
+          pattern: '^CONSULT-\d{8}-\d{3}$'
+          description: Visit ID from registration
+          example: "CONSULT-20250103-001"
+        question_number:
+          type: integer
+          minimum: 1
+          description: Question number to edit (1-based)
+          example: 2
+        new_answer:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: Replacement answer
+          example: "I have been experiencing headaches for 2 weeks, not 3 months"
+
+    EditAnswerResponse:
+      type: object
+      required:
+        - success
+        - message
+      properties:
+        success:
+          type: boolean
+          description: Whether the edit was successful
+          example: true
+        message:
+          type: string
+          description: Status message
+          example: "Answer updated successfully"
 
     HealthResponse:
       type: object
