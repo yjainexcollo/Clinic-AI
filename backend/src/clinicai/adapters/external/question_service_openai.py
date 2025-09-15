@@ -87,8 +87,78 @@ class OpenAIQuestionService(QuestionService):
         asked_questions: List[str],
         current_count: int,
         max_count: int,
+        recently_travelled: bool,
     ) -> str:
         """Generate the next question based on context."""
+        import re
+        from difflib import SequenceMatcher
+
+        # Hard gating to ensure critical categories are asked when applicable
+        symptom_text = (disease or "").lower()
+        travel_keywords = [
+            "fever", "diarrhea", "diarrhoea", "vomit", "vomiting", "stomach", "abdomen", "abdominal",
+            "cough", "breath", "shortness of breath", "rash", "jaundice", "malaria", "dengue",
+            "tb", "tuberculosis", "covid", "typhoid", "hepatitis", "chikungunya"
+        ]
+        travel_relevant = bool(recently_travelled) and any(k in symptom_text for k in travel_keywords)
+        if travel_relevant and not any("travel" in (q or "").lower() for q in asked_questions):
+            gi_related = any(k in symptom_text for k in ["diarrhea","diarrhoea","vomit","vomiting","stomach","abdomen","abdominal"]) 
+            if gi_related:
+                return (
+                    "Have you travelled in the last 1–3 months? If yes, where did you go, did you eat street food or raw/undercooked foods, drink untreated water, or did others with you have similar stomach symptoms?"
+                )
+            else:
+                return (
+                    "Have you travelled domestically or internationally in the last 1–3 months? If yes, where did you go, was it a known infectious area, and did you have any sick contacts?"
+                )
+
+        def _normalize(text: str) -> str:
+            t = (text or "").lower().strip()
+            t = re.sub(r"^(can you|could you|please|would you)\s+", "", t)
+            t = re.sub(r"[\?\.!]+$", "", t)
+            t = re.sub(r"\s+", " ", t)
+            return t.strip()
+
+        def _is_duplicate(candidate: str, history: list[str]) -> bool:
+            cand_norm = _normalize(candidate)
+            for h in history:
+                h_norm = _normalize(h)
+                if cand_norm == h_norm:
+                    return True
+                if SequenceMatcher(None, cand_norm, h_norm).ratio() >= 0.85:
+                    return True
+            return False
+
+        def _classify_question(text: str) -> str:
+            t = _normalize(text)
+            # simple keyword buckets
+            buckets = [
+                ("duration", ["how long", "since when", "duration"]),
+                ("triggers", ["trigger", "worsen", "aggrav", "what makes", "factors that make"]),
+                ("pain", ["pain", "scale", "intensity", "sharp", "dull", "burning", "throbbing", "radiat"]),
+                ("travel", ["travel", "endemic", "abroad", "sick contact"]),
+                ("allergies", ["allerg", "hives", "rash", "swelling", "wheeze"]),
+                ("medications", ["medication", "medicine", "drug", "dose", "frequency", "otc", "remed"]),
+                ("pmh", ["past medical", "chronic", "history of", "surgery", "hospitalization"]),
+                ("family", ["family", "mother", "father", "heredit", "genetic"]),
+                ("social", ["smok", "alcohol", "diet", "exercise", "occupation", "work", "exposure"]),
+                ("ros", ["review of systems", "fever", "weight loss", "wheeze", "palpitation", "nausea", "headache"]),
+                ("gyn", ["menstru", "pregnan", "contracept", "obstet", "gyneco"]),
+                ("functional", ["daily activit", "assistive", "caregiver", "independent", "functional"]),
+            ]
+            for name, keys in buckets:
+                if any(k in t for k in keys):
+                    return name
+            return "other"
+
+        def _seen_categories(history: list[str]) -> set:
+            cats = set()
+            for q in history:
+                cats.add(_classify_question(q))
+            return cats
+
+        
+
         prompt = (
             f"Patient demographics have already been collected (name, mobile, age, gender, recently_travelled). \n"
             f"Chief complaint (if provided yet): {disease or 'N/A'}.\n"
@@ -104,11 +174,11 @@ class OpenAIQuestionService(QuestionService):
             "  1) Duration of symptoms.\n"
             "  2) Triggers / aggravating factors (exertion, food, stress, environment).\n"
             "  3) Pain assessment (only if pain is a symptom): location, duration (for pain), intensity (0–10), character, radiation, relieving/aggravating factors.\n"
-            "  4) Travel history (ask if symptom suggests infectious relevance: fever/diarrhea/cough/breathlessness/rash/jaundice/etc.). Ask about last 1–3 months (domestic/international), endemic exposure, sick contacts.\n"
+            f" 4) Travel history (ask ONLY if recently_travelled is true AND symptom suggests infectious relevance: fever/diarrhea/cough/breathlessness/rash/jaundice/etc.). recently_travelled={recently_travelled}. If true, ask about last 1–3 months (domestic/international), endemic exposure, sick contacts.\n"
             "  5) Allergies (ask ONLY if symptom suggests allergic relevance: rash, swelling, hives, wheeze, sneezing, runny nose).\n"
             "  6) Medications & remedies used: prescribed and OTC (drug, dose, frequency, adherence) and any home/alternative remedies with effect (helped/worsened/no effect).\n"
-            "  7) Past medical history (ONLY chronic diseases) and prior surgeries/hospitalizations when relevant.\n"
-            "  8) Family history (ONLY for chronic/hereditary disease relevance).\n"
+            "  7) Past medical history (ONLY for chronic diseases) and prior surgeries/hospitalizations (when relevant to ask according to disease..\n"
+            "  8) Family history (ONLY for chronic/hereditary disease relevance). Specify which relatives and their condition.\n"
             "  9) Social history: smoking, alcohol, substances; diet and exercise; occupation and exposure risks.\n"
             " 10) Gynecologic / obstetric (ask only if relevant to a female patient).\n"
             " 11) Functional status (ask only if pain/mobility or neurologic impairment is likely—e.g., joint/back pain, arthritis, weakness, stroke, advanced COPD/CHF, or elderly): daily activities and caregiver/assistive needs.\n"
@@ -132,112 +202,158 @@ class OpenAIQuestionService(QuestionService):
             text = text.replace("\n", " ").strip()
             if not text.endswith("?"):
                 text = text.rstrip(".") + "?"
-            if any(text.lower() == q.lower() for q in asked_questions):
-                return self._get_fallback_next_question(disease, current_count)
+            if _is_duplicate(text, asked_questions):
+                return self._get_fallback_next_question(disease, current_count, asked_questions)
+            # Avoid asking same category twice (e.g., triggers phrased differently)
+            cat = _classify_question(text)
+            if cat in _seen_categories(asked_questions):
+                return self._get_fallback_next_question(disease, current_count, asked_questions)
             return text
         except Exception:
-            return self._get_fallback_next_question(disease, current_count)
-
+            return self._get_fallback_next_question(disease, current_count, asked_questions)
+        
     async def should_stop_asking(
-        self,
-        disease: str,
-        previous_answers: List[str],
-        current_count: int,
-        max_count: int,
-    ) -> bool:
-        """Determine if sufficient information has been collected."""
-        if current_count >= max_count:
-            return True
-        if current_count < 3:
-            return False
-
-        prompt = (
-            "You evaluate if intake has sufficient information.\n"
-            f"Disease: {disease}. Questions asked: {current_count}/{max_count}.\n"
-            f"Patient answers: {', '.join(previous_answers)}.\n"
-            "Reply with only YES (sufficient) or NO (need more)."
-        )
-
-        try:
-            reply = await self._chat_completion(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You decide if intake is sufficient.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                max_tokens=8,
-                temperature=0.0,
-            )
-            return reply.strip().upper().startswith("YES")
-        except Exception:
-            return current_count >= 5 or current_count >= max_count
-
-    async def assess_completion_percent(
         self,
         disease: str,
         previous_answers: List[str],
         asked_questions: List[str],
         current_count: int,
         max_count: int,
-    ) -> int:
-        """Assess completion percentage based on coverage using the LLM with a safe fallback."""
-        prompt = (
-            "You are evaluating how complete a medical intake is.\n"
-            f"Chief complaint: {disease or 'N/A'}\n"
-            f"Questions asked: {current_count}/{max_count}\n"
-            f"Asked: {asked_questions}\n"
-            f"Patient answers: {previous_answers}\n\n"
-            "Assess coverage of: Allergies, Current medications/treatments, Past history of same problem, "
-            "Family history when relevant (asthma, chest pain, diabetes, hypertension, cancer), Duration, "
-            "Severity, Triggers, Associated symptoms, Impact on daily life, and other essential GP details.\n"
-            "Return ONLY an integer 0-100 indicating completion percentage."
-        )
-        try:
-            text = await self._chat_completion(
-                messages=[
-                    {"role": "system", "content": "Output only a number from 0 to 100."},
-                    {"role": "user", "content": prompt},
-                ],
-                max_tokens=6,
-                temperature=0.0,
-            )
-            import re
-            m = re.search(r"\d{1,3}", text or "")
-            pct = int(m.group(0)) if m else 0
-            return max(0, min(100, pct))
-        except Exception:
-            # Deterministic fallback based on progress bounds (caps at 60%)
-            base = int(min(100, (max(current_count, 1) / max(max_count or 8, 1)) * 60))
-            return base
+        recently_travelled: bool,
+    ) -> bool:
+        """Determine if sufficient information has been collected, allowing early stop when core coverage is met."""
+        # Always stop at the hard cap
+        if current_count >= max_count:
+            return True
+
+        # Require at least a small minimum before stopping early
+        if current_count < 6:
+            return False
+
+        import re
+
+        def _norm(t: str) -> str:
+            return re.sub(r"\s+", " ", (t or "").lower().strip())
+
+        def _classify(text: str) -> str:
+            t = _norm(text)
+            buckets = [
+                ("duration", ["how long", "since when", "duration"]),
+                ("triggers", ["trigger", "worsen", "aggrav", "what makes", "factors that make"]),
+                ("pain", ["pain", "scale", "intensity", "sharp", "dull", "burning", "throbbing", "radiat"]),
+                ("travel", ["travel", "endemic", "abroad", "sick contact"]),
+                ("allergies", ["allerg", "hives", "rash", "swelling", "wheeze"]),
+                ("medications", ["medication", "medicine", "drug", "dose", "frequency", "otc", "remed"]),
+                ("pmh", ["past medical", "chronic", "history of", "surgery", "hospitalization"]),
+                ("family", ["family", "mother", "father", "heredit", "genetic"]),
+                ("social", ["smok", "alcohol", "diet", "exercise", "occupation", "work", "exposure"]),
+                ("ros", ["review of systems", "fever", "wheeze", "palpitation", "nausea", "headache"]),
+                ("gyn", ["menstru", "pregnan", "contracept", "obstet", "gyneco"]),
+                ("functional", ["daily activit", "assistive", "caregiver", "independent", "functional"]),
+            ]
+            for name, keys in buckets:
+                if any(k in t for k in keys):
+                    return name
+            return "other"
+
+        covered = {_classify(q) for q in (asked_questions or [])}
+
+        # Determine conditional relevance signals
+        symptom_text = _norm(disease)
+        last_answers = _norm(" ".join(previous_answers[-3:]))
+        pain_relevant = ("pain" in symptom_text) or ("pain" in last_answers)
+        infectious_keywords = [
+            "fever","diarr","vomit","stomach","abdom","cough","breath","rash","jaundice"
+        ]
+        travel_relevant = recently_travelled and any(k in symptom_text or k in last_answers for k in infectious_keywords)
+        allergy_relevant = any(k in symptom_text or k in last_answers for k in [
+            "allergy","allergic","hives","rash","wheeze","sneeze","itch","runny nose"
+        ])
+        chronic_keywords = [
+            "asthma","diabetes","hypertension","bp","copd","ckd","kidney","heart failure","cad","cancer","thyroid","arthritis"
+        ]
+        chronic_relevant = any(k in symptom_text or k in last_answers for k in chronic_keywords)
+
+        # Build the required minimal coverage set
+        required: set[str] = {"duration", "triggers", "medications"}
+        if pain_relevant:
+            required.add("pain")
+        if travel_relevant:
+            required.add("travel")
+        if allergy_relevant:
+            required.add("allergies")
+        if chronic_relevant:
+            # For chronic relevance, ensure PMH and at least one of family/social
+            required.add("pmh")
+            # We'll check family/social as a pair condition below
+
+        # Check required coverage
+        has_required = required.issubset(covered)
+        if chronic_relevant:
+            has_family_or_social = ("family" in covered) or ("social" in covered)
+            has_required = has_required and has_family_or_social
+
+        # Early stop if required coverage achieved
+        if has_required:
+            return True
+
+        # Otherwise continue until near cap
+        return current_count >= (max_count - 1)
 
     def _get_fallback_first_question(self, disease: str) -> str:
         """Fallback first question if OpenAI fails - always returns the same question."""
         return "Why have you come in today? What is the main concern you want help with?"
 
-    def _get_fallback_next_question(self, disease: str, current_count: int) -> str:
-        """Fallback next questions if OpenAI fails."""
-        fallback_questions = [
-            "How long have you been experiencing these symptoms?",
-            "On a scale of 1-10, how would you rate the severity?",
-            "Are there any activities that make the symptoms worse?",
-            "Have you tried any treatments or medications?",
-            "How is this affecting your daily activities?",
-            "Are you experiencing any other associated symptoms?",
-            "What time of day do the symptoms typically occur?",
-            "Have you had similar symptoms before?",
-            "Is there anything that seems to trigger these symptoms?",
-            "How would you describe the quality of the symptoms?",
-            "Are the symptoms constant or do they come and go?",
-            "Have you noticed any patterns with these symptoms?",
+    def _get_fallback_next_question(self, disease: str, current_count: int, asked_questions: List[str]) -> str:
+        """Fallback next question selector that avoids duplicate categories."""
+        def _normalize(text: str) -> str:
+            t = (text or "").lower().strip()
+            return " ".join(t.split())
+
+        def _classify(text: str) -> str:
+            t = _normalize(text)
+            if any(k in t for k in ["how long", "since when", "duration"]):
+                return "duration"
+            if any(k in t for k in ["trigger", "worse", "aggrav", "what makes", "factors"]):
+                return "triggers"
+            if any(k in t for k in ["medicat", "treatment", "drug", "remed"]):
+                return "medications"
+            if any(k in t for k in ["daily activit", "affecting your daily"]):
+                return "functional"
+            if any(k in t for k in ["similar symptoms before", "previously", "before"]):
+                return "pmh"
+            if any(k in t for k in ["associated symptoms"]):
+                return "ros"
+            return "other"
+
+        seen = {_classify(q) for q in (asked_questions or [])}
+        asked_set = { _normalize(q) for q in (asked_questions or []) }
+
+        fallback_pool = [
+            "How long have you been experiencing these symptoms?",              # duration
+            "On a scale of 1-10, how would you rate the severity?",            # severity
+            "Have you tried any treatments or medications?",                   # medications
+            "How is this affecting your daily activities?",                    # functional
+            "Are you experiencing any other associated symptoms?",             # ros
+            "What time of day do the symptoms typically occur?",               # pattern
+            "Have you had similar symptoms before?",                           # pmh
+            "How would you describe the quality of the symptoms?",             # quality
+            "Are the symptoms constant or do they come and go?",               # pattern/temporal
         ]
 
-        # Return a question based on current count
-        if current_count < len(fallback_questions):
-            return fallback_questions[current_count]
-        else:
-            return "Is there anything else you'd like to tell us about your condition?"
+        for q in fallback_pool:
+            if _classify(q) not in seen and _normalize(q) not in asked_set:
+                return q
+        # Offer a single catch-all only if not already asked
+        catch_all = "Have we missed anything important about your condition or any concerns you want us to address?"
+        if _normalize(catch_all) not in asked_set:
+            return catch_all
+        # If catch-all already asked, select the first unasked fallback regardless of category
+        for q in fallback_pool:
+            if _normalize(q) not in asked_set:
+                return q
+        # Nothing left that's new; return the catch-all (frontend should treat as terminal)
+        return catch_all
 
     async def generate_pre_visit_summary(
         self, 
@@ -248,61 +364,48 @@ class OpenAIQuestionService(QuestionService):
         gender = (patient_data.get('gender') or '').strip().lower()
         recently_travelled = bool(patient_data.get('recently_travelled', False))
         prompt = f"""
-You are a clinical assistant. Create a concise pre-visit summary from the data below.
+You are a clinical assistant. Generate a concise pre-visit summary.
 
-Patient Information:
-- Name: {patient_data.get('name', 'N/A')}
-- Age: {patient_data.get('age', 'N/A')}
-- Gender: {patient_data.get('gender', 'N/A')}
-- Mobile: {patient_data.get('mobile', 'N/A')}
-- Recently travelled: {recently_travelled}
+Input:
+- Patient info (name, age, gender, mobile, recently_travelled)
+- Intake responses
 
-Intake Responses:
-{self._format_intake_answers(intake_answers)}
+Rules:
+- Output in MARKDOWN with section headings + bullet lists only (no paragraphs).
+- Every line starts with "- ".
+- Length: 180–220 words.
+- Clinical, neutral tone; no diagnosis.
+- Include a section only if info exists (except explicit negatives like no travel, no allergies → include).
+- Gynecologic/Obstetric only if female.
+- Travel History only if recently_travelled = true with details.
+- Remove duplicate info.
 
-STRICT REQUIREMENTS:
-- Output MUST be MARKDOWN with section headings and bullet lists; no paragraphs.
-- Every content line must start with "- ".
-- REMOVE duplicate/repeated information.
-- LENGTH must be 180 to 220 words total.
-- Clinical, neutral tone; do not diagnose.
-- Include a section ONLY if there is information for it; omit empty sections.
-- Include Gynecologic / Obstetric History only if gender is female.
-- Include Travel History only if Recently travelled is true and details exist.
+Section order:
+1) Chief Complaint  
+2) History of Present Illness  
+3) Pain Assessment  
+4) Travel History  
+5) Allergies  
+6) Medications and Remedies Used  
+7) Past Medical History  
+8) Family History  
+9) Social History  
+10) Gynecologic/Obstetric History  
+11) Functional Status  
+12) Key Clinical Points  
 
-Use these exact headings, in this order (skip any that have no data):
-1) Chief Complaint
-2) History of Present Illness
-3) Pain Assessment
-4) Travel History
-5) Allergies
-6) Medications and Remedies Used
-7) Past Medical History
-8) Family History
-9) Social History
-10) Gynecologic / Obstetric History
-11) Functional Status
-12) Key Clinical Points
-
-Content guidance per section:
-- History of Present Illness: duration, severity, triggers, associated symptoms, impact on daily life.
-- Pain Assessment: location, duration (for pain), intensity (0–10), character, radiation, relieving/aggravating factors.
-- Travel History: only include if recently_travelled true and relevant details exist.
-- Allergies: include only when clinically relevant; specify agent and reaction.
-- Medications and Remedies Used: drug, dose, frequency, adherence; remedies and effect.
-- Past Medical History: chronic diseases; prior surgeries/hospitalizations; special exposure risks (recent hospitals/surgeries, occupational hazards, animal bites/pets).
-- Family History: only include for chronic/hereditary disease relevance.
-
-OUTPUT FORMAT (JSON fenced exactly):
-```json
+Output format:
+json
 {{
-  "summary": "<markdown with headings and bullet points only>",
+  "summary": "<markdown with headings + bullet points>",
   "structured_data": {{
     "chief_complaint": "...",
     "key_findings": ["..."]
   }}
 }}
-```
+
+
+Return ONLY the fenced JSON block above. Do not add any text before or after it.
 """
         
         try:
@@ -344,30 +447,48 @@ OUTPUT FORMAT (JSON fenced exactly):
         """Parse LLM response into structured format."""
         try:
             import json
+            import re
             # Try to extract JSON from response
-            if "```json" in response:
-                json_start = response.find("```json") + 7
-                json_end = response.find("```", json_start)
-                json_str = response[json_start:json_end].strip()
-                return json.loads(json_str)
-            else:
-                # Fallback to basic structure
-                return {
-                    "summary": response,
-                    "structured_data": {
-                        "chief_complaint": "See summary",
-                        "key_findings": ["See summary"],
-                        "recommendations": ["See summary"]
-                    }
-                }
+            text = (response or "").strip()
+
+            # 1) Prefer fenced ```json ... ```
+            fence_json = re.search(r"```json\s*([\s\S]*?)\s*```", text, re.IGNORECASE)
+            if fence_json:
+                candidate = fence_json.group(1).strip()
+                return json.loads(candidate)
+
+            # 2) Any fenced block without language
+            fence_any = re.search(r"```\s*([\s\S]*?)\s*```", text)
+            if fence_any:
+                candidate = fence_any.group(1).strip()
+                try:
+                    return json.loads(candidate)
+                except Exception:
+                    pass
+
+            # 3) Raw JSON between first '{' and last '}'
+            first = text.find("{")
+            last = text.rfind("}")
+            if first != -1 and last != -1 and last > first:
+                candidate = text[first : last + 1]
+                return json.loads(candidate)
+
+            # Fallback to basic structure
+            return {
+                "summary": text,
+                "structured_data": {
+                    "chief_complaint": "See summary",
+                    "key_findings": ["See summary"],
+                    "recommendations": ["See summary"],
+                },
+            }
         except Exception:
             return {
                 "summary": response,
                 "structured_data": {
                     "chief_complaint": "Unable to parse",
                     "key_findings": ["See summary"],
-                    "recommendations": ["See summary"]
-                }
+                },
             }
 
     def _generate_fallback_summary(self, patient_data: Dict[str, Any], intake_answers: Dict[str, Any]) -> Dict[str, Any]:
@@ -402,49 +523,43 @@ OUTPUT FORMAT (JSON fenced exactly):
         if "key_findings" not in structured:
             structured["key_findings"] = ["See summary"]
 
+        # If LLM returned only markdown (no JSON), try to extract key sections from markdown
+        def _extract_from_markdown(md: str) -> Dict[str, Any]:
+            data: Dict[str, Any] = {}
+            current_section = None
+            key_findings: List[str] = []
+            chief_bullets: List[str] = []
+            for raw in (md or "").splitlines():
+                line = raw.strip()
+                if line.startswith("## "):
+                    title = line[3:].strip().lower()
+                    if "key clinical points" in title:
+                        current_section = "key_points"
+                    elif "chief complaint" in title:
+                        current_section = "chief"
+                    else:
+                        current_section = None
+                    continue
+                if line.startswith("- "):
+                    text = line[2:].strip()
+                    if current_section == "key_points" and text:
+                        key_findings.append(text)
+                    if current_section == "chief" and text:
+                        chief_bullets.append(text)
+            if key_findings:
+                data["key_findings"] = key_findings
+            if chief_bullets:
+                # join multiple bullets if present
+                data["chief_complaint"] = ", ".join(chief_bullets)
+            return data
+
+        if (structured.get("key_findings") == ["See summary"]) or not structured.get("key_findings"):
+            extracted = _extract_from_markdown(summary)
+            if extracted.get("key_findings"):
+                structured["key_findings"] = extracted["key_findings"]
+            if extracted.get("chief_complaint") and structured.get("chief_complaint") in (None, "See summary", "N/A"):
+                structured["chief_complaint"] = extracted["chief_complaint"]
+
         normalized["summary"] = summary
         normalized["structured_data"] = structured
         return normalized
-
-    def is_medication_question(self, question: str) -> bool:
-        """Check if a question is about medications and allows image upload."""
-        if not question:
-            return False
-        
-        question_lower = question.lower()
-        
-        # Keywords that indicate medication-related questions
-        medication_keywords = [
-            "medication", "medicine", "drug", "prescription", "tablet", "pill", 
-            "dose", "dosage", "treatment", "remedy", "medication", "pharmacy",
-            "over-the-counter", "otc", "prescribed", "taking", "current medications",
-            "what medications", "any medications", "medications you", "drugs you"
-        ]
-        
-        # Check if any medication keywords are present
-        for keyword in medication_keywords:
-            if keyword in question_lower:
-                return True
-        
-        # Check for specific patterns that suggest medication questions
-        medication_patterns = [
-            "what are you taking",
-            "are you taking any",
-            "current treatments",
-            "any remedies",
-            "home remedies",
-            "alternative treatments",
-            "over the counter",
-            "prescribed medications",
-            "medication adherence",
-            "how often do you take",
-            "when do you take",
-            "medication side effects",
-            "drug interactions"
-        ]
-        
-        for pattern in medication_patterns:
-            if pattern in question_lower:
-                return True
-        
-        return False

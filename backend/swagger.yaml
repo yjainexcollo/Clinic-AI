@@ -22,7 +22,7 @@ info:
 
     ### Step-03: Audio Transcription & SOAP Generation
     - Audio file upload and transcription using Whisper AI
-    - Support for multiple audio formats (MP3, WAV, M4A, FLAC, OGG)
+    - Support for multiple audio formats (MP3, WAV, M4A, FLAC, OGG, MPEG)
     - Real-time SOAP note generation from consultation transcripts
     - Structured medical documentation with highlights and red flags
     - Visit status management and workflow integration
@@ -679,6 +679,7 @@ paths:
         - M4A (.m4a)
         - FLAC (.flac)
         - OGG (.ogg)
+        - MPEG (.mpeg, .mpg)
         
         ## File Size Limits
         - Maximum file size: 25MB

@@ -140,7 +140,7 @@ MISTRAL_API_KEY=your_mistral_api_key_here
 
 # Audio/File
 AUDIO_MAX_SIZE_MB=50
-AUDIO_ALLOWED_FORMATS=["mp3","wav","m4a","flac","ogg"]
+AUDIO_ALLOWED_FORMATS=["mp3","wav","m4a","flac","ogg","mpeg","mpg"]
 FILE_STORAGE_TYPE=local
 ```
 

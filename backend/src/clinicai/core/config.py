@@ -155,7 +155,7 @@ class AudioSettings(BaseSettings):
 
     max_size_mb: int = Field(default=50, description="Maximum audio file size in MB")
     allowed_formats: List[str] = Field(
-        default=["mp3", "wav", "m4a", "flac", "ogg"], 
+        default=["mp3", "wav", "m4a", "flac", "ogg", "mpeg", "mpg"], 
         description="Allowed audio formats"
     )
     temp_dir: str = Field(default="/tmp/clinicai_audio", description="Temporary directory for audio files")
