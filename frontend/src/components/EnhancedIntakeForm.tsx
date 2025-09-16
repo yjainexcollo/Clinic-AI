@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { postIntake, IntakeResponse } from "../utils/api";
+import { answerIntakeBackend, BackendAnswerResponse, editAnswerBackend } from "../services/patientService";
 import { getSessionId } from "../utils/uuid";
 import SummaryCard from "./SummaryCard";
 import { Card, CardHeader, CardTitle, CardContent } from "./ui/card";
@@ -13,10 +13,11 @@ type HistoryEntry = {
 };
 
 const TOTAL_QUESTIONS = 10;
-const FIRST_QUESTION = "What type of health issue are you facing right now?";
+const FIRST_QUESTION = "Why have you come in today? What is the main concern you want help with?";
 
 interface EnhancedIntakeFormProps {
-  patientId: string;
+  patientId: string; // opaque id from backend
+  visitId: string;
   onIntakeComplete?: (sessionId: string, summary: string) => void;
 }
 
@@ -40,6 +41,9 @@ const EnhancedIntakeForm: React.FC<EnhancedIntakeFormProps> = ({
     "in_progress" | "completed" | "sent_to_doctor"
   >("in_progress");
   const [assignedDoctor, setAssignedDoctor] = useState<string | null>(null);
+  const [questionCount, setQuestionCount] = useState<number>(0);
+  const [maxQuestions, setMaxQuestions] = useState<number>(10);
+  const [completionPercent, setCompletionPercent] = useState<number>(0);
 
   // On mount, always show the first static question
   useEffect(() => {
@@ -64,50 +68,39 @@ const EnhancedIntakeForm: React.FC<EnhancedIntakeFormProps> = ({
     const answer = input;
     setInput("");
     try {
-      // If this is the first question, send only session_id and the answer
-      if (!aiStarted) {
-        setHistory([{ question: FIRST_QUESTION, answer }]);
-        // Now call backend to get the first AI question
-        const res: IntakeResponse = await postIntake({
-          session_id: sessionId,
-          last_question: FIRST_QUESTION,
-          last_answer: answer,
-        });
-        setCurrentQuestion(res.next_question);
-        setCurrentType(res.type);
-        setSummary(res.summary);
-        setAiStarted(true);
-        setLastAiQuestion(res.next_question);
-      } else {
-        // AI-driven follow-ups
-        const last_question = lastAiQuestion;
-        const last_answer = answer;
-        const newHistory = [
-          ...history,
-          { question: last_question || "", answer: last_answer },
-        ];
+      // Always send the answer to backend; backend caches next question
+      const backendRes: BackendAnswerResponse = await answerIntakeBackend({
+        patient_id: patientId,
+        visit_id: visitId,
+        answer,
+      });
+      const newHistory = [
+        ...history,
+        { question: currentQuestion, answer },
+      ];
+      setHistory(newHistory);
+      setCurrentQuestion(backendRes.next_question || "");
+      setCurrentType("text");
+      setSummary(null);
+      setAiStarted(true);
+      setLastAiQuestion(backendRes.next_question || null);
+      setQuestionCount(backendRes.question_count);
+      setMaxQuestions(backendRes.max_questions);
+      setCompletionPercent(
+        typeof backendRes.completion_percent === "number"
+          ? backendRes.completion_percent
+          : Math.min(
+              Math.round(
+                ((Math.max(questionCount, history.length)) / (maxQuestions || TOTAL_QUESTIONS)) * 100
+              ),
+              100
+            )
+      );
 
-        const res: IntakeResponse = await postIntake({
-          session_id: sessionId,
-          last_question,
-          last_answer,
-        });
-        setHistory(newHistory);
-        setCurrentQuestion(res.next_question);
-        setCurrentType(res.type);
-        setSummary(res.summary);
-        setLastAiQuestion(res.next_question);
-
-        // Check if AI has determined the conversation is complete
-        if (
-          res.next_question === "COMPLETE" ||
-          res.next_question === null ||
-          res.next_question === ""
-        ) {
-          setSubmitted(true);
-          setIntakeStatus("completed");
-          await handleIntakeComplete();
-        }
+      if (backendRes.is_complete || !backendRes.next_question) {
+        setSubmitted(true);
+        setIntakeStatus("completed");
+        await handleIntakeComplete();
       }
     } catch {
       setError("Failed to submit answer. Please try again.");
@@ -221,17 +214,14 @@ const EnhancedIntakeForm: React.FC<EnhancedIntakeFormProps> = ({
           <div className="flex items-center justify-between text-sm text-medical-600 mb-2">
             <span>Progress</span>
             <span>
-              {history.length + 1} of {TOTAL_QUESTIONS}
+              {Math.max(questionCount, history.length)} of {maxQuestions} ({completionPercent}%)
             </span>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div
               className="bg-medical-600 h-2 rounded-full transition-all duration-300"
               style={{
-                width: `${Math.min(
-                  ((history.length + 1) / TOTAL_QUESTIONS) * 100,
-                  100
-                )}%`,
+                width: `${Math.min(completionPercent, 100)}%`,
               }}
             ></div>
           </div>
@@ -360,6 +350,34 @@ const EnhancedIntakeForm: React.FC<EnhancedIntakeFormProps> = ({
                         <p className="text-sm text-medical-600">
                           {entry.answer}
                         </p>
+                        <div className="mt-2">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const next = window.prompt("Edit your answer:", entry.answer);
+                              if (next === null) return;
+                              try {
+                                setLoading(true);
+                                await editAnswerBackend({
+                                  patient_id: patientId,
+                                  visit_id: visitId,
+                                  question_number: index + 1,
+                                  new_answer: next,
+                                });
+                                const updated = [...history];
+                                updated[index] = { ...updated[index], answer: next };
+                                setHistory(updated);
+                              } catch (e) {
+                                setError("Failed to edit answer. Please try again.");
+                              } finally {
+                                setLoading(false);
+                              }
+                            }}
+                            className="text-xs text-blue-600 hover:underline"
+                          >
+                            Edit answer
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>

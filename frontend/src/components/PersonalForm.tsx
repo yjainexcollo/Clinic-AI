@@ -11,6 +11,7 @@ interface PersonalFormData {
   gender: string;
   age: string;
   travelHistory: boolean;
+  consent: boolean;
 }
 
 const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
@@ -20,6 +21,7 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
     gender: "",
     age: "",
     travelHistory: false,
+    consent: false,
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -47,12 +49,19 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
       const ageNumber = form.age ? Number(form.age) : 0;
       
       // Backend payload with required fields
+      if (!form.consent) {
+        setError("Consent is required to proceed.");
+        setLoading(false);
+        return;
+      }
+
       const backendResp = await registerPatientBackend({
         name: form.name,
         mobile: form.mobileNumber,
         gender: form.gender,
         age: ageNumber,
         recently_travelled: form.travelHistory,
+        consent: true,
       });
 
       if (backendResp.patient_id) {
@@ -76,7 +85,7 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
         localStorage.setItem(`symptoms_${backendResp.patient_id}`, JSON.stringify(predefined));
 
         // Redirect including first question so it shows immediately
-        const q = encodeURIComponent(backendResp.first_question || "What symptoms are you experiencing today? Please select from the list below.");
+        const q = encodeURIComponent(backendResp.first_question || "Why have you come in today? What is the main concern you want help with?");
         const v = encodeURIComponent(backendResp.visit_id);
         window.location.href = `/intake/${backendResp.patient_id}?q=${q}&v=${v}`;
       } else {
@@ -200,11 +209,28 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
             </label>
           </div>
 
+          {/* Consent Checkbox */}
+          <div className="flex items-center gap-3">
+            <input
+              id="consent"
+              name="consent"
+              type="checkbox"
+              checked={form.consent}
+              onChange={handleCheckboxChange}
+              className="h-4 w-4 rounded border-gray-300 text-medical-primary focus:ring-medical-primary"
+              required
+            />
+            <label htmlFor="consent" className="text-sm text-gray-700">
+              I consent to processing my data for clinical intake
+            </label>
+          </div>
+
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={loading}
-            className="medical-button w-full flex items-center justify-center gap-2"
+            disabled={loading || !form.consent}
+            className="medical-button w-full flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+            aria-disabled={loading || !form.consent}
           >
             {loading ? (
               <>

@@ -42,6 +42,7 @@ export interface BackendAnswerResponse {
   max_questions: number;
   completion_percent: number;
   message: string;
+  allows_image_upload?: boolean;
 }
 
 // Register patient against backend FastAPI
@@ -51,6 +52,7 @@ export async function registerPatientBackend(payload: {
   gender: string;
   age: number;
   recently_travelled: boolean;
+  consent: boolean;
 }): Promise<BackendRegisterResponse> {
   const resp = await fetch(`${BACKEND_BASE_URL}/patients/`, {
     method: "POST",
