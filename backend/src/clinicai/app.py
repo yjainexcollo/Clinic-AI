@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .api.routers import health, patients, notes, prescriptions
+from .api.routers import health, patients, notes, prescriptions, intake
 from .core.config import get_settings
 from .domain.errors import DomainError
 
@@ -91,17 +91,36 @@ def create_app() -> FastAPI:
     )
 
     # CORS middleware
+    # In debug, allow local frontend origins and common methods/headers for ease of dev
+    debug_origins = [
+        "http://localhost:8080",
+        "http://127.0.0.1:8080",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+    allow_origins = (
+        (settings.cors.allowed_origins or []) + (debug_origins if settings.debug else [])
+    ) or ["*"]
+    allow_methods = settings.cors.allowed_methods or ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
+    # Ensure PATCH and OPTIONS are always allowed for browser preflights
+    allow_methods = list({m.upper() for m in allow_methods} | {"PATCH", "OPTIONS"})
+    allow_headers = settings.cors.allowed_headers or ["*"]
+    # Ensure common headers present
+    if allow_headers != ["*"] and "content-type" not in {h.lower() for h in allow_headers}:
+        allow_headers = [*allow_headers, "content-type"]
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors.allowed_origins,
+        allow_origins=allow_origins,
         allow_credentials=settings.cors.allow_credentials,
-        allow_methods=settings.cors.allowed_methods,
-        allow_headers=settings.cors.allowed_headers,
+        allow_methods=allow_methods,
+        allow_headers=allow_headers if settings.debug else allow_headers,
     )
 
     # Include routers
     app.include_router(health.router)
     app.include_router(patients.router)
+    app.include_router(intake.router)
     app.include_router(notes.router)
     app.include_router(prescriptions.router)
 

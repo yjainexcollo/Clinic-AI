@@ -30,6 +30,7 @@ class IntakeSessionMongo(Document):
     status: str = Field(default="in_progress")  # in_progress, completed, cancelled
     started_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = None
+    pending_question: Optional[str] = Field(None, description="Pending next question to ask")
 
 
 class TranscriptionSessionMongo(Document):

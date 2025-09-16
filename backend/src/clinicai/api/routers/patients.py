@@ -28,6 +28,7 @@ from clinicai.domain.errors import (
 )
 
 from ..deps import PatientRepositoryDep, QuestionServiceDep
+from ...core.utils.crypto import encode_patient_id, decode_patient_id
 from ..schemas.patient import AnswerIntakeResponse, ErrorResponse
 from ..schemas.patient import AnswerIntakeRequest as AnswerIntakeRequestSchema
 from ..schemas.patient import (
@@ -76,14 +77,16 @@ async def register_patient(
             age=request.age,
             gender=request.gender,
             recently_travelled=request.recently_travelled,
+            consent=request.consent,
         )
 
         # Execute use case
         use_case = RegisterPatientUseCase(patient_repo, question_service)
         result = await use_case.execute(dto_request)
 
+        # Return opaque patient_id to callers
         return RegisterPatientResponse(
-            patient_id=result.patient_id,
+            patient_id=encode_patient_id(result.patient_id),
             visit_id=result.visit_id,
             first_question=result.first_question,
             message=result.message,
@@ -159,7 +162,7 @@ async def answer_intake_question(
         if content_type.startswith("application/json"):
             body = await request.json()
             dto_request = AnswerIntakeRequest(
-                patient_id=(body.get("patient_id", "").strip()),
+                patient_id=decode_patient_id((body.get("patient_id", "").strip())),
                 visit_id=(body.get("visit_id", "").strip()),
                 answer=(body.get("answer", "").strip()),
             )
@@ -211,7 +214,7 @@ async def answer_intake_question(
             if image_paths:
                 form_answer = f"{form_answer}\n[IMAGES]: {', '.join(image_paths)}"
             dto_request = AnswerIntakeRequest(
-                patient_id=form_patient_id,
+                patient_id=decode_patient_id(form_patient_id),
                 visit_id=form_visit_id,
                 answer=form_answer,
             )
@@ -296,7 +299,7 @@ async def edit_intake_answer(
     try:
         use_case = AnswerIntakeUseCase(patient_repo, question_service)
         dto_request = EditAnswerRequest(
-            patient_id=request.patient_id,
+            patient_id=decode_patient_id(request.patient_id),
             visit_id=request.visit_id,
             question_number=request.question_number,
             new_answer=request.new_answer,
@@ -353,7 +356,7 @@ async def generate_pre_visit_summary(
     try:
         # Convert Pydantic model to DTO
         dto_request = PreVisitSummaryRequest(
-            patient_id=request.patient_id,
+            patient_id=decode_patient_id(request.patient_id),
             visit_id=request.visit_id,
         )
 
@@ -460,7 +463,7 @@ async def get_pre_visit_summary(
         summary_data = visit.get_pre_visit_summary()
 
         return PreVisitSummaryResponse(
-            patient_id=patient.patient_id.value,
+            patient_id=encode_patient_id(patient.patient_id.value),
             visit_id=visit.visit_id.value,
             summary=summary_data["summary"],
             structured_data=summary_data["structured_data"],

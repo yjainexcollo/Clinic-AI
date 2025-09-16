@@ -51,6 +51,8 @@ tags:
     description: Health check endpoints
   - name: patients
     description: Patient management and intake endpoints
+  - name: intake
+    description: Intake schema and validation endpoints
   - name: notes
     description: Audio transcription and SOAP note generation endpoints
 
@@ -100,6 +102,12 @@ paths:
                       edit_answer:
                         type: string
                         example: "PATCH /patients/consultations/answer"
+                      intake_schema:
+                        type: string
+                        example: "GET /intake/schema"
+                      intake_validate:
+                        type: string
+                        example: "POST /intake/validate"
                       pre_visit_summary:
                         type: string
                         example: "POST /patients/summary/previsit"
@@ -205,7 +213,7 @@ paths:
         Register a new patient and start an intake session.
 
         This endpoint:
-        1. Validates patient data (name, mobile, age, symptom)
+        1. Validates patient data (name, mobile, age, gender, consent)
         2. Generates a patient ID in format: {NAME}_{MOBILE}
         3. If the same name and mobile already exist, a new visit is created for that patient
         4. Generates the first AI-powered question based on the primary symptom
@@ -234,6 +242,7 @@ paths:
                   age: 45
                   gender: "female"
                   recently_travelled: true
+                  consent: true
               chest_pain_patient:
                 summary: Chest Pain Patient
                 value:
@@ -253,7 +262,7 @@ paths:
                 success_response:
                   summary: Successful Registration
                   value:
-                    patient_id: "JOHNDOE_9123456789"
+                    patient_id: "OPAQUE_TOKEN"
                     visit_id: "CONSULT-20250103-001"
                     first_question: "What specific symptoms are you experiencing with your hypertension?"
                     message: "Patient registered successfully. Intake session started."
@@ -324,7 +333,7 @@ paths:
               json_example:
                 summary: JSON body example
                 value:
-                  patient_id: "JOHNDOE_9123456789"
+                  patient_id: "OPAQUE_TOKEN"
                   visit_id: "CONSULT-20250103-001"
                   answer: "I have been experiencing high blood pressure for 3 months"
           multipart/form-data:
@@ -337,9 +346,8 @@ paths:
               properties:
                 patient_id:
                   type: string
-                  pattern: '^[A-Z0-9]+_\\d+$'
-                  description: Patient ID from registration
-                  example: "JOHNDOE_9123456789"
+                  description: Opaque Patient ID from registration
+                  example: "OPAQUE_TOKEN"
                 visit_id:
                   type: string
                   pattern: '^CONSULT-\\d{8}-\\d{3}$'
@@ -363,13 +371,13 @@ paths:
               first_answer:
                 summary: First Answer
                 value:
-                  patient_id: "JOHNDOE_9123456789"
+                  patient_id: "OPAQUE_TOKEN"
                   visit_id: "CONSULT-20250103-001"
                   answer: "I have been experiencing high blood pressure for 3 months"
               follow_up_answer:
                 summary: Follow-up Answer
                 value:
-                  patient_id: "JOHNDOE_9123456789"
+                  patient_id: "OPAQUE_TOKEN"
                   visit_id: "CONSULT-20250103-001"
                   answer: "The headaches are severe, about 8 out of 10 on the pain scale"
       responses:
@@ -616,9 +624,8 @@ paths:
           required: true
           schema:
             type: string
-            pattern: '^[A-Z0-9]+_\d+$'
-          description: Patient ID
-          example: "JOHNDOE_9123456789"
+          description: Opaque Patient ID
+          example: "OPAQUE_TOKEN"
         - in: path
           name: visit_id
           required: true
@@ -710,9 +717,8 @@ paths:
               properties:
                 patient_id:
                   type: string
-                  pattern: '^[A-Z0-9]+_\d+$'
-                  description: Patient ID from registration
-                  example: "JOHNDOE_9123456789"
+                  description: Opaque Patient ID from registration
+                  example: "OPAQUE_TOKEN"
                 visit_id:
                   type: string
                   pattern: '^CONSULT-\d{8}-\d{3}$'
@@ -899,9 +905,8 @@ paths:
           required: true
           schema:
             type: string
-            pattern: '^[A-Z0-9]+_\d+$'
-          description: Patient ID
-          example: "JOHNDOE_9123456789"
+          description: Opaque Patient ID
+          example: "OPAQUE_TOKEN"
         - in: path
           name: visit_id
           required: true
@@ -969,9 +974,8 @@ paths:
           required: true
           schema:
             type: string
-            pattern: '^[A-Z0-9]+_\d+$'
-          description: Patient ID
-          example: "JOHNDOE_9123456789"
+          description: Opaque Patient ID
+          example: "OPAQUE_TOKEN"
         - in: path
           name: visit_id
           required: true
@@ -1026,6 +1030,69 @@ paths:
 
 components:
   schemas:
+    IntakeQuestion:
+      type: object
+      properties:
+        question_id:
+          type: string
+        text:
+          type: string
+        type:
+          type: string
+          enum: [string, number, boolean, array, object]
+        required:
+          type: boolean
+          default: false
+        enum:
+          type: array
+          items:
+            type: string
+        depends_on:
+          type: string
+          nullable: true
+        visible_if:
+          type: object
+          additionalProperties: true
+          nullable: true
+
+    IntakeSchema:
+      type: object
+      properties:
+        version:
+          type: string
+        clinic_code:
+          type: string
+          nullable: true
+        max_questions:
+          type: integer
+        questions:
+          type: array
+          items:
+            $ref: "#/components/schemas/IntakeQuestion"
+
+    ValidateAnswersRequest:
+      type: object
+      required: [answers]
+      properties:
+        patient_id:
+          type: string
+          nullable: true
+        answers:
+          type: object
+          additionalProperties: true
+
+    ValidateAnswersResponse:
+      type: object
+      properties:
+        valid:
+          type: boolean
+        errors:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        message:
+          type: string
     RegisterPatientRequest:
       type: object
       required:
@@ -1033,6 +1100,7 @@ components:
         - mobile
         - age
         - gender
+        - consent
       properties:
         name:
           type: string
@@ -1062,6 +1130,10 @@ components:
           default: false
           description: Has the patient travelled recently
           example: false
+        consent:
+          type: boolean
+          description: Patient consent for data processing (must be true)
+          example: true
 
     RegisterPatientResponse:
       type: object
@@ -1073,9 +1145,8 @@ components:
       properties:
         patient_id:
           type: string
-          pattern: '^[A-Z0-9]+_\d+$'
-          description: Generated patient ID in format {NAME}_{MOBILE}
-          example: "JOHNDOE_9123456789"
+          description: Opaque Patient ID token (do not parse)
+          example: "OPAQUE_TOKEN"
         visit_id:
           type: string
           pattern: '^CONSULT-\d{8}-\d{3}$'
@@ -1099,9 +1170,8 @@ components:
       properties:
         patient_id:
           type: string
-          pattern: '^[A-Z0-9]+_\d+$'
-          description: Patient ID from registration
-          example: "JOHNDOE_9123456789"
+          description: Opaque Patient ID from registration
+          example: "OPAQUE_TOKEN"
         visit_id:
           type: string
           pattern: '^CONSULT-\d{8}-\d{3}$'
@@ -1346,9 +1416,8 @@ components:
       properties:
         patient_id:
           type: string
-          pattern: '^[A-Z0-9]+_\d+$'
-          description: Patient ID from registration
-          example: "JOHNDOE_9123456789"
+          description: Opaque Patient ID from registration
+          example: "OPAQUE_TOKEN"
         visit_id:
           type: string
           pattern: '^CONSULT-\d{8}-\d{3}$'
@@ -1367,8 +1436,8 @@ components:
       properties:
         patient_id:
           type: string
-          description: Patient ID
-          example: "JOHNDOE_9123456789"
+          description: Opaque Patient ID
+          example: "OPAQUE_TOKEN"
         visit_id:
           type: string
           description: Visit ID
@@ -1414,9 +1483,8 @@ components:
       properties:
         patient_id:
           type: string
-          pattern: '^[A-Z0-9]+_\d+$'
-          description: Patient ID from registration
-          example: "JOHNDOE_9123456789"
+          description: Opaque Patient ID from registration
+          example: "OPAQUE_TOKEN"
         visit_id:
           type: string
           pattern: '^CONSULT-\d{8}-\d{3}$'
@@ -1444,8 +1512,8 @@ components:
       properties:
         patient_id:
           type: string
-          description: Patient ID
-          example: "JOHNDOE_9123456789"
+          description: Opaque Patient ID
+          example: "OPAQUE_TOKEN"
         visit_id:
           type: string
           description: Visit ID
@@ -1482,9 +1550,8 @@ components:
       properties:
         patient_id:
           type: string
-          pattern: '^[A-Z0-9]+_\d+$'
-          description: Patient ID from registration
-          example: "JOHNDOE_9123456789"
+          description: Opaque Patient ID from registration
+          example: "OPAQUE_TOKEN"
         visit_id:
           type: string
           pattern: '^CONSULT-\d{8}-\d{3}$'
@@ -1506,8 +1573,8 @@ components:
       properties:
         patient_id:
           type: string
-          description: Patient ID
-          example: "JOHNDOE_9123456789"
+          description: Opaque Patient ID
+          example: "OPAQUE_TOKEN"
         visit_id:
           type: string
           description: Visit ID

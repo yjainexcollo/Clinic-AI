@@ -39,6 +39,7 @@ class IntakeSession:
     status: str = "in_progress"  # in_progress, completed, cancelled
     started_at: datetime = field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = None
+    pending_question: Optional[str] = None
 
     def __post_init__(self) -> None:
         """Normalize primary symptom string (no fixed whitelist)."""
@@ -76,6 +77,8 @@ class IntakeSession:
 
         self.questions_asked.append(question_answer)
         self.current_question_count += 1
+        # Clear pending once answered
+        self.pending_question = None
 
     def can_ask_more_questions(self) -> bool:
         """Check if more questions can be asked."""
@@ -92,6 +95,10 @@ class IntakeSession:
         """Mark intake as completed."""
         self.status = "completed"
         self.completed_at = datetime.utcnow()
+
+    def set_pending_question(self, question: Optional[str]) -> None:
+        """Set the pending question to be asked next to the patient (not yet answered)."""
+        self.pending_question = (question or None)
 
     def get_question_context(self) -> str:
         """Get context for AI to generate next question."""
@@ -173,6 +180,11 @@ class Visit:
     def add_question_answer(self, question: str, answer: str, attachment_image_paths: Optional[List[str]] = None) -> None:
         """Add a question and answer to the intake session."""
         self.intake_session.add_question_answer(question, answer, attachment_image_paths=attachment_image_paths)
+        self.updated_at = datetime.utcnow()
+
+    def set_pending_question(self, question: Optional[str]) -> None:
+        """Set the next pending question on the intake session."""
+        self.intake_session.set_pending_question(question)
         self.updated_at = datetime.utcnow()
 
     def complete_intake(self) -> None:

@@ -125,6 +125,7 @@ class MongoPatientRepository(PatientRepository):
                     status=visit.intake_session.status,
                     started_at=visit.intake_session.started_at,
                     completed_at=visit.intake_session.completed_at,
+                    pending_question=visit.intake_session.pending_question,
                 )
 
             # Convert transcription session
@@ -229,6 +230,7 @@ class MongoPatientRepository(PatientRepository):
                     started_at=visit_mongo.intake_session.started_at,
                     completed_at=visit_mongo.intake_session.completed_at,
                 )
+                intake_session.pending_question = getattr(visit_mongo.intake_session, "pending_question", None)
 
             # Convert transcription session
             transcription_session = None

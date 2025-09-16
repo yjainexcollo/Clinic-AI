@@ -27,6 +27,9 @@ class RegisterPatientUseCase:
 
     async def execute(self, request: RegisterPatientRequest) -> RegisterPatientResponse:
         """Execute the register patient use case."""
+        # Enforce consent gating
+        if not getattr(request, "consent", False):
+            raise ValueError("Consent is required to proceed with registration")
         # Normalize gender string
         request.gender = request.gender.strip() if request.gender else ""
 
@@ -41,7 +44,7 @@ class RegisterPatientUseCase:
                 visit_id=visit_id, patient_id=existing_patient.patient_id.value, symptom=""
             )
             # First consultation question should ask for primary symptom
-            first_question = "What symptoms are you experiencing today?"
+            first_question = "Why have you come in today? What is the main concern you want help with?"
             existing_patient.add_visit(visit)
             await self._patient_repository.save(existing_patient)
             return RegisterPatientResponse(
@@ -51,7 +54,7 @@ class RegisterPatientUseCase:
                 message="Existing patient found. New visit started.",
             )
 
-        # Generate patient ID for new patient
+        # Generate patient ID for new patient (internal ID for persistence)
         patient_id = PatientId.generate(request.name, request.mobile)
 
         # Check for family members (mobile-only match) for analytics
@@ -77,12 +80,14 @@ class RegisterPatientUseCase:
             visit_id=visit_id, patient_id=patient_id.value, symptom=""
         )
 
-        # Generate first question
-        # First consultation question asks for symptom
-        first_question = "What symptoms are you experiencing today?"
+        # Generate first question via QuestionService for consistency
+        first_question = await self._question_service.generate_first_question(
+            disease=visit.symptom or "general consultation"
+        )
 
-        # Add visit to patient
+        # Add visit to patient and cache pending question to ensure UI/DB match
         patient.add_visit(visit)
+        visit.set_pending_question(first_question)
 
         # Save patient (which includes the visit)
         await self._patient_repository.save(patient)

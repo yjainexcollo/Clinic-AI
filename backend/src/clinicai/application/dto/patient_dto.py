@@ -18,6 +18,7 @@ class RegisterPatientRequest:
     age: int
     gender: str
     recently_travelled: bool = False
+    consent: bool = True
 
 
 @dataclass

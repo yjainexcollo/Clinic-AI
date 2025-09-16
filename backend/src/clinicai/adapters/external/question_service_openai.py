@@ -240,45 +240,75 @@ class OpenAIQuestionService(QuestionService):
         current_count: int,
         max_count: int,
     ) -> int:
-        """Estimate completion percent based on coverage and progress."""
+        """Estimate completion percent based on information coverage and progress.
+
+        Heuristic:
+        - Determine an expected set of categories based on symptom keywords and dialog so far
+        - Measure coverage of those categories from asked questions
+        - Blend with raw progress (current_count / max_count)
+        """
         try:
             def normalize(text: str) -> str:
                 return (text or "").lower().strip()
 
-            def classify(q: str) -> str:
-                t = normalize(q)
+            def classify(text: str) -> str:
+                t = normalize(text)
                 if any(k in t for k in ["how long", "since when", "duration"]):
                     return "duration"
-                if any(k in t for k in ["trigger", "worse", "aggrav", "what makes", "factors"]):
+                if any(k in t for k in ["trigger", "worse", "aggrav", "what makes", "factors", "reliev"]):
                     return "triggers"
                 if any(k in t for k in ["medicat", "treatment", "drug", "remed", "dose", "frequency"]):
                     return "medications"
-                if "pain" in t or any(k in t for k in ["scale", "intensity", "sharp", "dull", "burning", "throbbing", "radiat"]):
+                if "pain" in t or any(k in t for k in ["scale", "intensity", "sharp", "dull", "burning", "throbbing", "radiat", "location"]):
                     return "pain"
                 if any(k in t for k in ["travel", "endemic", "abroad", "sick contact"]):
                     return "travel"
                 if any(k in t for k in ["allerg", "hives", "rash", "swelling", "wheeze"]):
                     return "allergies"
-                if any(k in t for k in ["past medical", "history of", "surgery", "hospitalization", "chronic"]):
+                if any(k in t for k in ["past medical", "history of", "surgery", "hospitalization", "chronic", "diabetes", "hypertension", "asthma"]):
                     return "pmh"
-                if "family" in t:
+                if "family" in t or any(k in t for k in ["mother", "father", "sibling", "hereditary"]):
                     return "family"
                 if any(k in t for k in ["smok", "alcohol", "diet", "exercise", "occupation", "work", "exposure"]):
                     return "social"
                 return "other"
 
+            # Build expected key set dynamically
+            expected: set[str] = {"duration", "triggers", "medications"}
+            symptom_t = normalize(disease)
+            q_texts = " \n".join(asked_questions or [])
+            a_texts = " \n".join(previous_answers or [])
+            dialog = normalize(f"{symptom_t} {q_texts} {a_texts}")
+
+            if any(k in dialog for k in ["pain", "ache", "hurt"]):
+                expected.add("pain")
+            if any(k in dialog for k in ["fever", "cough", "breath", "rash", "diarr", "vomit", "jaundice"]):
+                expected.add("travel")
+            if any(k in dialog for k in ["allerg", "hives", "wheeze", "swelling"]):
+                expected.add("allergies")
+            if any(k in dialog for k in ["diabetes", "hypertension", "asthma", "chronic", "surgery", "hospital"]):
+                expected.add("pmh")
+            if any(k in dialog for k in ["family", "mother", "father", "sibling", "hereditary"]):
+                expected.add("family")
+            if any(k in dialog for k in ["smok", "alcohol", "diet", "exercise", "occupation", "work", "exposure"]):
+                expected.add("social")
+
             covered = {classify(q) for q in (asked_questions or [])}
-            key_set = {"duration", "triggers", "medications", "pain", "travel", "allergies", "pmh", "family", "social"}
-            covered_keys = len(covered & key_set)
-            coverage_ratio = covered_keys / max(len(key_set), 1)
+            covered_keys = len(covered & expected)
+            coverage_ratio = 0.0
+            if expected:
+                coverage_ratio = covered_keys / len(expected)
 
             progress_ratio = 0.0
             if max_count > 0:
                 progress_ratio = min(max(current_count / max_count, 0.0), 1.0)
 
-            # Weight coverage more than raw progress
-            score = (0.7 * coverage_ratio + 0.3 * progress_ratio) * 100.0
+            # Weighting: coverage (60%) + progress (40%)
+            score = (0.6 * coverage_ratio + 0.4 * progress_ratio) * 100.0
             score = max(0, min(int(round(score)), 100))
+            # Ensure a gentle floor after the first answer to avoid 0%
+            if current_count > 0 and score < 10:
+                score = 10
             return score
         except Exception:
             if max_count <= 0:

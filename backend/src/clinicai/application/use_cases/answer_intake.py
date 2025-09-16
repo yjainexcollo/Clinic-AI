@@ -43,27 +43,24 @@ class AnswerIntakeUseCase:
         if visit.is_intake_complete():
             raise IntakeAlreadyCompletedError(request.visit_id)
 
-        # Generate the current question being answered
-        if visit.intake_session.current_question_count == 0:
-            # First question: use AI service to generate chief complaint question
-            current_question = await self._question_service.generate_first_question(
-                disease=visit.symptom or "general consultation"
-            )
-        else:
-            # Subsequent questions: generate based on context
-            previous_answers = [
-                qa.answer for qa in visit.intake_session.questions_asked
-            ]
-            asked_questions = [
-                qa.question for qa in visit.intake_session.questions_asked
-            ]
-            current_question = await self._question_service.generate_next_question(
-                disease=visit.symptom,
-                previous_answers=previous_answers,
-                asked_questions=asked_questions,
-                current_count=visit.intake_session.current_question_count,
-                max_count=visit.intake_session.max_questions,
-            )
+        # Determine the question being answered.
+        # Prefer a previously served pending question to avoid mismatch between UI and storage.
+        current_question = visit.intake_session.pending_question
+        if not current_question:
+            if visit.intake_session.current_question_count == 0:
+                current_question = await self._question_service.generate_first_question(
+                    disease=visit.symptom or "general consultation"
+                )
+            else:
+                previous_answers = [qa.answer for qa in visit.intake_session.questions_asked]
+                asked_questions = [qa.question for qa in visit.intake_session.questions_asked]
+                current_question = await self._question_service.generate_next_question(
+                    disease=visit.symptom,
+                    previous_answers=previous_answers,
+                    asked_questions=asked_questions,
+                    current_count=visit.intake_session.current_question_count,
+                    max_count=visit.intake_session.max_questions,
+                )
 
         # Add the question and answer
         visit.add_question_answer(current_question, request.answer, attachment_image_paths=request.attachment_image_paths)
@@ -92,13 +89,9 @@ class AnswerIntakeUseCase:
             is_complete = True
             message = "Intake completed successfully. Ready for next step."
         else:
-            # Generate next question for the NEXT round (not current)
-            previous_answers = [
-                qa.answer for qa in visit.intake_session.questions_asked
-            ]
-            asked_questions = [
-                qa.question for qa in visit.intake_session.questions_asked
-            ]
+            # Generate next question for the NEXT round and cache it as pending
+            previous_answers = [qa.answer for qa in visit.intake_session.questions_asked]
+            asked_questions = [qa.question for qa in visit.intake_session.questions_asked]
             next_question = await self._question_service.generate_next_question(
                 disease=visit.symptom,
                 previous_answers=previous_answers,
@@ -106,6 +99,7 @@ class AnswerIntakeUseCase:
                 current_count=visit.intake_session.current_question_count,
                 max_count=visit.intake_session.max_questions,
             )
+            visit.set_pending_question(next_question)
             message = (
                 f"Question {visit.intake_session.current_question_count + 1} "
                 f"of {visit.intake_session.max_questions}"

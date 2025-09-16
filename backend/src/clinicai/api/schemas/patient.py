@@ -16,6 +16,7 @@ class RegisterPatientRequest(BaseModel):
     age: int = Field(..., ge=0, le=120, description="Patient age")
     gender: str = Field(..., description="Patient gender (e.g., male, female, other)")
     recently_travelled: bool = Field(False, description="Has the patient travelled recently")
+    consent: bool = Field(..., description="Patient consent for data processing (must be true)")
 
     @validator("name")
     def validate_name(cls, v):
@@ -36,6 +37,12 @@ class RegisterPatientRequest(BaseModel):
         if not v or not v.strip():
             raise ValueError("Gender cannot be empty")
         return v.strip()
+
+    @validator("consent")
+    def validate_consent(cls, v):
+        if v is not True:
+            raise ValueError("Consent must be provided to proceed")
+        return v
 
 
 class RegisterPatientResponse(BaseModel):
@@ -145,8 +152,8 @@ class ErrorResponse(BaseModel):
 class PreVisitSummaryRequest(BaseModel):
     """Request schema for generating pre-visit summary."""
 
-    patient_id: str = Field(..., pattern=r'^[A-Z0-9]+_\d+$', description="Patient ID")
-    visit_id: str = Field(..., pattern=r'^CONSULT-\d{8}-\d{3}$', description="Visit ID")
+    patient_id: str = Field(..., description="Opaque Patient ID")
+    visit_id: str = Field(..., description="Visit ID")
 
 
 class PreVisitSummaryResponse(BaseModel):
