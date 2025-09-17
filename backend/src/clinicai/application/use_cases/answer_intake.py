@@ -63,7 +63,23 @@ class AnswerIntakeUseCase:
                 )
 
         # Add the question and answer
-        visit.add_question_answer(current_question, request.answer, attachment_image_paths=request.attachment_image_paths)
+        # Extract OCR texts from embedded markers in answer if present
+        ocr_texts: list[str] = []
+        if "[OCR]:" in request.answer:
+            try:
+                marker = request.answer.split("[OCR]:", 1)[1].strip()
+                # split on '|' separator when we added multiple texts
+                parts = [p.strip() for p in marker.split("|") if p.strip()]
+                if parts:
+                    ocr_texts = parts
+            except Exception:
+                ocr_texts = []
+        visit.add_question_answer(
+            current_question,
+            request.answer,
+            attachment_image_paths=request.attachment_image_paths,
+            ocr_texts=ocr_texts or None,
+        )
         # If this is the first answer, set the visit.symptom from patient's response
         if visit.symptom == "" and visit.intake_session.current_question_count == 1:
             visit.symptom = request.answer.strip()

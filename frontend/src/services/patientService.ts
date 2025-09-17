@@ -68,13 +68,27 @@ export async function registerPatientBackend(payload: {
 
 // Answer intake question via backend
 export async function answerIntakeBackend(
-  payload: BackendAnswerRequest
+  payload: BackendAnswerRequest,
+  imageFile?: File
 ): Promise<BackendAnswerResponse> {
-  const resp = await fetch(`${BACKEND_BASE_URL}/patients/consultations/answer`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  let resp: Response;
+  if (imageFile) {
+    const form = new FormData();
+    form.append("patient_id", payload.patient_id);
+    form.append("visit_id", payload.visit_id);
+    form.append("answer", payload.answer);
+    form.append("medication_images", imageFile);
+    resp = await fetch(`${BACKEND_BASE_URL}/patients/consultations/answer`, {
+      method: "POST",
+      body: form,
+    });
+  } else {
+    resp = await fetch(`${BACKEND_BASE_URL}/patients/consultations/answer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  }
   if (!resp.ok) {
     const text = await resp.text();
     throw new Error(`Backend error ${resp.status}: ${text}`);

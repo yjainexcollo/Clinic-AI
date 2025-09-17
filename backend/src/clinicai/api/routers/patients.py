@@ -197,10 +197,12 @@ async def answer_intake_question(
                 import os
                 from uuid import uuid4
                 from clinicai.core.utils.file_utils import create_directory
+                from clinicai.core.utils.image_ocr import extract_text_from_image
 
                 uploads_dir = os.getenv("UPLOADS_DIR", "/tmp/clinicai_uploads")
                 create_directory(uploads_dir)
 
+                ocr_texts: list[str] = []
                 for file in files:
                     if isinstance(file, UploadFile) and file.filename:
                         filename = f"med_{uuid4().hex}_{file.filename}"
@@ -208,11 +210,16 @@ async def answer_intake_question(
                         with open(dest_path, "wb") as f:
                             f.write(await file.read())
                         image_paths.append(dest_path)
+                        # OCR extraction (best-effort)
+                        text = extract_text_from_image(dest_path)
+                        if text:
+                            ocr_texts.append(text)
 
-            # Pass images through the answer payload via a marker for downstream usage
-            # We keep DTO shape unchanged; images stored server-side at image_paths
+            # Pass images and OCR text through the answer payload via markers for downstream usage
             if image_paths:
                 form_answer = f"{form_answer}\n[IMAGES]: {', '.join(image_paths)}"
+                if 'ocr_texts' in locals() and ocr_texts:
+                    form_answer = f"{form_answer}\n[OCR]: {' | '.join(ocr_texts)}"
             dto_request = AnswerIntakeRequest(
                 patient_id=decode_patient_id(form_patient_id),
                 visit_id=form_visit_id,

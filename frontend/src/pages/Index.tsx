@@ -180,26 +180,14 @@ const Index = () => {
         return next;
       });
 
-      // If the question suggests medication/photo, we will collect an optional image
+      // If the question suggests medication/photo, send optional image via service (multipart)
       const medsHint = currentQuestion.includes("You can upload a clear photo") || /medication|medicine|prescription/i.test(currentQuestion);
-      let response;
-      if (medsHint && (window as any).clinicaiMedicationFile) {
-        const form = new FormData();
-        form.append("patient_id", patientId);
-        form.append("visit_id", effectiveVisitId!);
-        form.append("answer", answerToSend);
-        form.append("medication_image", (window as any).clinicaiMedicationFile);
-        response = await fetch("/patients/consultations/answer", {
-          method: "POST",
-          body: form,
-        }).then(r => r.json());
-      } else {
-        response = await answerIntakeBackend({
-          patient_id: patientId,
-          visit_id: effectiveVisitId!,
-          answer: answerToSend,
-        });
-      }
+      const imageFile = medsHint ? (window as any).clinicaiMedicationFile : undefined;
+      const response = await answerIntakeBackend({
+        patient_id: patientId,
+        visit_id: effectiveVisitId!,
+        answer: answerToSend,
+      }, imageFile);
       if (response && typeof response.max_questions === "number") {
         localStorage.setItem(`maxq_${effectiveVisitId}`, String(response.max_questions));
       }
@@ -430,16 +418,13 @@ const Index = () => {
             </div>
           )}
 
-          {/* Dynamic Progress Bar (percentage only) */}
+          {/* Dynamic Progress Bar (count-based, no percentage label) */}
           {!isComplete && (
             <div className="mb-6">
-              <div className="flex items-center justify-end text-sm text-gray-600 mb-2">
-                <span>{isComplete ? 100 : completionPercent}%</span>
-              </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
                 <div
                   className="h-2 rounded-full transition-all duration-300 bg-medical-primary"
-                  style={{ width: `${Math.min(100, Math.max(0, isComplete ? 100 : completionPercent))}%` }}
+                  style={{ width: `${progressPct}%` }}
                 />
               </div>
             </div>
@@ -530,17 +515,24 @@ const Index = () => {
                             if (!patientId || !effectiveVisitId) return;
                             try {
                               setIsLoading(true);
-                              await editAnswerBackend({
+                              const res = await editAnswerBackend({
                                 patient_id: patientId,
                                 visit_id: effectiveVisitId,
                                 question_number: idx + 1,
                                 new_answer: editingValue.trim(),
                               });
+                              // Keep up to edited index, replace edited answer, drop subsequent
                               setQuestions((prev) => {
-                                const copy = [...prev];
-                                copy[idx] = { ...copy[idx], answer: editingValue.trim() };
-                                return copy;
+                                const base = prev.slice(0, idx);
+                                const edited = { text: prev[idx].text, answer: editingValue.trim() };
+                                return [...base, edited];
                               });
+                              // Reset flow to continue from regenerated next question
+                              if (res && typeof res.next_question === "string") {
+                                setCurrentQuestion(res.next_question || "");
+                                setCurrentAnswer("");
+                              }
+                              setIsComplete(false);
                               setEditingIndex(null);
                               setEditingValue("");
                             } catch (e) {
@@ -566,7 +558,14 @@ const Index = () => {
                       <div className="flex items-center justify-between">
                         <div className="text-sm text-gray-600">A: {qa.answer}</div>
                         <button
-                          onClick={() => { setEditingIndex(idx); setEditingValue(qa.answer); }}
+                          onClick={() => {
+                            const ok = window.confirm(
+                              "Editing this answer will remove all subsequent questions and you will need to continue from here. Do you want to proceed?"
+                            );
+                            if (!ok) return;
+                            setEditingIndex(idx);
+                            setEditingValue(qa.answer);
+                          }}
                           className="text-blue-600 hover:underline text-sm"
                         >
                           Edit

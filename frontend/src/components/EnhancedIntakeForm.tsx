@@ -23,12 +23,14 @@ interface EnhancedIntakeFormProps {
 
 const EnhancedIntakeForm: React.FC<EnhancedIntakeFormProps> = ({
   patientId,
+  visitId,
   onIntakeComplete,
 }) => {
   const [sessionId] = useState(getSessionId());
   const [currentQuestion, setCurrentQuestion] =
     useState<string>(FIRST_QUESTION);
   const [currentType, setCurrentType] = useState<string>("text");
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [input, setInput] = useState("");
@@ -73,12 +75,13 @@ const EnhancedIntakeForm: React.FC<EnhancedIntakeFormProps> = ({
         patient_id: patientId,
         visit_id: visitId,
         answer,
-      });
+      }, imageFile || undefined);
       const newHistory = [
         ...history,
         { question: currentQuestion, answer },
       ];
       setHistory(newHistory);
+      setImageFile(null);
       setCurrentQuestion(backendRes.next_question || "");
       setCurrentType("text");
       setSummary(null);
@@ -101,6 +104,16 @@ const EnhancedIntakeForm: React.FC<EnhancedIntakeFormProps> = ({
         setSubmitted(true);
         setIntakeStatus("completed");
         await handleIntakeComplete();
+        // Fire pre-visit summary generation (best-effort)
+        try {
+          await fetch("http://localhost:8000/patients/summary/previsit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ patient_id: patientId, visit_id: visitId }),
+          });
+        } catch (e) {
+          // ignore
+        }
       }
     } catch {
       setError("Failed to submit answer. Please try again.");
@@ -214,14 +227,14 @@ const EnhancedIntakeForm: React.FC<EnhancedIntakeFormProps> = ({
           <div className="flex items-center justify-between text-sm text-medical-600 mb-2">
             <span>Progress</span>
             <span>
-              {Math.max(questionCount, history.length)} of {maxQuestions} ({completionPercent}%)
+              {Math.max(questionCount, history.length)} of {maxQuestions}
             </span>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div
               className="bg-medical-600 h-2 rounded-full transition-all duration-300"
               style={{
-                width: `${Math.min(completionPercent, 100)}%`,
+                width: `${Math.min(100, Math.round(((Math.max(questionCount, history.length)) / (maxQuestions || 1)) * 100))}%`,
               }}
             ></div>
           </div>
@@ -254,6 +267,15 @@ const EnhancedIntakeForm: React.FC<EnhancedIntakeFormProps> = ({
                         disabled={loading}
                       />
                     )}
+                    {/* Optional image upload */}
+                    <div className="mt-3">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => setImageFile(e.target.files && e.target.files[0] ? e.target.files[0] : null)}
+                        disabled={loading}
+                      />
+                    </div>
                     {currentType === "yes_no" && (
                       <div className="space-y-2">
                         <Button
@@ -354,6 +376,8 @@ const EnhancedIntakeForm: React.FC<EnhancedIntakeFormProps> = ({
                           <button
                             type="button"
                             onClick={async () => {
+                              const proceed = window.confirm("Editing this answer will remove all subsequent questions and you will need to continue from here. Do you want to proceed?");
+                              if (!proceed) return;
                               const next = window.prompt("Edit your answer:", entry.answer);
                               if (next === null) return;
                               try {

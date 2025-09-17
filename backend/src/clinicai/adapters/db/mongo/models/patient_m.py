@@ -19,6 +19,7 @@ class QuestionAnswerMongo(Document):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     question_number: int = Field(..., description="Question number in sequence")
     attachment_image_paths: Optional[List[str]] = Field(None, description="Local paths to attached images, if any")
+    ocr_texts: Optional[List[str]] = Field(None, description="Extracted OCR texts from images")
 
 
 class IntakeSessionMongo(Document):

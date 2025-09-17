@@ -26,6 +26,7 @@ class QuestionAnswer:
     timestamp: datetime
     question_number: int
     attachment_image_paths: Optional[List[str]] = None
+    ocr_texts: Optional[List[str]] = None
 
 
 @dataclass
@@ -46,7 +47,7 @@ class IntakeSession:
         if self.symptom:
             self.symptom = self.symptom.strip()
 
-    def add_question_answer(self, question: str, answer: str, attachment_image_paths: Optional[List[str]] = None) -> None:
+    def add_question_answer(self, question: str, answer: str, attachment_image_paths: Optional[List[str]] = None, ocr_texts: Optional[List[str]] = None) -> None:
         """Add a question and answer to the intake."""
         # Check if intake is already completed
         if self.status == "completed":
@@ -73,6 +74,7 @@ class IntakeSession:
             timestamp=datetime.utcnow(),
             question_number=self.current_question_count + 1,
             attachment_image_paths=attachment_image_paths,
+            ocr_texts=ocr_texts,
         )
 
         self.questions_asked.append(question_answer)
