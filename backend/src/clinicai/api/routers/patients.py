@@ -305,7 +305,15 @@ async def edit_intake_answer(
             new_answer=request.new_answer,
         )
         result = await use_case.edit(dto_request)
-        return EditAnswerResponseSchema(success=result.success, message=result.message)
+        return EditAnswerResponseSchema(
+            success=result.success,
+            message=result.message,
+            next_question=result.next_question,
+            question_count=result.question_count,
+            max_questions=result.max_questions,
+            completion_percent=result.completion_percent,
+            allows_image_upload=result.allows_image_upload,
+        )
     except PatientNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -464,9 +472,7 @@ async def get_pre_visit_summary(
             patient_id=encode_patient_id(patient.patient_id.value),
             visit_id=visit.visit_id.value,
             summary=summary_data["summary"],
-            structured_data=summary_data["structured_data"],
             generated_at=summary_data["generated_at"],
-            message="Pre-visit summary retrieved from EHR"
         )
 
     except PatientNotFoundError as e:

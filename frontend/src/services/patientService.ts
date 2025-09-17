@@ -82,12 +82,22 @@ export async function answerIntakeBackend(
   return resp.json();
 }
 
+export interface BackendEditAnswerResponse {
+  success: boolean;
+  message: string;
+  next_question?: string | null;
+  question_count?: number | null;
+  max_questions?: number | null;
+  completion_percent?: number | null;
+  allows_image_upload?: boolean | null;
+}
+
 export async function editAnswerBackend(payload: {
   patient_id: string;
   visit_id: string;
   question_number: number;
   new_answer: string;
-}): Promise<{ success: boolean; message: string }> {
+}): Promise<BackendEditAnswerResponse> {
   const resp = await fetch(`${BACKEND_BASE_URL}/patients/consultations/answer`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },

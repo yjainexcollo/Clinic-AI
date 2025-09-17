@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { answerIntakeBackend, BackendAnswerResponse, editAnswerBackend } from "../services/patientService";
+import { answerIntakeBackend, BackendAnswerResponse, editAnswerBackend, BackendEditAnswerResponse } from "../services/patientService";
 import { getSessionId } from "../utils/uuid";
 import SummaryCard from "./SummaryCard";
 import { Card, CardHeader, CardTitle, CardContent } from "./ui/card";
@@ -358,15 +358,25 @@ const EnhancedIntakeForm: React.FC<EnhancedIntakeFormProps> = ({
                               if (next === null) return;
                               try {
                                 setLoading(true);
-                                await editAnswerBackend({
+                                const res: BackendEditAnswerResponse = await editAnswerBackend({
                                   patient_id: patientId,
                                   visit_id: visitId,
                                   question_number: index + 1,
                                   new_answer: next,
                                 });
-                                const updated = [...history];
-                                updated[index] = { ...updated[index], answer: next };
-                                setHistory(updated);
+                                // Keep answers up to edited index, replace edited answer, drop subsequent
+                                const kept = history.slice(0, index);
+                                const updatedAtIndex = { question: history[index].question, answer: next };
+                                const newHistory = [...kept, updatedAtIndex];
+                                setHistory(newHistory);
+                                // Update progress metrics and next question based on backend regeneration
+                                if (typeof res.question_count === "number") setQuestionCount(res.question_count);
+                                if (typeof res.max_questions === "number") setMaxQuestions(res.max_questions);
+                                if (typeof res.completion_percent === "number") setCompletionPercent(res.completion_percent);
+                                setCurrentQuestion(res.next_question || "");
+                                setLastAiQuestion(res.next_question || null);
+                                setSubmitted(false);
+                                setIntakeStatus("in_progress");
                               } catch (e) {
                                 setError("Failed to edit answer. Please try again.");
                               } finally {

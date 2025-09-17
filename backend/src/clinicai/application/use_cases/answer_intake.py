@@ -161,7 +161,46 @@ class AnswerIntakeUseCase:
         qa = visit.intake_session.questions_asked[idx]
         qa.answer = request.new_answer.strip()
 
+        # Truncate all questions AFTER the edited one to allow dynamic regeneration
+        visit.truncate_questions_after(request.question_number)
+
+        # Recompute and set pending next question from updated context
+        previous_answers = [x.answer for x in visit.intake_session.questions_asked]
+        asked_questions = [x.question for x in visit.intake_session.questions_asked]
+        current_count = visit.intake_session.current_question_count
+        max_count = visit.intake_session.max_questions
+
+        next_question = await self._question_service.generate_next_question(
+            disease=visit.symptom or "general consultation",
+            previous_answers=previous_answers,
+            asked_questions=asked_questions,
+            current_count=current_count,
+            max_count=max_count,
+        )
+        visit.set_pending_question(next_question)
+
+        # Recalculate completion percent after truncation and edit
+        completion_percent = await self._question_service.assess_completion_percent(
+            disease=visit.symptom or "general consultation",
+            previous_answers=previous_answers,
+            asked_questions=asked_questions,
+            current_count=visit.intake_session.current_question_count,
+            max_count=max_count,
+        )
+
+        allows_image_upload = False
+        if next_question:
+            allows_image_upload = self._question_service.is_medication_question(next_question)
+
         # Persist changes
         await self._patient_repository.save(patient)
 
-        return EditAnswerResponse(success=True, message="Answer updated successfully")
+        return EditAnswerResponse(
+            success=True,
+            message="Answer updated and subsequent questions regenerated",
+            next_question=next_question,
+            question_count=visit.intake_session.current_question_count,
+            max_questions=max_count,
+            completion_percent=completion_percent,
+            allows_image_upload=allows_image_upload,
+        )

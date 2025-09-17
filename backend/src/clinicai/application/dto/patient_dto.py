@@ -57,6 +57,11 @@ class EditAnswerResponse:
 
     success: bool
     message: str
+    next_question: Optional[str] = None
+    question_count: Optional[int] = None
+    max_questions: Optional[int] = None
+    completion_percent: Optional[int] = None
+    allows_image_upload: Optional[bool] = None
 
 
 @dataclass

@@ -94,6 +94,11 @@ class EditAnswerRequest(BaseModel):
 class EditAnswerResponse(BaseModel):
     success: bool = Field(...)
     message: str = Field(...)
+    next_question: Optional[str] = Field(None, description="Regenerated next question after edit")
+    question_count: Optional[int] = Field(None, description="Current question count after truncation")
+    max_questions: Optional[int] = Field(None, description="Max questions allowed")
+    completion_percent: Optional[int] = Field(None, description="Updated completion percent")
+    allows_image_upload: Optional[bool] = Field(None, description="Whether next question allows image upload")
 
 
 class QuestionAnswerSchema(BaseModel):
@@ -135,9 +140,6 @@ class PatientSummarySchema(BaseModel):
     latest_visit: Optional[IntakeSummarySchema] = Field(
         None, description="Latest visit details"
     )
-
-
- 
 
 
 class ErrorResponse(BaseModel):

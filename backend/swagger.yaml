@@ -1273,6 +1273,27 @@ components:
           type: string
           description: Status message
           example: "Answer updated successfully"
+        next_question:
+          type: string
+          nullable: true
+          description: Regenerated next question after edit
+        question_count:
+          type: integer
+          nullable: true
+          description: Current question count after truncation
+        max_questions:
+          type: integer
+          nullable: true
+          description: Maximum questions allowed
+        completion_percent:
+          type: integer
+          format: int32
+          nullable: true
+          description: Updated completion percent after edit
+        allows_image_upload:
+          type: boolean
+          nullable: true
+          description: Whether the next question allows image upload
 
     HealthResponse:
       type: object

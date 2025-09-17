@@ -80,6 +80,27 @@ class IntakeSession:
         # Clear pending once answered
         self.pending_question = None
 
+    def truncate_after(self, index_inclusive: int) -> None:
+        """Remove all questions after the given 0-based index, keep up to index, and reset state.
+
+        If index_inclusive is the last kept item index, questions with indices > index_inclusive are dropped.
+        If index_inclusive is -1, all questions are dropped.
+        """
+        if index_inclusive < -1 or index_inclusive >= len(self.questions_asked):
+            # Nothing to do if index is out of bounds for truncation semantics
+            if index_inclusive == len(self.questions_asked) - 1:
+                return
+        keep_upto = index_inclusive + 1
+        self.questions_asked = self.questions_asked[:keep_upto]
+        # Re-number remaining questions to be sequential starting at 1
+        for idx, qa in enumerate(self.questions_asked, start=1):
+            qa.question_number = idx
+        self.current_question_count = len(self.questions_asked)
+        # Reset status to in_progress and clear completion markers/pending
+        self.status = "in_progress"
+        self.completed_at = None
+        self.pending_question = None
+
     def can_ask_more_questions(self) -> bool:
         """Check if more questions can be asked."""
         return (
@@ -210,6 +231,18 @@ class Visit:
         if not self.intake_session or question_number < 1 or question_number > len(self.intake_session.questions_asked):
             raise ValueError("Invalid question number")
         self.intake_session.questions_asked[question_number - 1].answer = new_answer
+        self.updated_at = datetime.utcnow()
+
+    def truncate_questions_after(self, question_number: int) -> None:
+        """Drop all questions after the given 1-based question number (keeping that one)."""
+        index_inclusive = question_number - 1
+        self.intake_session.truncate_after(index_inclusive)
+        # If the first answer was changed, align primary symptom to the first answer
+        if self.intake_session.current_question_count >= 1:
+            self.symptom = self.intake_session.questions_asked[0].answer.strip()
+        else:
+            # No answers left, fall back to empty symptom
+            self.symptom = ""
         self.updated_at = datetime.utcnow()
 
     def get_intake_summary(self) -> Dict[str, Any]:
