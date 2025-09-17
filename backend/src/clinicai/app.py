@@ -35,13 +35,7 @@ async def lifespan(app: FastAPI):
             TranscriptionSessionMongo,
             SoapNoteMongo,
         )
-        from .adapters.db.mongo.models.stable_patient_m import (
-            IdempotencyRecordMongo,
-            IntakeSnapshotMongo,
-            StablePatientMongo,
-            StableVisitMongo,
-            VisitSummaryMongo,
-        )
+        # stable_* models removed
 
         # Use configured URI and fail fast in dev with shorter selection timeout
         mongo_uri = settings.database.uri
@@ -58,12 +52,7 @@ async def lifespan(app: FastAPI):
                 QuestionAnswerMongo,
                 TranscriptionSessionMongo,
                 SoapNoteMongo,
-                # Stable patient models
-                StablePatientMongo,
-                StableVisitMongo,
-                IntakeSnapshotMongo,
-                VisitSummaryMongo,
-                IdempotencyRecordMongo,
+                
             ],
         )
         print("✅ Database connection established")

@@ -11,16 +11,10 @@ from fastapi import Depends
 from clinicai.adapters.db.mongo.repositories.patient_repository import (
     MongoPatientRepository,
 )
-from clinicai.adapters.db.mongo.repositories.stable_patient_repository import (
-    MongoStablePatientRepository,
-)
 from clinicai.adapters.external.question_service_openai import OpenAIQuestionService
 from clinicai.adapters.external.transcription_service_whisper import WhisperTranscriptionService
 from clinicai.adapters.external.soap_service_openai import OpenAISoapService
 from clinicai.application.ports.repositories.patient_repo import PatientRepository
-from clinicai.application.ports.repositories.stable_patient_repo import (
-    StablePatientRepository,
-)
 from clinicai.application.ports.services.question_service import QuestionService
 from clinicai.application.ports.services.transcription_service import TranscriptionService
 from clinicai.application.ports.services.soap_service import SoapService
@@ -42,12 +36,6 @@ def get_question_service() -> QuestionService:
     return OpenAIQuestionService()
 
 
-@lru_cache()
-def get_stable_patient_repository() -> StablePatientRepository:
-    """Get stable patient repository instance."""
-    # In a real implementation, this would come from the DI container
-    # For now, we'll create it directly
-    return MongoStablePatientRepository()
 
 
 @lru_cache()
@@ -69,8 +57,6 @@ def get_soap_service() -> SoapService:
 # Dependency annotations for FastAPI
 PatientRepositoryDep = Annotated[PatientRepository, Depends(get_patient_repository)]
 QuestionServiceDep = Annotated[QuestionService, Depends(get_question_service)]
-StablePatientRepositoryDep = Annotated[
-    StablePatientRepository, Depends(get_stable_patient_repository)
-]
+# Removed StablePatientRepository dependency
 TranscriptionServiceDep = Annotated[TranscriptionService, Depends(get_transcription_service)]
 SoapServiceDep = Annotated[SoapService, Depends(get_soap_service)]

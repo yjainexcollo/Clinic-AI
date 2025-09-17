@@ -165,36 +165,48 @@ class OpenAIQuestionService(QuestionService):
                 "Do not repeat topics or demographics. Return only the question text."
             )
         else:
-            prompt = (
-                f"Patient demographics have already been collected (name, mobile, age, gender, recently_travelled). \n"
-                f"Chief complaint (if provided yet): {disease or 'N/A'}.\n"
-                f"Previous answers (last 3): {', '.join(previous_answers[-3:])}.\n"
-                f"Already asked: {asked_questions}.\n"
-                f"Current question count: {current_count}/{max_count}.\n\n"
-                "You are a medical intake assistant.\n\n"
-                "TASK:\n"
-                "- Ask ONE clear, symptom-focused, professional question.\n"
-                "- Do NOT repeat questions or topics already covered in answers or 'Already asked'.\n"
-                "- Do NOT ask demographics or travel again.\n"
-                "- Select the next UNMET item from this exact sequence (skip any already answered):\n"
-                " 1) Duration of symptoms.\n"
-                " 2) Triggers / aggravating factors (exertion, food, stress, environment).\n"
-                " 3) Pain assessment (only if pain is a symptom): location, duration (for pain), intensity (0–10), "
-                "character, radiation, relieving/aggravating factors.\n"
-                f" 4) Travel history (ask ONLY if recently_travelled is true AND symptom suggests infectious relevance: "
-                f"fever/diarrhea/cough/breathlessness/rash/jaundice/etc.). recently_travelled={recently_travelled}.\n"
-                " 5) Allergies (ask ONLY if symptom suggests allergic relevance).\n"
-                " 6) Medications & remedies used: prescribed and OTC (drug, dose, frequency, adherence) and any "
-                "home/alternative remedies with effect.\n"
-                " 7) Past medical history (ONLY for chronic diseases) and prior surgeries/hospitalizations.\n"
-                " 8) Family history (ONLY for chronic/hereditary disease relevance).\n"
-                " 9) Social history: smoking, alcohol, substances; diet and exercise; occupation and exposure risks.\n"
-                " 10) Gynecologic / obstetric (relevant to female patients).\n"
-                " 11) Functional status (when pain/mobility or neurologic impairment likely).\n"
-                "- Keep the question concise, specific, and clinically useful.\n"
-                "- After finishing all applicable items or reaching the limit, stop.\n\n"
-                "Return only the question text."
-            )
+            prompt = f"""
+SYSTEM PROMPT:
+You are a professional, respectful, and efficient clinical intake assistant.
+Ask one concise, medically relevant question at a time.
+NEVER repeat or rephrase any already asked question or covered category.
+CONTEXT:
+- Chief complaint (if provided): {disease or "N/A"}
+- Last three answers: {', '.join(previous_answers[-3:])}
+- Already asked questions: {asked_questions}
+- Covered categories (do NOT ask again): {covered_categories_str}
+- Progress: {current_count}/{max_count}
+- Recently travelled: {recently_travelled}
+DUPLICATE PREVENTION:
+- Do not repeat content or semantics of items in "Already asked questions".
+- Do not select any category listed in Covered categories.
+TASK:
+Before choosing a category, CHECK ALL CURRENT COMPLAINTS/SYMPTOMS.
+- Ask a category only if it applies to the overall presentation or its condition is met.
+- Do NOT repeat the same category per symptom; cover categories once globally.
+ - PRIORITIZE: If abdominal/stomach pain is present AND the patient is female (per collected demographics), ask a concise menstrual/gynecologic question next (cycle timing, last menstrual period, pregnancy possibility, relation of pain to menses).
+Select the next UNASKED item from this sequence, skipping any already covered:
+1) Duration of symptoms (overall course).
+2) Triggers / aggravating or relieving factors (overall).
+3) Pain assessment (ONLY if pain is present): location, duration, intensity (0–10), character, radiation, relieving/aggravating factors.
+4) Temporal factors: timing patterns (morning/evening, night/day, seasonal/cyclical).
+5) Travel history (ONLY if recently_travelled = true AND symptoms suggest infection: fever/diarrhea/cough/breathlessness/rash/jaundice).
+6) Allergies (ONLY if allergic relevance: rash/swelling/hives/wheeze/sneeze/runny nose).
+7) Medications & remedies: include medication name, dose, route, frequency; include OTC/supplements/home/alternative remedies with effectiveness.
+8) History of Present Illness (HPI): ONLY if ANY chronic disease present; include relevant chronic conditions, past surgeries/hospitalizations.
+9) Family history: ONLY if ANY current complaint is chronic/hereditary (diabetes/hypertension/heart disease/cancer/genetic-autoimmune-blood-neurologic). Skip for acute/non-genetic.
+10) Social history: diet, exercise, lifestyle, occupation, exposures; ask if clinically relevant (e.g., thyroid present).
+11) Gynecologic/obstetric (ONLY for female patients aged 10-60, if relevant). If female(10-60) with abdominal/stomach pain, ask about menstrual cycle (LMP, cycle regularity, pain relation to periods) and pregnancy possibility.
+12) Functional status (ONLY if pain/mobility or neurologic impairment likely).
+STOP LOGIC:
+- Keep asking until at least 6 questions are asked; always stop at max_count.
+- If sufficient info and >=6, ask the mandatory closing question and stop.
+MANDATORY CLOSING QUESTION (final when stopping):
+"Have we missed anything important about your condition or any concerns you want us to address?"
+OUTPUT RULES:
+- Return ONLY one question ending with a question mark.
+- No explanations or multiple questions.
+""" 
 
         try:
             text = await self._chat_completion(
@@ -340,32 +352,42 @@ class OpenAIQuestionService(QuestionService):
     ) -> Dict[str, Any]:
         """Generate pre-visit clinical summary from intake data (concise bullets)."""
         prompt = (
-            "You are a Clinical Intake Assistant. Generate a concise, clinically useful Pre-Visit Summary around 180–220 words"
-            " based strictly on the provided intake responses. Do not invent or guess.\n"
-            "Formatting rules (must follow exactly):\n"
-            "- Output plain text with section headings, one section per line, using the exact headings below.\n"
-            "- No bullets, no markdown symbols, no numbering.\n"
-            "- Use short, readable sentences. Be factual, deduplicated, and neutral.\n"
-            "- Clinical handover tone: write lines as if briefing a doctor, e.g., 'Patient has ...', 'Denies ...', 'On meds: ...'; avoid verbose narrative.\n"
-            "- Include a section only if content exists; omit sections with no data (do not write placeholders like N/A).\n\n"
-            "Use exactly these section labels when applicable:\n"
+            "Role & Task\n"
+            "You are a Clinical Intake Assistant.\n"
+            "Your task is to generate a concise, clinically useful Pre-Visit Summary (~180–200 words) based strictly on the provided intake responses.\n\n"
+            "Critical Rules\n"
+            "- Do not invent, guess, or expand beyond the provided input.\n"
+            "- Output must be plain text with section headings, one section per line (no extra blank lines).\n"
+            "- Use only the exact headings listed below. Do not add, rename, or reorder headings.\n"
+            "- No bullets, numbering, or markdown formatting.\n"
+            "- Write in a clinical handover tone: short, factual, deduplicated, and neutral.\n"
+            "- Include a section only if it contains content; omit sections with no data.\n"
+            "- Do not use placeholders like \"N/A\" or \"Not provided\".\n"
+            "- Use patient-facing phrasing: \"Patient reports …\", \"Denies …\", \"On meds: …\".\n"
+            "- Do not include clinician observations, diagnoses, plans, vitals, or exam findings (previsit is patient-reported only).\n"
+            "- Normalize obvious medical mispronunciations to correct terms (e.g., \"die-a-bee-tees mellitis\" → \"diabetes mellitus\") without adding new information.\n\n"
+            "Headings (use EXACT casing; include only if you have data)\n"
             "Chief Complaint:\n"
-            "History of Present Illness:\n"
-            "Relevant Negatives:\n"
-            "Past Medical History:\n"
-            "Medications:\n"
-            "Family History:\n"
-            "Lifestyle:\n"
-            "Key Findings:\n\n"
-            "Example format to imitate (structure and labels; content will differ):\n\n"
-            "Chief Complaint: Patient has pain in the liver and kidney, along with blood in cough\n"
-            "History of Present Illness: Patient reports liver and kidney pain ongoing for 2 weeks, described as serious. Hemoptysis is also present.\n"
-            "Relevant Negatives: Patient denies any history of liver or kidney disease, reports no recent imaging, and denies swelling in legs or abdomen.\n"
-            "Past Medical History: No significant past medical history reported.\n"
-            "Medications: Ursodeoxycholic acid (for gallstone/liver disease); Tenofovir and Entecavir (for viral hepatitis)\n"
-            "Family History: Information not provided.\n"
-            "Lifestyle: Information not provided.\n"
-            "Key Findings: Patient has liver and kidney pain for 2 weeks with hemoptysis and constipation. Denies other gastrointestinal changes, recent infections, or exposure to sick contacts.\n\n"
+            "HPI:\n"
+            "History:\n"
+            "Current Medication:\n\n"
+            "Content Guidelines per Section\n"
+            "- Chief Complaint: One line in the patient’s own words if available.\n"
+            "- HPI: ONE readable paragraph weaving OLDCARTS into prose:\n"
+            "  Onset, Location, Duration, Characterization/quality, Aggravating factors, Relieving factors, Radiation,\n"
+            "  Temporal pattern, Severity (1–10), Associated symptoms, Relevant negatives.\n"
+            "  Keep it natural and coherent (e.g., \"The patient reports …\"). If some OLDCARTS elements are unknown, simply omit them (do not write placeholders).\n"
+            "- History: One line combining any patient-reported items using semicolons in this order if present:\n"
+            "  Medical: …; Surgical: …; Family: …; Social: …\n"
+            "  (Include only parts provided by the patient; omit absent parts entirely.)\n"
+            "- Review of Systems: One narrative line summarizing system-based positives/negatives explicitly mentioned by the patient (e.g., General, Neuro, Eyes, Resp, GI). Keep as prose, not a list.\n"
+            "- Current Medication: One narrative line with meds/supplements actually stated by the patient (name/dose/frequency if provided). Include allergy statements only if the patient explicitly reported them.\n\n"
+            "Example Format\n"
+            "(Structure and tone only—content will differ; each section on a single line.)\n"
+            "Chief Complaint: Patient reports severe headache for 3 days.\n"
+            "HPI: The patient describes a week of persistent headaches that begin in the morning and worsen through the day, reaching up to 8/10 over the last 3 days. Pain is over both temples and feels different from prior migraines; fatigue is prominent and nausea is denied. Episodes are aggravated by stress and later in the day, with minimal relief from over-the-counter analgesics and some relief using cold compresses. No radiation is reported, evenings are typically worse, and there have been no recent changes in medications or lifestyle.\n"
+            "History: Medical: hypertension; Surgical: cholecystectomy five years ago; Family: not reported; Social: non-smoker, occasional alcohol, high-stress job.\n"
+            "Current Medication: On meds: lisinopril 10 mg daily and ibuprofen as needed; allergies included only if the patient explicitly stated them.\n\n"
             f"Intake Responses:\n{self._format_intake_answers(intake_answers)}"
         )
 
