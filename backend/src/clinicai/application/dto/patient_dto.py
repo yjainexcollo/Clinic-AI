@@ -177,9 +177,7 @@ class PreVisitSummaryResponse:
     patient_id: str
     visit_id: str
     summary: str
-    structured_data: dict
     generated_at: str
-    message: str
 
 
 # Step-03: Audio Transcription & SOAP Generation DTOs

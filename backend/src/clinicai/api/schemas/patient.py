@@ -161,7 +161,5 @@ class PreVisitSummaryResponse(BaseModel):
 
     patient_id: str = Field(..., description="Patient ID")
     visit_id: str = Field(..., description="Visit ID")
-    summary: str = Field(..., description="Clinical summary in markdown format")
-    structured_data: dict = Field(..., description="Structured clinical data")
+    summary: str = Field(..., description="Clinical summary in markdown/plain text")
     generated_at: str = Field(..., description="Summary generation timestamp")
-    message: str = Field(..., description="Status message")

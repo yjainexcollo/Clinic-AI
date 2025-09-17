@@ -55,7 +55,7 @@ class GeneratePreVisitSummaryUseCase:
         # Store summary in visit for EHR
         visit.store_pre_visit_summary(
             summary_result["summary"], 
-            summary_result["structured_data"]
+            {}
         )
 
         # Save the updated visit to repository
@@ -65,7 +65,5 @@ class GeneratePreVisitSummaryUseCase:
             patient_id=patient.patient_id.value,
             visit_id=visit.visit_id.value,
             summary=summary_result["summary"],
-            structured_data=summary_result["structured_data"],
             generated_at=visit.updated_at.isoformat(),
-            message="Pre-visit summary generated and stored successfully"
         )

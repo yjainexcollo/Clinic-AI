@@ -1430,9 +1430,7 @@ components:
         - patient_id
         - visit_id
         - summary
-        - structured_data
         - generated_at
-        - message
       properties:
         patient_id:
           type: string
@@ -1446,32 +1444,11 @@ components:
           type: string
           description: Clinical summary in markdown format
           example: "## PRE-VISIT SUMMARY\n\n### Chief Complaint\nPatient presents with hypertension..."
-        structured_data:
-          type: object
-          description: Structured clinical data
-          properties:
-            chief_complaint:
-              type: string
-              example: "Hypertension"
-            key_findings:
-              type: array
-              items:
-                type: string
-              example: ["High blood pressure", "Headaches", "Dizziness"]
-            recommendations:
-              type: array
-              items:
-                type: string
-              example: ["Blood pressure monitoring", "Lifestyle modifications"]
         generated_at:
           type: string
           format: date-time
           description: Summary generation timestamp
           example: "2025-01-03T12:30:00Z"
-        message:
-          type: string
-          description: Status message
-          example: "Pre-visit summary generated successfully"
 
     # Step-03: Audio Transcription & SOAP Generation Schemas
     AudioTranscriptionRequest:

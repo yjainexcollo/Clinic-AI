@@ -368,9 +368,7 @@ async def generate_pre_visit_summary(
             patient_id=result.patient_id,
             visit_id=result.visit_id,
             summary=result.summary,
-            structured_data=result.structured_data,
             generated_at=result.generated_at,
-            message=result.message,
         )
 
     except ValueError as e:
