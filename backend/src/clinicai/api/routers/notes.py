@@ -81,6 +81,31 @@ async def test_upload(audio_file: UploadFile = File(...)):
         "size": audio_file.size
     }
 
+@router.post("/test-transcribe-simple")
+async def test_transcribe_simple(
+    patient_id: str = Form(...),
+    visit_id: str = Form(...),
+    audio_file: UploadFile = File(...)
+):
+    """Simplified test endpoint for transcribe without complex processing."""
+    try:
+        # Just return basic info without doing any processing
+        return {
+            "status": "success",
+            "message": "File received successfully",
+            "patient_id": patient_id,
+            "visit_id": visit_id,
+            "filename": audio_file.filename,
+            "content_type": audio_file.content_type,
+            "size": audio_file.size
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Error: {str(e)}",
+            "error_type": type(e).__name__
+        }
+
 
 @router.post(
     "/transcribe",
