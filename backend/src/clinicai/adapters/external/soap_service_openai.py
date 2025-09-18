@@ -28,7 +28,7 @@ class OpenAISoapService(SoapService):
             except Exception:
                 pass
         if not api_key:
-            raise ValueError("OPENAI_API_KEY is not set")
+            raise ValueError("OPENAI_API_KEY is not set. Please set the OPENAI_API_KEY environment variable or add it to your .env file.")
         
         self._client = OpenAI(api_key=api_key)
         # Optional: log model and presence of key (masked)

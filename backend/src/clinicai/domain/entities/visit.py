@@ -200,9 +200,9 @@ class Visit:
         if self.intake_session is None:
             self.intake_session = IntakeSession(symptom=self.symptom)
 
-    def add_question_answer(self, question: str, answer: str, attachment_image_paths: Optional[List[str]] = None) -> None:
+    def add_question_answer(self, question: str, answer: str, attachment_image_paths: Optional[List[str]] = None, ocr_texts: Optional[List[str]] = None) -> None:
         """Add a question and answer to the intake session."""
-        self.intake_session.add_question_answer(question, answer, attachment_image_paths=attachment_image_paths)
+        self.intake_session.add_question_answer(question, answer, attachment_image_paths=attachment_image_paths, ocr_texts=ocr_texts)
         self.updated_at = datetime.utcnow()
 
     def set_pending_question(self, question: Optional[str]) -> None:
