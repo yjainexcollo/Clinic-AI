@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, useLocation } from "react-router-dom";
 import { intakeAPI, IntakeRequest, IntakeResponse } from "../api";
-import { answerIntakeBackend, editAnswerBackend, OCRQualityInfo } from "../services/patientService";
+import { answerIntakeBackend, editAnswerBackend, OCRQualityInfo, BACKEND_BASE_URL } from "../services/patientService";
 import { SessionManager } from "../utils/session";
 import { COPY } from "../copy";
 import SymptomSelector from "../components/SymptomSelector";
@@ -38,6 +38,11 @@ const Index = () => {
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [showSummaryView, setShowSummaryView] = useState<boolean>(false);
   const [allowsImageUpload, setAllowsImageUpload] = useState<boolean>(false);
+  const [showUploadAudio, setShowUploadAudio] = useState<boolean>(false);
+  const [isTranscribingAudio, setIsTranscribingAudio] = useState<boolean>(false);
+  const [uploadAudioError, setUploadAudioError] = useState<string>("");
+  const [showTranscript, setShowTranscript] = useState<boolean>(false);
+  const [transcriptText, setTranscriptText] = useState<string>("");
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -195,7 +200,9 @@ const Index = () => {
       });
 
       // Use backend-provided flag to decide if image should be sent with this answer
-      const imageFile = allowsImageUpload ? (window as any).clinicaiMedicationFile : undefined;
+      const fileInputEl = document.querySelector('input[type="file"]') as HTMLInputElement | null;
+      const chosenFile = fileInputEl?.files && fileInputEl.files[0] ? fileInputEl.files[0] : undefined;
+      const imageFile = allowsImageUpload ? ((window as any).clinicaiMedicationFile || chosenFile) : undefined;
       const response = await answerIntakeBackend({
         patient_id: patientId,
         visit_id: effectiveVisitId!,
@@ -618,7 +625,7 @@ const Index = () => {
                                 form.append("visit_id", effectiveVisitId);
                                 form.append("answer", newAnswer);
                                 form.append("medication_images", editFile);
-                                const resp = await fetch("http://localhost:8000/patients/consultations/answer", {
+                                const resp = await fetch(`${BACKEND_BASE_URL}/patients/consultations/answer`, {
                                   method: "POST",
                                   body: form,
                                 });
@@ -782,6 +789,32 @@ const Index = () => {
                   View Pre-Visit Summary
                 </button>
                 <button
+                  onClick={() => setShowUploadAudio(true)}
+                  className="w-full bg-purple-600 text-white py-3 px-4 rounded-md hover:bg-purple-700 transition-colors font-medium"
+                >
+                  Upload Audio & Transcribe
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      if (!patientId || !visitId) return;
+                      const resp = await fetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/transcript`);
+                      if (!resp.ok) {
+                        const txt = await resp.text();
+                        throw new Error(`Failed to fetch transcript ${resp.status}: ${txt}`);
+                      }
+                      const data = await resp.json();
+                      setTranscriptText(data.transcript || '');
+                      setShowTranscript(true);
+                    } catch (e) {
+                      alert('Transcript not available yet.');
+                    }
+                  }}
+                  className="w-full bg-gray-700 text-white py-3 px-4 rounded-md hover:bg-gray-800 transition-colors font-medium"
+                >
+                  View Transcript
+                </button>
+                <button
                   onClick={handleStartNew}
                   className="medical-button w-full"
                 >
@@ -815,6 +848,98 @@ const Index = () => {
           visitId={visitId}
           onClose={() => setShowSummaryView(false)}
         />
+      )}
+
+      {/* Upload Audio Modal */}
+      {showUploadAudio && patientId && visitId && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Upload Consultation Audio</h3>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setUploadAudioError("");
+                try {
+                  setIsTranscribingAudio(true);
+                  const input = document.getElementById('upload-audio-input') as HTMLInputElement | null;
+                  const file = input?.files && input.files[0] ? input.files[0] : null;
+                  if (!file) {
+                    setUploadAudioError('Please choose an audio file.');
+                    setIsTranscribingAudio(false);
+                    return;
+                  }
+                  const form = new FormData();
+                  form.append('patient_id', patientId);
+                  form.append('visit_id', visitId);
+                  form.append('audio_file', file);
+                  const resp = await fetch(`${BACKEND_BASE_URL}/notes/transcribe`, {
+                    method: 'POST',
+                    body: form,
+                  });
+                  if (!resp.ok) {
+                    const txt = await resp.text();
+                    throw new Error(`Upload failed ${resp.status}: ${txt}`);
+                  }
+                  setShowUploadAudio(false);
+                  alert('Audio uploaded. Transcription started.');
+                } catch (err: any) {
+                  setUploadAudioError(err?.message || 'Failed to upload audio');
+                } finally {
+                  setIsTranscribingAudio(false);
+                }
+              }}
+              className="space-y-4"
+            >
+              <input
+                id="upload-audio-input"
+                type="file"
+                accept="audio/*,video/mpeg,.mp3,.m4a,.aac,.wav,.ogg,.flac,.amr,.mpeg"
+                className="block w-full text-sm text-gray-700"
+              />
+              {uploadAudioError && (
+                <div className="text-sm text-red-600">{uploadAudioError}</div>
+              )}
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowUploadAudio(false)}
+                  className="px-4 py-2 rounded bg-gray-200 text-gray-800"
+                  disabled={isTranscribingAudio}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded bg-purple-600 text-white disabled:opacity-60"
+                  disabled={isTranscribingAudio}
+                >
+                  {isTranscribingAudio ? 'Uploading...' : 'Upload & Transcribe'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Transcript Modal */}
+      {showTranscript && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Transcript</h3>
+            <div className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap text-sm text-gray-800 border rounded p-3 bg-gray-50">
+              {transcriptText || 'No transcript available.'}
+            </div>
+            <div className="flex items-center justify-end gap-2 mt-4">
+              <button
+                type="button"
+                onClick={() => setShowTranscript(false)}
+                className="px-4 py-2 rounded bg-gray-200 text-gray-800"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

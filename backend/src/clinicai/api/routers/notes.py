@@ -21,6 +21,7 @@ from clinicai.domain.errors import (
     VisitNotFoundError,
 )
 from ..deps import PatientRepositoryDep, TranscriptionServiceDep, SoapServiceDep
+from ...core.utils.crypto import decode_patient_id
 from ..schemas.patient import ErrorResponse
 
 router = APIRouter(prefix="/notes", tags=["notes"])
@@ -79,9 +80,15 @@ async def transcribe_audio(
             temp_file.write(content)
             temp_file_path = temp_file.name
         
+        # Decode opaque patient id from client
+        try:
+            internal_patient_id = decode_patient_id(patient_id)
+        except Exception:
+            internal_patient_id = patient_id  # fallback if already internal
+
         # Create request
         request = AudioTranscriptionRequest(
-            patient_id=patient_id,
+            patient_id=internal_patient_id,
             visit_id=visit_id,
             audio_file_path=temp_file_path
         )
@@ -227,9 +234,14 @@ async def get_transcript(
     """Get transcript for a visit."""
     try:
         from ...domain.value_objects.patient_id import PatientId
+        from ...core.utils.crypto import decode_patient_id
         
-        # Find patient
-        patient_id_obj = PatientId(patient_id)
+        # Find patient (decode opaque id from client)
+        try:
+            internal_patient_id = decode_patient_id(patient_id)
+        except Exception:
+            internal_patient_id = patient_id
+        patient_id_obj = PatientId(internal_patient_id)
         patient = await patient_repo.find_by_id(patient_id_obj)
         if not patient:
             raise PatientNotFoundError(patient_id)

@@ -1,6 +1,7 @@
 import axios from "axios";
 
 const API_ENDPOINT =
+  (import.meta as any).env?.VITE_N8N_WEBHOOK_URL ||
   "https://n8n-excollo.azurewebsites.net/webhook/intake-dynamic-doctor";
 
 export interface IntakeRequest {

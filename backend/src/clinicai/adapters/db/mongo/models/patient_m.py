@@ -41,8 +41,8 @@ class IntakeSessionMongo(BaseModel):
         exclude = {"revision_id"}
 
 
-class TranscriptionSessionMongo(Document):
-    """MongoDB model for transcription session."""
+class TranscriptionSessionMongo(BaseModel):
+    """Embedded model for transcription session (no revision_id)."""
     audio_file_path: Optional[str] = Field(None, description="Path to audio file")
     transcript: Optional[str] = Field(None, description="Transcribed text")
     transcription_status: str = Field(default="pending", description="Status: pending, processing, completed, failed")
@@ -52,13 +52,9 @@ class TranscriptionSessionMongo(Document):
     audio_duration_seconds: Optional[float] = Field(None, description="Audio duration in seconds")
     word_count: Optional[int] = Field(None, description="Word count of transcript")
 
-    class Config:
-        # Exclude revision_id and other MongoDB-specific fields when serializing
-        exclude = {"revision_id"}
 
-
-class SoapNoteMongo(Document):
-    """MongoDB model for SOAP note."""
+class SoapNoteMongo(BaseModel):
+    """Embedded model for SOAP note (no revision_id)."""
     subjective: str = Field(..., description="Subjective section")
     objective: str = Field(..., description="Objective section")
     assessment: str = Field(..., description="Assessment section")
@@ -68,10 +64,6 @@ class SoapNoteMongo(Document):
     generated_at: datetime = Field(default_factory=datetime.utcnow)
     model_info: Optional[dict] = Field(None, description="Model information")
     confidence_score: Optional[float] = Field(None, description="Confidence score")
-
-    class Config:
-        # Exclude revision_id and other MongoDB-specific fields when serializing
-        exclude = {"revision_id"}
 
 
 class VisitMongo(Document):

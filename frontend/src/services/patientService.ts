@@ -1,8 +1,13 @@
 const API_ENDPOINT =
+  (import.meta as any).env?.VITE_N8N_WEBHOOK_URL ||
   "https://n8n-excollo.azurewebsites.net/webhook";
 
 // Backend API base URL (FastAPI)
-const BACKEND_BASE_URL = "http://localhost:8000";
+const BACKEND_BASE_URL: string =
+  ((import.meta as any).env?.VITE_BACKEND_BASE_URL as string) ||
+  "http://localhost:8000";
+
+export { BACKEND_BASE_URL };
 
 export interface PatientData {
   fullName: string;

@@ -123,8 +123,9 @@ class OpenAIQuestionService(QuestionService):
             "hepatitis",
             "chikungunya",
         ]
-        travel_relevant = bool(recently_travelled) and any(k in symptom_text for k in travel_keywords)
-        if travel_relevant and not any("travel" in (q or "").lower() for q in asked_questions):
+        # Allow travel ONLY if the user indicated recent travel AND symptoms suggest infection
+        allow_travel = bool(recently_travelled) and any(k in symptom_text for k in travel_keywords)
+        if allow_travel and not any("travel" in (q or "").lower() for q in asked_questions):
             gi_related = any(
                 k in symptom_text
                 for k in ["diarrhea", "diarrhoea", "vomit", "vomiting", "stomach", "abdomen", "abdominal"]
@@ -156,19 +157,25 @@ class OpenAIQuestionService(QuestionService):
                     return True
             return False
 
+        # Medication repetition guard
+        med_keywords = ["medication", "medicine", "drug", "dose", "frequency", "prescription", "treatment", "remedy"]
+        medications_asked = any(any(k in (q or "").lower() for k in med_keywords) for q in asked_questions or [])
+
         # Prompt (autonomous vs guided)
         if self._mode == "autonomous":
             prompt = (
                 f"Chief complaint: {disease or 'N/A'}. Last answers: {', '.join(previous_answers[-3:])}. "
                 f"Already asked: {asked_questions}.\n"
                 "Ask ONE concise, clinically relevant next question based on context.\n"
-                "Do not repeat topics or demographics. Return only the question text."
+                "Do not repeat topics or demographics. Return only the question text.\n"
+                + ("Do NOT ask about travel history at any point (patient did not report recent travel).\n" if not allow_travel else "")
+                + ("Do NOT ask about medications again.\n" if medications_asked else "")
             )
         else:
             # Define covered categories for the prompt
             covered_categories_str = "None specified - use clinical judgment"
             
-            prompt = f""" 
+            prompt = f"""
             SYSTEM PROMPT:
 You are a professional, respectful, and efficient clinical intake assistant.
 Ask one concise, medically relevant question at a time.
@@ -180,7 +187,7 @@ CONTEXT:
 - Covered categories: {covered_categories_str}
 - Progress: {current_count}/{max_count}
 - Recently travelled: {recently_travelled} (true/false)
-PRIORITY RULES (follow in this exact order):
+            PRIORITY RULES (follow in this exact order):
 1. Do not repeat any question, topic, or meaning from "Already asked questions" or Covered categories.
 2. Strictky ask categories if clinically relevant:
    - Pain → ONLY if pain symptoms are reported from the user.
@@ -196,9 +203,9 @@ SEQUENCE OF QUESTIONS:
 2) Triggers / aggravating or relieving factors (overall).
 3) Pain assessment: ONLY if pain present → ask location, duration, intensity (0–10), character, radiation, relieving/aggravating factors.
 4) Temporal factors: timing patterns (morning/evening, night/day, seasonal/cyclical).
-5) Travel history: ONLY if recently_travelled = true AND infection-related symptoms (fever, diarrhea, cough, breathlessness, rash, jaundice).
+5) Travel history: ONLY if recently_travelled = true AND infection-related symptoms (fever, diarrhea, cough, breathlessness, rash, jaundice). If recently_travelled = false, NEVER ask travel.
 6) Allergies: ONLY if allergy relevance exists (rash, hives, swelling, wheeze, sneeze, runny nose).
-7) Medications & remedies: ask about drug name, dose, route, frequency; include OTC/supplements/home remedies, and effectiveness.
+7) Medications & remedies: ask only ONCE about drug name, dose, route, frequency; include OTC/supplements/home remedies, and effectiveness. If a medication question has already been asked, do NOT ask again.
 8) History of Present Illness (HPI): ONLY if acute/new symptoms exist (fever, chest pain, cough, infection, stomach pain).
 9) Family history: REQUIRED if chronic/hereditary condition is present (diabetes, hypertension, heart disease, cancer, autoimmune, blood, neurologic, genetic).
 10) Lifestyle: diet, exercise, occupation, exposures; ask if clinically relevant (e.g., thyroid, obesity, chronic illness).
@@ -233,6 +240,9 @@ settings = {
             text = text.replace("\n", " ").strip()
             if not text.endswith("?"):
                 text = text.rstrip(".") + "?"
+            # Post-safety filters
+            if medications_asked and any(k in text.lower() for k in med_keywords):
+                return "Have any treatments or remedies helped or worsened your symptoms?"
             # Return model output directly (no local fallbacks)
             return text
         except Exception:
@@ -399,7 +409,7 @@ settings = {
             "(Structure and tone only—content will differ; each section on a single line.)\n"
             "Chief Complaint: Patient reports severe headache for 3 days.\n"
             "HPI: The patient describes a week of persistent headaches that begin in the morning and worsen through the day, reaching up to 8/10 over the last 3 days. Pain is over both temples and feels different from prior migraines; fatigue is prominent and nausea is denied. Episodes are aggravated by stress and later in the day, with minimal relief from over-the-counter analgesics and some relief using cold compresses. No radiation is reported, evenings are typically worse, and there have been no recent changes in medications or lifestyle.\n"
-            "History: Medical: hypertension; Surgical: cholecystectomy five years ago; Family: not reported; Social: non-smoker, occasional alcohol, high-stress job.\n"
+            "History: Medical: hypertension; Surgical: cholecystectomy five years ago; Family: not reported; Lifestyle: non-smoker, occasional alcohol, high-stress job.\n"
             "Current Medication: On meds: lisinopril 10 mg daily and ibuprofen as needed; allergies included only if the patient explicitly stated them.\n\n"
             f"Intake Responses:\n{self._format_intake_answers(intake_answers)}"
         )

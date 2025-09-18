@@ -140,6 +140,35 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
     return null;
   }
 
+  // Format summary: bold known headings without showing markdown symbols
+  const renderSummary = (text: string) => {
+    const lines = (text || '').split(/\n+/);
+    const headings = [
+      'Chief Complaint:',
+      'HPI:',
+      'History:',
+      'Current Medication:',
+      'Review of Systems:',
+    ];
+    return (
+      <div className="space-y-3">
+        {lines.map((line, idx) => {
+          const key = `l-${idx}`;
+          const match = headings.find(h => line.startsWith(h));
+          if (match) {
+            const rest = line.slice(match.length).trimStart();
+            return (
+              <div key={key}>
+                <strong>{match}</strong> {rest}
+              </div>
+            );
+          }
+          return <div key={key}>{line}</div>;
+        })}
+      </div>
+    );
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <Card className="w-full max-w-4xl max-h-[90vh] overflow-hidden">
@@ -200,7 +229,7 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
                 Clinical Summary
               </h3>
               <div className="text-gray-700 whitespace-pre-wrap leading-relaxed">
-                {summaryData.summary}
+                {renderSummary(summaryData.summary)}
               </div>
             </div>
           </div>

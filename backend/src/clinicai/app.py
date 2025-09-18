@@ -25,31 +25,31 @@ async def lifespan(app: FastAPI):
     try:
         from beanie import init_beanie  # type: ignore
         from motor.motor_asyncio import AsyncIOMotorClient  # type: ignore
+        import certifi  # type: ignore
 
         # Import models for registration
         from .adapters.db.mongo.models.patient_m import (
             PatientMongo,
             VisitMongo,
-            TranscriptionSessionMongo,
-            SoapNoteMongo,
         )
         # stable_* models removed
 
-        # Use configured URI and fail fast in dev with shorter selection timeout
+        # Use configured URI and enable TLS with CA bundle for Atlas
         mongo_uri = settings.database.uri
         db_name = settings.database.db_name
-        client = AsyncIOMotorClient(mongo_uri, serverSelectionTimeoutMS=5000)
+        ca_path = certifi.where()
+        print(f"🔐 Using certifi CA bundle: {ca_path}")
+        client = AsyncIOMotorClient(
+            mongo_uri,
+            serverSelectionTimeoutMS=15000,
+            tls=True,
+            tlsCAFile=ca_path,
+            tlsAllowInvalidCertificates=False,
+        )
         db = client[db_name]
         await init_beanie(
             database=db,
-            document_models=[
-                # Patient models
-                PatientMongo,
-                VisitMongo,
-                TranscriptionSessionMongo,
-                SoapNoteMongo,
-                
-            ],
+            document_models=[PatientMongo, VisitMongo],
         )
         print("✅ Database connection established")
     except Exception as e:
@@ -76,16 +76,18 @@ def create_app() -> FastAPI:
     )
 
     # CORS middleware
-    # In debug, allow local frontend origins and common methods/headers for ease of dev
-    debug_origins = [
+    # Always include common local dev origins; merge with configured origins
+    common_local_origins = [
         "http://localhost:8080",
         "http://127.0.0.1:8080",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
     ]
-    allow_origins = (
-        (settings.cors.allowed_origins or []) + (debug_origins if settings.debug else [])
-    ) or ["*"]
+    configured_origins = settings.cors.allowed_origins or []
+    allow_origins = list({*common_local_origins, *configured_origins}) or ["*"]
+
     allow_methods = settings.cors.allowed_methods or ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
     # Ensure PATCH and OPTIONS are always allowed for browser preflights
     allow_methods = list({m.upper() for m in allow_methods} | {"PATCH", "OPTIONS"})
@@ -97,9 +99,10 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allow_origins,
+        allow_origin_regex=r"https?://.*",
         allow_credentials=settings.cors.allow_credentials,
         allow_methods=allow_methods,
-        allow_headers=allow_headers if settings.debug else allow_headers,
+        allow_headers=allow_headers,
     )
 
     # Include routers
