@@ -206,8 +206,8 @@ async def answer_intake_question(
             if files:
                 import os
                 from uuid import uuid4
-                from clinicai.core.utils.file_utils import create_directory
-                from clinicai.core.utils.image_ocr import extract_text_from_image
+                from ...core.utils.file_utils import create_directory
+                from ...core.utils.image_ocr import extract_text_from_image
 
                 uploads_dir = os.getenv("UPLOADS_DIR", "/tmp/clinicai_uploads")
                 create_directory(uploads_dir)
