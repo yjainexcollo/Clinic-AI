@@ -33,7 +33,7 @@ class QuestionAnswer:
 class IntakeSession:
     """Intake session data for Step-01."""
 
-    symptom: str
+    symptom: str = ""  # Make symptom optional with default empty string
     questions_asked: List[QuestionAnswer] = field(default_factory=list)
     current_question_count: int = 0
     max_questions: int = 10
@@ -200,9 +200,26 @@ class Visit:
         if self.intake_session is None:
             self.intake_session = IntakeSession(symptom=self.symptom)
 
+<<<<<<< HEAD
     def add_question_answer(self, question: str, answer: str, attachment_image_paths: Optional[List[str]] = None, ocr_texts: Optional[List[str]] = None) -> None:
         """Add a question and answer to the intake session."""
         self.intake_session.add_question_answer(question, answer, attachment_image_paths=attachment_image_paths, ocr_texts=ocr_texts)
+=======
+    def add_question_answer(
+        self,
+        question: str,
+        answer: str,
+        attachment_image_paths: Optional[List[str]] = None,
+        ocr_texts: Optional[List[str]] = None,
+    ) -> None:
+        """Add a question and answer to the intake session."""
+        self.intake_session.add_question_answer(
+            question,
+            answer,
+            attachment_image_paths=attachment_image_paths,
+            ocr_texts=ocr_texts,
+        )
+>>>>>>> f8bdc4f192a057dc922dfb14423108987d939839
         self.updated_at = datetime.utcnow()
 
     def set_pending_question(self, question: Optional[str]) -> None:

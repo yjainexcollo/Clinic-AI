@@ -33,6 +33,21 @@ class MongoPatientRepository(PatientRepository):
         # Save to database
         await patient_mongo.save()
 
+        # Remove revision_id from the document after saving using raw MongoDB operations
+        if patient_mongo.id:
+            from motor.motor_asyncio import AsyncIOMotorClient
+            from clinicai.core.config import get_settings
+            
+            settings = get_settings()
+            client = AsyncIOMotorClient(settings.database.uri)
+            db = client[settings.database.db_name]
+            collection = db["patients"]
+            
+            await collection.update_one(
+                {"_id": patient_mongo.id},
+                {"$unset": {"revision_id": "", "visits.$[].revision_id": ""}}
+            )
+
         # Return the domain entity
         return await self._mongo_to_domain(patient_mongo)
 
@@ -96,6 +111,19 @@ class MongoPatientRepository(PatientRepository):
 
         return result is not None
 
+    async def cleanup_revision_ids(self) -> int:
+        """Remove revision_id from all patient documents and nested visits."""
+        result = await PatientMongo.update_many(
+            {},
+            {
+                "$unset": {
+                    "revision_id": "",
+                    "visits.$[].revision_id": ""
+                }
+            }
+        )
+        return result.modified_count
+
     async def _domain_to_mongo(self, patient: Patient) -> PatientMongo:
         """Convert domain entity to MongoDB model."""
         # Convert visits
@@ -119,7 +147,6 @@ class MongoPatientRepository(PatientRepository):
                     questions_asked_mongo.append(qa_mongo)
 
                 intake_session_mongo = IntakeSessionMongo(
-                    disease=visit.intake_session.symptom,
                     questions_asked=questions_asked_mongo,
                     current_question_count=visit.intake_session.current_question_count,
                     max_questions=visit.intake_session.max_questions,
@@ -161,7 +188,6 @@ class MongoPatientRepository(PatientRepository):
             visit_mongo = VisitMongo(
                 visit_id=visit.visit_id.value,
                 patient_id=visit.patient_id,
-                disease=visit.symptom,
                 status=visit.status,
                 created_at=visit.created_at,
                 updated_at=visit.updated_at,
@@ -224,7 +250,7 @@ class MongoPatientRepository(PatientRepository):
                     questions_asked.append(qa)
 
                 intake_session = IntakeSession(
-                    symptom=visit_mongo.intake_session.disease,
+                    symptom="",  # No symptom field in database, use empty string
                     questions_asked=questions_asked,
                     current_question_count=visit_mongo.intake_session.current_question_count,
                     max_questions=visit_mongo.intake_session.max_questions,
@@ -266,7 +292,7 @@ class MongoPatientRepository(PatientRepository):
             visit = Visit(
                 visit_id=VisitId(visit_mongo.visit_id),
                 patient_id=visit_mongo.patient_id,
-                symptom=visit_mongo.disease,
+                symptom=intake_session.symptom if intake_session else "",  # Use intake session symptom or empty string
                 status=visit_mongo.status,
                 created_at=visit_mongo.created_at,
                 updated_at=visit_mongo.updated_at,

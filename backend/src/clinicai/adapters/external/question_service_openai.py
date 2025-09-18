@@ -227,10 +227,87 @@ class OpenAIQuestionService(QuestionService):
 
         prompt = f"""
 SYSTEM PROMPT:
+        """Generate the next question based on context."""
+        import re
+        from difflib import SequenceMatcher
+
+        # Hard gating to ensure critical categories are asked when applicable
+        symptom_text = (disease or "").lower()
+        travel_keywords = [
+            "fever",
+            "diarrhea",
+            "diarrhoea",
+            "vomit",
+            "vomiting",
+            "stomach",
+            "abdomen",
+            "abdominal",
+            "cough",
+            "breath",
+            "shortness of breath",
+            "rash",
+            "jaundice",
+            "malaria",
+            "dengue",
+            "tb",
+            "tuberculosis",
+            "covid",
+            "typhoid",
+            "hepatitis",
+            "chikungunya",
+        ]
+        travel_relevant = bool(recently_travelled) and any(k in symptom_text for k in travel_keywords)
+        if travel_relevant and not any("travel" in (q or "").lower() for q in asked_questions):
+            gi_related = any(
+                k in symptom_text
+                for k in ["diarrhea", "diarrhoea", "vomit", "vomiting", "stomach", "abdomen", "abdominal"]
+            )
+            if gi_related:
+                return (
+                    "Have you travelled in the last 1–3 months? If yes, where did you go, did you eat street food or "
+                    "raw/undercooked foods, drink untreated water, or did others with you have similar stomach symptoms?"
+                )
+            return (
+                "Have you travelled domestically or internationally in the last 1–3 months? If yes, where did you go, "
+                "was it a known infectious area, and did you have any sick contacts?"
+            )
+
+        def _normalize(text: str) -> str:
+            t = (text or "").lower().strip()
+            t = re.sub(r"^(can you|could you|please|would you)\s+", "", t)
+            t = re.sub(r"[\?\.!]+$", "", t)
+            t = re.sub(r"\s+", " ", t)
+            return t.strip()
+
+        def _is_duplicate(candidate: str, history: List[str]) -> bool:
+            cand_norm = _normalize(candidate)
+            for h in history:
+                h_norm = _normalize(h)
+                if cand_norm == h_norm:
+                    return True
+                if SequenceMatcher(None, cand_norm, h_norm).ratio() >= 0.85:
+                    return True
+            return False
+
+        # Prompt (autonomous vs guided)
+        if self._mode == "autonomous":
+            prompt = (
+                f"Chief complaint: {disease or 'N/A'}. Last answers: {', '.join(previous_answers[-3:])}. "
+                f"Already asked: {asked_questions}.\n"
+                "Ask ONE concise, clinically relevant next question based on context.\n"
+                "Do not repeat topics or demographics. Return only the question text."
+            )
+        else:
+            # Define covered categories for the prompt
+            covered_categories_str = "None specified - use clinical judgment"
+            
+            prompt = f""" 
+            SYSTEM PROMPT:
 You are a professional, respectful, and efficient clinical intake assistant.
 Ask one concise, medically relevant question at a time.
 Never repeat or rephrase already asked questions or categories.
 
+Never repeat or rephrase already asked questions or categories.
 CONTEXT:
 - Chief complaint(s): {disease or "N/A"}
 - Last 3 patient answers: {', '.join(previous_answers[-3:])}
@@ -238,58 +315,47 @@ CONTEXT:
 - Covered categories: {covered_categories_str}
 - Progress: {current_count}/{max_count}
 - Recently travelled: {recently_travelled} (true/false)
-
-STRICT PRIORITY RULES:
+PRIORITY RULES (follow in this exact order):
 1. Do not repeat any question, topic, or meaning from "Already asked questions" or Covered categories.
-2. Ask ONLY if the category is relevant to current symptoms:
-   - Pain → ONLY if pain is explicitly reported by the patient.
-   - Allergies → ONLY if allergy features exist (rash, swelling, hives, wheeze, sneeze, runny nose). Do NOT ask allergies solely due to chronic diseases (e.g., diabetes) unless the patient mentioned allergy issues or such features.
-   - Triggers → Skip if complaint is ONLY a chronic disease (e.g., diabetes, hypertension) with no acute symptoms.
-   - Family history → ONLY if a hereditary/chronic condition exists (e.g., diabetes, hypertension, cancer, autoimmune, blood/neurologic/genetic disorders).
-   - HPI → ONLY if acute/new symptoms exist (e.g., fever, cough, chest pain, infection, stomach pain). Do NOT ask if only stable chronic disease is present.
-   - Gynecologic/obstetric → ONLY if female (age 10–60) AND symptoms suggest menstrual/pregnancy relevance.
-3. If a category is irrelevant, skip it completely and move to the next one.
-4. Never combine categories. Each turn = exactly ONE category question.
-5. For multiple complaints, consolidate into ONE comprehensive question for that category (not multiple).
-
-SEQUENCE OF QUESTIONS (ask in this order if relevant and unasked):
-1) Duration of symptoms (overall).
-2) Triggers (overall).
-3) Pain (if pain present).
-4) Temporal factors.
-5) Travel history (ONLY if recently_travelled = true AND infection-relevant symptoms).
-6) Allergies (ONLY if allergy relevance exists).
-7) Medications & remedies.
-8) HPI (ONLY if acute/new symptoms exist).
-9) Family history (ONLY if chronic/hereditary condition present).
-10) Lifestyle (if clinically relevant).
-11) Gynecologic/obstetric (ONLY for females 10–60 with abdominal/reproductive symptoms).
-12) Functional status (ONLY if pain/mobility/neurologic impairment likely).
-
+2. Strictky ask categories if clinically relevant:
+   - Pain → ONLY if pain symptoms are reported from the user.
+   - Allergies → ONLY if allergy symptoms exist (rash, swelling, hives, wheeze, sneeze, runny nose).
+   - Triggers → Skip if complaint is only a chronic disease (e.g., diabetes, hypertension) without acute symptoms.
+   - Family history → ONLY if a hereditary/chronic condition is present (diabetes, hypertension, heart disease, cancer, autoimmune, blood, neurologic, genetic disorders).
+   - HPI → ONLY if acute/new symptoms exist (fever, cough, chest pain, infection, stomach pain). Do NOT ask for stable chronic diseases alone (e.g., diabetes, hypertension).
+   - Gynecologic/obstetric → ONLY if female (age 10–60) AND menstrual/pregnancy symptoms are present.
+3. If a category is irrelevant, SKIP it completely and move to the next one.
+4. Follow the sequence below ONLY for categories that are relevant and unasked.
+SEQUENCE OF QUESTIONS:
+1) Duration of symptoms (overall course).
+2) Triggers / aggravating or relieving factors (overall).
+3) Pain assessment: ONLY if pain present → ask location, duration, intensity (0–10), character, radiation, relieving/aggravating factors.
+4) Temporal factors: timing patterns (morning/evening, night/day, seasonal/cyclical).
+5) Travel history: ONLY if recently_travelled = true AND infection-related symptoms (fever, diarrhea, cough, breathlessness, rash, jaundice).
+6) Allergies: ONLY if allergy relevance exists (rash, hives, swelling, wheeze, sneeze, runny nose).
+7) Medications & remedies: ask about drug name, dose, route, frequency; include OTC/supplements/home remedies, and effectiveness.
+8) History of Present Illness (HPI): ONLY if acute/new symptoms exist (fever, chest pain, cough, infection, stomach pain).
+9) Family history: REQUIRED if chronic/hereditary condition is present (diabetes, hypertension, heart disease, cancer, autoimmune, blood, neurologic, genetic).
+10) Lifestyle: diet, exercise, occupation, exposures; ask if clinically relevant (e.g., thyroid, obesity, chronic illness).
+11) Gynecologic/obstetric: ONLY if female (10–60) with abdominal/stomach or reproductive symptoms.
+12) Functional status: ONLY if pain, mobility, or neurologic impairment likely.
 STOP LOGIC:
-- Stop immediately if current_count >= max_count.
-- Always stop after at least 6 questions have been asked AND enough info is collected.
-- Do NOT continue asking irrelevant categories just to reach the end of the list.
-
+- Continue until at least 6 questions are asked.
+- Always stop if current_count >= max_count.
+- If >=6 questions asked AND enough info collected, stop early and ask the closing question.
 MANDATORY CLOSING QUESTION:
-When stopping, always end with:
 "Have we missed anything important about your condition or any concerns you want us to address?"
 
 OUTPUT RULES:
 - Return ONLY one question ending with a question mark.
 - No explanations, no multiple questions in one turn.
-- Never merge Duration + Triggers into the same question.
+- For multiple complaints/symptoms, consolidate into ONE comprehensive question per category.
 - Never force irrelevant questions just to fill the sequence.
-
-
-
-# Example: model config
 settings = {
     "temperature": 0.2,
     "max_tokens": 256
 }
-
-"""
+""" 
 
         try:
             text = await self._chat_completion(
@@ -321,6 +387,8 @@ settings = {
         if current_count >= max_count:
             return True
         if current_count < 6:
+        # Require a small minimum before stopping early (aligned with completion logic)
+        if current_count < 5:
             return False
         return False
 

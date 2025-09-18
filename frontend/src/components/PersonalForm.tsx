@@ -1,27 +1,31 @@
 import React, { useState } from "react";
-import { registerPatientBackend } from "../services/patientService.ts";
+import { registerPatientBackend } from "../services/patientService";
 
 interface PersonalFormProps {
   onPatientCreated?: (patientId: string) => void;
 }
 
 interface PersonalFormData {
-  name: string;
+  firstName: string;
+  lastName: string;
   mobileNumber: string;
   gender: string;
   age: string;
   travelHistory: boolean;
   consent: boolean;
+  country: string;
 }
 
 const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
   const [form, setForm] = useState<PersonalFormData>({
-    name: "",
-    mobileNumber: "",
+    firstName: "",
+    lastName: "",
+    mobileNumber: "", // store as 10 digits; we'll prepend +1 on submit
     gender: "",
     age: "",
     travelHistory: false,
     consent: false,
+    country: "US",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -37,6 +41,31 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
   const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, checked } = e.target;
     setForm((prev) => ({ ...prev, [name]: checked }));
+  };
+
+  // Country → dial code and max digits for national significant number
+  const getPhoneRules = (country: string) => {
+    switch (country) {
+      case "US":
+      case "CA":
+        return { dial: "+1", maxDigits: 10, placeholder: "+1 415 555 2671" };
+      case "GB":
+        return { dial: "+44", maxDigits: 10, placeholder: "+44 7123 456 789" };
+      case "IN":
+        return { dial: "+91", maxDigits: 10, placeholder: "+91 98765 43210" };
+      case "AU":
+        return { dial: "+61", maxDigits: 9, placeholder: "+61 412 345 678" };
+      case "DE":
+        return { dial: "+49", maxDigits: 11, placeholder: "+49 1512 3456789" };
+      case "FR":
+        return { dial: "+33", maxDigits: 9, placeholder: "+33 6 12 34 56 78" };
+      case "SG":
+        return { dial: "+65", maxDigits: 8, placeholder: "+65 9123 4567" };
+      case "AE":
+        return { dial: "+971", maxDigits: 9, placeholder: "+971 50 123 4567" };
+      default:
+        return { dial: "+1", maxDigits: 10, placeholder: "+1 415 555 2671" };
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -55,12 +84,18 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
         return;
       }
 
+      // Build E.164 using selected country's dial and limited digits
+      const { dial, maxDigits } = getPhoneRules(form.country);
+      const digits = (form.mobileNumber || "").replace(/[^0-9]/g, "").slice(0, maxDigits);
+      const mobileE164 = `${dial}${digits}`;
       const backendResp = await registerPatientBackend({
-        name: form.name,
-        mobile: form.mobileNumber,
+        first_name: form.firstName.trim(),
+        last_name: form.lastName.trim(),
+        mobile: mobileE164,
         gender: form.gender,
         age: ageNumber,
         recently_travelled: form.travelHistory,
+        country: form.country,
         consent: true,
       });
 
@@ -69,7 +104,7 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
         localStorage.setItem(`travel_${backendResp.patient_id}`, JSON.stringify(form.travelHistory));
         // Persist visit id and patient name for intake
         localStorage.setItem(`visit_${backendResp.patient_id}`, backendResp.visit_id);
-        localStorage.setItem(`patient_name_${backendResp.patient_id}`, form.name);
+        localStorage.setItem(`patient_name_${backendResp.patient_id}`, `${form.firstName} ${form.lastName}`.trim());
         // Seed predefined symptoms as first question options for intake page
         const predefined = [
           "Fever",
@@ -91,8 +126,15 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
       } else {
         setError("Failed to create patient");
       }
-    } catch (err) {
-      setError("Failed to create patient. Please try again.");
+    } catch (err: any) {
+      // Try to surface backend validation message if available
+      try {
+        const res = err?.message as string;
+        const m = res?.toString() || "";
+        setError(m.includes("Backend error") ? m : "Failed to create patient. Please check your details and try again.");
+      } catch {
+        setError("Failed to create patient. Please check your details and try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -101,6 +143,13 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-medical-primary-light to-gray-50 flex items-center justify-center p-4">
       <div className="medical-card max-w-md w-full">
+        {/* Appointment banner */}
+        <div className="mb-4 rounded-md border bg-blue-50 p-3 text-blue-800">
+          <div className="text-sm">Your appointment</div>
+          <div className="font-semibold">
+            Tue, Sep 23 • 2:30 PM PT • Clinic A (123 Main St)
+          </div>
+        </div>
         <div className="text-center mb-6">
           <div className="w-16 h-16 bg-medical-primary rounded-full flex items-center justify-center mx-auto mb-4">
             <svg
@@ -126,35 +175,74 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Name Field */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Name *
-            </label>
-            <input
-              name="name"
-              value={form.name}
-              onChange={handleChange}
-              placeholder="Enter your full name"
-              required
-              className="medical-input"
-            />
+          {/* First and Last Name Fields */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">First Name *</label>
+              <input
+                name="firstName"
+                value={form.firstName}
+                onChange={handleChange}
+                placeholder="First name"
+                required
+                className="medical-input"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Last Name *</label>
+              <input
+                name="lastName"
+                value={form.lastName}
+                onChange={handleChange}
+                placeholder="Last name"
+                required
+                className="medical-input"
+              />
+            </div>
           </div>
 
-          {/* Mobile Number Field */}
+          {/* Country and Mobile Number */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Mobile Number *
             </label>
-            <input
-              name="mobileNumber"
-              value={form.mobileNumber}
-              onChange={handleChange}
-              placeholder="Enter your mobile number"
-              type="tel"
-              required
-              className="medical-input"
-            />
+            <div className="flex items-center gap-1">
+              <select
+                name="country"
+                value={form.country}
+                onChange={handleChange}
+                className="medical-select w-28 text-sm"
+              >
+                <option value="US">🇺🇸 +1 US</option>
+                <option value="CA">🇨🇦 +1 CA</option>
+                <option value="GB">🇬🇧 +44 UK</option>
+                <option value="IN">🇮🇳 +91 IN</option>
+                <option value="AU">🇦🇺 +61 AU</option>
+                <option value="DE">🇩🇪 +49 DE</option>
+                <option value="FR">🇫🇷 +33 FR</option>
+                <option value="SG">🇸🇬 +65 SG</option>
+                <option value="AE">🇦🇪 +971 AE</option>
+              </select>
+              <input
+                name="mobileNumber"
+                value={form.mobileNumber}
+                onChange={(e) => {
+                  const { maxDigits } = getPhoneRules(form.country);
+                  const digitsOnly = e.target.value.replace(/[^0-9]/g, "").slice(0, maxDigits);
+                  setForm((prev) => ({ ...prev, mobileNumber: digitsOnly }));
+                }}
+                placeholder={getPhoneRules(form.country).placeholder}
+                type="tel"
+                inputMode="numeric"
+                maxLength={getPhoneRules(form.country).maxDigits}
+                required
+                className="medical-input flex-1 h-10 text-sm"
+                aria-describedby="phone-help"
+              />
+            </div>
+            <p id="phone-help" className="text-xs text-gray-500 mt-1">
+              Enter your mobile number; default country is US. We’ll format it to E.164 on submit.
+            </p>
           </div>
 
           {/* Gender and Age in a row */}

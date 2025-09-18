@@ -8,10 +8,10 @@ from datetime import datetime
 from typing import List, Optional
 
 from beanie import Document
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 
-class QuestionAnswerMongo(Document):
+class QuestionAnswerMongo(BaseModel):
     """MongoDB model for question-answer pair."""
     question_id: str = Field(..., description="Question ID")
     question: str = Field(..., description="Question text")
@@ -21,10 +21,13 @@ class QuestionAnswerMongo(Document):
     attachment_image_paths: Optional[List[str]] = Field(None, description="Local paths to attached images, if any")
     ocr_texts: Optional[List[str]] = Field(None, description="Extracted OCR texts from images")
 
+    class Config:
+        # Exclude revision_id and other MongoDB-specific fields
+        exclude = {"revision_id"}
 
-class IntakeSessionMongo(Document):
+
+class IntakeSessionMongo(BaseModel):
     """MongoDB model for intake session."""
-    disease: str = Field(..., description="Disease/complaint")
     questions_asked: List[QuestionAnswerMongo] = Field(default_factory=list)
     current_question_count: int = Field(default=0)
     max_questions: int = Field(default=12)
@@ -32,6 +35,10 @@ class IntakeSessionMongo(Document):
     started_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = None
     pending_question: Optional[str] = Field(None, description="Pending next question to ask")
+
+    class Config:
+        # Exclude revision_id and other MongoDB-specific fields
+        exclude = {"revision_id"}
 
 
 class TranscriptionSessionMongo(Document):
@@ -44,6 +51,10 @@ class TranscriptionSessionMongo(Document):
     error_message: Optional[str] = Field(None, description="Error message if failed")
     audio_duration_seconds: Optional[float] = Field(None, description="Audio duration in seconds")
     word_count: Optional[int] = Field(None, description="Word count of transcript")
+
+    class Config:
+        # Exclude revision_id and other MongoDB-specific fields when serializing
+        exclude = {"revision_id"}
 
 
 class SoapNoteMongo(Document):
@@ -58,12 +69,15 @@ class SoapNoteMongo(Document):
     model_info: Optional[dict] = Field(None, description="Model information")
     confidence_score: Optional[float] = Field(None, description="Confidence score")
 
+    class Config:
+        # Exclude revision_id and other MongoDB-specific fields when serializing
+        exclude = {"revision_id"}
+
 
 class VisitMongo(Document):
     """MongoDB model for visit."""
     visit_id: str = Field(..., description="Visit ID")
     patient_id: str = Field(..., description="Patient ID reference")
-    disease: str = Field(..., description="Disease/complaint")
     status: str = Field(
         default="intake"
     )  # intake, transcription, soap_generation, prescription_analysis, completed
@@ -80,6 +94,11 @@ class VisitMongo(Document):
     transcription_session: Optional[TranscriptionSessionMongo] = None
     soap_note: Optional[SoapNoteMongo] = None
 
+    class Config:
+        # Exclude revision_id and other MongoDB-specific fields when serializing
+        exclude = {"revision_id"}
+
+
 
 class PatientMongo(Document):
     """MongoDB model for Patient entity."""
@@ -93,6 +112,11 @@ class PatientMongo(Document):
     visits: List[VisitMongo] = Field(default_factory=list, description="List of visits")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Config:
+        # Exclude revision_id and other MongoDB-specific fields when serializing
+        exclude = {"revision_id"}
+
 
     class Settings:
         name = "patients"

@@ -3,7 +3,7 @@
 Removed unused imports; behavior unchanged.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 
 from ...domain.entities.patient import Patient
@@ -65,6 +65,18 @@ class EditAnswerResponse:
 
 
 @dataclass
+class OCRQualityInfo:
+    """OCR quality assessment information."""
+    quality: str = "failed"
+    confidence: float = 0.0
+    extracted_text: str = ""
+    extracted_medications: List[str] = field(default_factory=list)
+    suggestions: List[str] = field(default_factory=list)
+    word_count: int = 0
+    has_medication_keywords: bool = False
+
+
+@dataclass
 class AnswerIntakeResponse:
     """Response DTO for answering intake questions."""
 
@@ -75,6 +87,7 @@ class AnswerIntakeResponse:
     completion_percent: int
     message: str
     allows_image_upload: bool = False
+    ocr_quality: Optional[OCRQualityInfo] = None
 
 
 @dataclass

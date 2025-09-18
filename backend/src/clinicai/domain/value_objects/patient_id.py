@@ -46,8 +46,8 @@ class PatientId:
     @classmethod
     def generate(cls, patient_name: str, phone_number: str) -> "PatientId":
         """Generate a new patient ID from name and phone."""
-        # Clean and format the name (remove spaces, special chars, convert to uppercase)
-        clean_name = re.sub(r"[^a-zA-Z0-9]", "", patient_name).upper()
+        # Clean and format the name (remove spaces, special chars, convert to lowercase)
+        clean_name = re.sub(r"[^a-zA-Z0-9]", "", patient_name).lower()
         if not clean_name:
             raise ValueError(
                 "Patient name must contain at least one alphanumeric character"
