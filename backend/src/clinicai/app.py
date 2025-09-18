@@ -4,9 +4,10 @@ FastAPI application factory and main app configuration.
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+import logging
 
 from .api.routers import health, patients, notes, prescriptions
 from .core.config import get_settings
@@ -32,20 +33,29 @@ async def lifespan(app: FastAPI):
             PatientMongo,
             VisitMongo,
         )
-        # stable_* models removed
 
-        # Use configured URI and enable TLS with CA bundle for Atlas
+        # Use configured URI
         mongo_uri = settings.database.uri
         db_name = settings.database.db_name
-        ca_path = certifi.where()
-        print(f"🔐 Using certifi CA bundle: {ca_path}")
-        client = AsyncIOMotorClient(
-            mongo_uri,
-            serverSelectionTimeoutMS=15000,
-            tls=True,
-            tlsCAFile=ca_path,
-            tlsAllowInvalidCertificates=False,
-        )
+        print(f"🗄️ Connecting to Mongo: {mongo_uri}")
+
+        # Enable TLS only for Atlas SRV URIs
+        if mongo_uri.startswith("mongodb+srv://"):
+            ca_path = certifi.where()
+            client = AsyncIOMotorClient(
+                mongo_uri,
+                serverSelectionTimeoutMS=15000,
+                tls=True,
+                tlsCAFile=ca_path,
+                tlsAllowInvalidCertificates=False,
+            )
+        else:
+            # Local/standard connection (no TLS)
+            client = AsyncIOMotorClient(
+                mongo_uri,
+                serverSelectionTimeoutMS=15000,
+            )
+
         db = client[db_name]
         await init_beanie(
             database=db,
@@ -76,34 +86,66 @@ def create_app() -> FastAPI:
     )
 
     # CORS middleware
-    # Always include common local dev origins; merge with configured origins
-    common_local_origins = [
-        "http://localhost:8080",
-        "http://127.0.0.1:8080",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ]
-    configured_origins = settings.cors.allowed_origins or []
-    allow_origins = list({*common_local_origins, *configured_origins}) or ["*"]
-
+    # Allow all origins (no credentials) to resolve preflight failures
     allow_methods = settings.cors.allowed_methods or ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
-    # Ensure PATCH and OPTIONS are always allowed for browser preflights
     allow_methods = list({m.upper() for m in allow_methods} | {"PATCH", "OPTIONS"})
     allow_headers = settings.cors.allowed_headers or ["*"]
-    # Ensure common headers present
     if allow_headers != ["*"] and "content-type" not in {h.lower() for h in allow_headers}:
         allow_headers = [*allow_headers, "content-type"]
+    
+    # Add specific headers for file uploads
+    if allow_headers != ["*"]:
+        upload_headers = ["content-type", "content-disposition", "authorization", "x-requested-with"]
+        for header in upload_headers:
+            if header not in {h.lower() for h in allow_headers}:
+                allow_headers.append(header)
 
+    # Debug CORS configuration
+    print(f"🔧 CORS Configuration:")
+    print(f"   - Origins: * (all)")
+    print(f"   - Methods: {allow_methods}")
+    print(f"   - Headers: {allow_headers}")
+    print(f"   - Credentials: False")
+    
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=allow_origins,
-        allow_origin_regex=r"https?://.*",
-        allow_credentials=settings.cors.allow_credentials,
+        allow_origins=["*"],
+        allow_credentials=False,
         allow_methods=allow_methods,
         allow_headers=allow_headers,
+        max_age=600,
+        expose_headers=["*"],  # Expose all headers to client
     )
+    
+    # Add request logging middleware for debugging
+    @app.middleware("http")
+    async def log_requests(request: Request, call_next):
+        logger = logging.getLogger("clinicai")
+        logger.info(f"🌐 {request.method} {request.url.path} from {request.client.host if request.client else 'unknown'}")
+        logger.info(f"   Headers: {dict(request.headers)}")
+        
+        response = await call_next(request)
+        
+        logger.info(f"   Response: {response.status_code}")
+        return response
+    
+    # Add explicit CORS headers for all responses
+    @app.middleware("http")
+    async def add_cors_headers(request: Request, call_next):
+        # Handle preflight OPTIONS requests
+        if request.method == "OPTIONS":
+            response = JSONResponse(content={"message": "OK"})
+        else:
+            response = await call_next(request)
+        
+        # Add CORS headers to all responses
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With, Accept, Origin"
+        response.headers["Access-Control-Expose-Headers"] = "*"
+        response.headers["Access-Control-Max-Age"] = "600"
+        
+        return response
 
     # Include routers
     app.include_router(health.router)

@@ -2,9 +2,12 @@
 import logging
 
 from fastapi import APIRouter, HTTPException, status, UploadFile, File, Form
-from typing import Optional
+from typing import Optional, Dict, Any
 import tempfile
 import os
+import asyncio
+
+from openai import OpenAI  # type: ignore
 
 from clinicai.application.dto.patient_dto import (
     AudioTranscriptionRequest,
@@ -23,9 +26,60 @@ from clinicai.domain.errors import (
 from ..deps import PatientRepositoryDep, TranscriptionServiceDep, SoapServiceDep
 from ...core.utils.crypto import decode_patient_id
 from ..schemas.patient import ErrorResponse
+from ...core.config import get_settings
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 logger = logging.getLogger("clinicai")
+
+
+@router.options("/transcribe")
+async def transcribe_audio_options():
+    """Handle preflight OPTIONS request for transcribe endpoint."""
+    return {"message": "OK"}
+
+
+@router.get("/test-cors")
+async def test_cors():
+    """Test endpoint to verify CORS is working."""
+    return {"message": "CORS is working", "timestamp": "2024-01-01T00:00:00Z"}
+
+@router.get("/test-encryption")
+async def test_encryption():
+    """Test endpoint to verify encryption key is working."""
+    from ...core.utils.crypto import encode_patient_id, decode_patient_id
+    import os
+    
+    try:
+        # Test encryption/decryption
+        test_id = "test_1234567890"
+        encoded = encode_patient_id(test_id)
+        decoded = decode_patient_id(encoded)
+        
+        return {
+            "status": "success",
+            "encryption_key_set": bool(os.getenv("ENCRYPTION_KEY")),
+            "test_id": test_id,
+            "encoded": encoded,
+            "decoded": decoded,
+            "match": test_id == decoded
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "encryption_key_set": bool(os.getenv("ENCRYPTION_KEY")),
+            "error": str(e),
+            "error_type": type(e).__name__
+        }
+
+@router.post("/test-upload")
+async def test_upload(audio_file: UploadFile = File(...)):
+    """Test endpoint to verify file upload works without encryption."""
+    return {
+        "status": "success",
+        "filename": audio_file.filename,
+        "content_type": audio_file.content_type,
+        "size": audio_file.size
+    }
 
 
 @router.post(
@@ -56,6 +110,24 @@ async def transcribe_audio(
     4. Updates visit status to soap_generation
     5. Cleans up temporary file
     """
+    logger.info(f"Transcribe audio request received for patient_id: {patient_id}, visit_id: {visit_id}")
+    logger.info(f"Audio file: {audio_file.filename}, content_type: {audio_file.content_type}, size: {audio_file.size}")
+    
+    # Check if this is a preflight request
+    if not audio_file.filename:
+        logger.warning("Received request without audio file - might be preflight")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "NO_AUDIO_FILE",
+                "message": "No audio file provided",
+                "details": {},
+            },
+        )
+    
+    # Log file details for debugging
+    logger.info(f"Processing audio file: {audio_file.filename}, size: {audio_file.size}, content_type: {audio_file.content_type}")
+    
     temp_file_path = None
     
     try:
@@ -83,8 +155,22 @@ async def transcribe_audio(
         # Decode opaque patient id from client
         try:
             internal_patient_id = decode_patient_id(patient_id)
-        except Exception:
-            internal_patient_id = patient_id  # fallback if already internal
+            logger.info(f"Successfully decoded patient_id: {internal_patient_id}")
+        except Exception as e:
+            logger.warning(f"Failed to decode patient_id '{patient_id}': {e}")
+            # If decryption fails, try to use the raw patient_id if it's in the correct format
+            if '_' in patient_id and patient_id.count('_') >= 1:
+                internal_patient_id = patient_id
+                logger.info(f"Using raw patient_id as fallback: {internal_patient_id}")
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={
+                        "error": "INVALID_PATIENT_ID",
+                        "message": "Invalid patient ID format",
+                        "details": {"patient_id": patient_id},
+                    },
+                )
 
         # Create request
         request = AudioTranscriptionRequest(
@@ -94,10 +180,21 @@ async def transcribe_audio(
         )
         
         # Execute use case
-        use_case = TranscribeAudioUseCase(patient_repo, transcription_service)
-        result = await use_case.execute(request)
-        
-        return result
+        try:
+            use_case = TranscribeAudioUseCase(patient_repo, transcription_service)
+            result = await use_case.execute(request)
+            logger.info(f"Transcription completed successfully for patient {internal_patient_id}")
+            return result
+        except Exception as e:
+            logger.error(f"Transcription use case failed: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={
+                    "error": "TRANSCRIPTION_FAILED",
+                    "message": f"Transcription failed: {str(e)}",
+                    "details": {},
+                },
+            )
         
     except ValueError as e:
         raise HTTPException(
@@ -235,13 +332,32 @@ async def get_transcript(
     try:
         from ...domain.value_objects.patient_id import PatientId
         from ...core.utils.crypto import decode_patient_id
+        import urllib.parse
         
         # Find patient (decode opaque id from client)
+        # URL-decode first to restore any encoded '=' characters in Fernet tokens
+        decoded_path_param = urllib.parse.unquote(patient_id)
+        # Attempt to decrypt opaque token. If decryption fails, only accept the raw value
+        # if it already conforms to our internal PatientId format; otherwise return 422.
         try:
-            internal_patient_id = decode_patient_id(patient_id)
-        except Exception:
-            internal_patient_id = patient_id
-        patient_id_obj = PatientId(internal_patient_id)
+            internal_patient_id = decode_patient_id(decoded_path_param)
+        except Exception as e:
+            logger.warning(f"Failed to decode patient_id '{decoded_path_param}': {e}")
+            internal_patient_id = decoded_path_param
+        try:
+            patient_id_obj = PatientId(internal_patient_id)
+        except ValueError as ve:
+            from fastapi import HTTPException, status
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": "INVALID_PATIENT_ID",
+                    "message": str(ve),
+                    "details": {
+                        "hint": "Provide a valid opaque patient_id token or an internal id like {name}_{phone}",
+                    },
+                },
+            )
         patient = await patient_repo.find_by_id(patient_id_obj)
         if not patient:
             raise PatientNotFoundError(patient_id)
@@ -379,6 +495,143 @@ async def get_soap_note(
         )
     except Exception as e:
         logger.error("Unhandled error in get_soap_note", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "INTERNAL_ERROR",
+                "message": "An unexpected error occurred",
+                "details": {"exception": str(e) or repr(e), "type": e.__class__.__name__},
+            },
+        )
+
+
+@router.post(
+    "/{patient_id}/visits/{visit_id}/dialogue/structure",
+    status_code=status.HTTP_200_OK,
+    responses={
+        404: {"model": ErrorResponse, "description": "Patient, visit, or transcript not found"},
+        500: {"model": ErrorResponse, "description": "Internal server error"},
+    },
+)
+async def structure_dialogue(
+    patient_id: str,
+    visit_id: str,
+    patient_repo: PatientRepositoryDep,
+) -> Dict[str, Any]:
+    """Clean PII and structure transcript into alternating Doctor/Patient JSON using LLM."""
+    try:
+        # Resolve patient and transcript
+        from ...domain.value_objects.patient_id import PatientId
+        from urllib.parse import unquote
+
+        decoded = unquote(patient_id)
+        try:
+            internal_patient_id = decode_patient_id(decoded)
+        except Exception:
+            internal_patient_id = decoded
+
+        try:
+            pid = PatientId(internal_patient_id)
+        except ValueError as ve:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": "INVALID_PATIENT_ID",
+                    "message": str(ve),
+                    "details": {},
+                },
+            )
+
+        patient = await patient_repo.find_by_id(pid)
+        if not patient:
+            raise PatientNotFoundError(internal_patient_id)
+
+        visit = patient.get_visit_by_id(visit_id)
+        if not visit:
+            raise VisitNotFoundError(visit_id)
+        if not visit.transcription_session or not visit.transcription_session.transcript:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "error": "TRANSCRIPT_NOT_FOUND",
+                    "message": f"No transcript found for visit {visit_id}",
+                    "details": {"visit_id": visit_id},
+                },
+            )
+
+        raw_transcript = visit.transcription_session.transcript
+
+        # Build prompt
+        system_prompt = (
+            "You are an AI assistant processing raw transcripts generated from audio recordings.\n"
+            "Your tasks are:\n"
+            "1) Understand and clean the transcript: remove any names, phone numbers, or personal identifiers;\n"
+            "   correct obvious transcription errors (spelling, spacing); keep only conversational content.\n"
+            "2) Format the dialogue clearly into structured JSON with alternating keys \"Doctor\" and \"Patient\".\n"
+            "   Preserve the natural flow and output valid JSON only, no extra commentary."
+        )
+        user_prompt = (
+            "Example:\n"
+            "{\n  \"Doctor\": \"How are you feeling today?\",\n  \"Patient\": \"I have been coughing for three days.\",\n"
+            "  \"Doctor\": \"Do you have a fever?\",\n  \"Patient\": \"Yes, since yesterday.\"\n}\n\n"
+            "Transcript to process (clean PII and structure):\n" + (raw_transcript or "")
+        )
+
+        settings = get_settings()
+        client = OpenAI(api_key=settings.openai.api_key)
+
+        def _call_openai() -> str:
+            resp = client.chat.completions.create(
+                model=settings.openai.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                max_tokens=min(2000, settings.openai.max_tokens),
+                temperature=0.1,
+            )
+            return (resp.choices[0].message.content or "").strip()
+
+        content = await asyncio.to_thread(_call_openai)
+
+        # Try to parse JSON; if not valid JSON object, return as text under 'dialogue'
+        import json
+        try:
+            data = json.loads(content)
+            if isinstance(data, dict):
+                return {"dialogue": data}
+            # If it's a list of pairs, convert to dict-like sequence
+            if isinstance(data, list):
+                merged: Dict[str, Any] = {}
+                for item in data:
+                    if isinstance(item, dict):
+                        merged.update(item)
+                return {"dialogue": merged or {"text": content}}
+        except Exception:
+            pass
+
+        return {"dialogue": {"text": content}}
+
+    except PatientNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": "PATIENT_NOT_FOUND",
+                "message": e.message,
+                "details": e.details,
+            },
+        )
+    except VisitNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": "VISIT_NOT_FOUND",
+                "message": e.message,
+                "details": e.details,
+            },
+        )
+    except Exception as e:
+        logger.error("Unhandled error in structure_dialogue", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={

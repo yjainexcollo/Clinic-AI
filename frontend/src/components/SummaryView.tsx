@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
-import { FileText, Calendar, User, Clock, RefreshCw, X } from 'lucide-react';
+import { FileText, Calendar, User, Clock, X } from 'lucide-react';
 import { getPreVisitSummary } from '../services/patientService';
 
 interface SummaryViewProps {
@@ -27,15 +27,10 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
   const [summaryData, setSummaryData] = useState<SummaryData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState<boolean>(false);
 
-  const loadSummary = async (showRefreshing = false) => {
+  const loadSummary = async () => {
     try {
-      if (showRefreshing) {
-        setRefreshing(true);
-      } else {
-        setLoading(true);
-      }
+      setLoading(true);
       setError(null);
 
       const data = await getPreVisitSummary(patientId, visitId);
@@ -45,7 +40,6 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
       setError(err instanceof Error ? err.message : 'Failed to load summary');
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   };
 
@@ -84,7 +78,7 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
           </CardHeader>
           <CardContent className="flex items-center justify-center py-12">
             <div className="text-center">
-              <RefreshCw className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-4" />
+              <div className="h-8 w-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4"></div>
               <p className="text-gray-600">Loading your pre-visit summary...</p>
             </div>
           </CardContent>
@@ -113,18 +107,8 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
               </AlertDescription>
             </Alert>
             <div className="flex justify-center mt-6 space-x-3">
-              <Button onClick={() => loadSummary(true)} disabled={refreshing}>
-                {refreshing ? (
-                  <>
-                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                    Retrying...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Try Again
-                  </>
-                )}
+              <Button onClick={() => loadSummary()}>
+                Try Again
               </Button>
               <Button variant="outline" onClick={onClose}>
                 Close
@@ -183,18 +167,6 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
             </div>
           </div>
           <div className="flex items-center space-x-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => loadSummary(true)}
-              disabled={refreshing}
-            >
-              {refreshing ? (
-                <RefreshCw className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-            </Button>
             <Button variant="ghost" size="sm" onClick={onClose}>
               <X className="h-4 w-4" />
             </Button>

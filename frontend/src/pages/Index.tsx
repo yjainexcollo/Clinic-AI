@@ -7,6 +7,7 @@ import { COPY } from "../copy";
 import SymptomSelector from "../components/SymptomSelector";
 import OCRQualityFeedback from "../components/OCRQualityFeedback";
 import SummaryView from "../components/SummaryView";
+import TranscriptView from "../components/TranscriptView";
 
 interface Question {
   text: string;
@@ -872,18 +873,47 @@ const Index = () => {
                   form.append('patient_id', patientId);
                   form.append('visit_id', visitId);
                   form.append('audio_file', file);
+                  console.log('Uploading audio file:', file.name, file.type, file.size);
+                  console.log('Form data:', {
+                    patient_id: patientId,
+                    visit_id: visitId,
+                    audio_file: file.name
+                  });
+                  
+                  const controller = new AbortController();
+                  const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout
+                  
                   const resp = await fetch(`${BACKEND_BASE_URL}/notes/transcribe`, {
                     method: 'POST',
                     body: form,
+                    headers: {
+                      'Accept': 'application/json',
+                    },
+                    mode: 'cors',
+                    signal: controller.signal,
                   });
+                  
+                  clearTimeout(timeoutId);
+                  
+                  console.log('Response status:', resp.status);
+                  console.log('Response headers:', Object.fromEntries(resp.headers.entries()));
+                  
                   if (!resp.ok) {
                     const txt = await resp.text();
+                    console.error('Upload failed:', txt);
                     throw new Error(`Upload failed ${resp.status}: ${txt}`);
                   }
                   setShowUploadAudio(false);
                   alert('Audio uploaded. Transcription started.');
                 } catch (err: any) {
-                  setUploadAudioError(err?.message || 'Failed to upload audio');
+                  console.error('Audio upload error:', err);
+                  if (err.name === 'AbortError') {
+                    setUploadAudioError('Upload timed out. Please try again with a shorter audio file.');
+                  } else if (err.message.includes('Failed to fetch')) {
+                    setUploadAudioError('Network error. Please check your connection and try again.');
+                  } else {
+                    setUploadAudioError(err?.message || 'Failed to upload audio. Please try again.');
+                  }
                 } finally {
                   setIsTranscribingAudio(false);
                 }
@@ -924,19 +954,19 @@ const Index = () => {
       {/* Transcript Modal */}
       {showTranscript && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Transcript</h3>
-            <div className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap text-sm text-gray-800 border rounded p-3 bg-gray-50">
-              {transcriptText || 'No transcript available.'}
-            </div>
-            <div className="flex items-center justify-end gap-2 mt-4">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-4xl max-h-[90vh] overflow-hidden">
+            <div className="flex items-center justify-between p-6 border-b">
+              <h3 className="text-xl font-semibold text-gray-900">Transcript</h3>
               <button
                 type="button"
                 onClick={() => setShowTranscript(false)}
-                className="px-4 py-2 rounded bg-gray-200 text-gray-800"
+                className="px-4 py-2 rounded bg-gray-200 text-gray-800 hover:bg-gray-300 transition-colors"
               >
                 Close
               </button>
+            </div>
+            <div className="max-h-[70vh] overflow-y-auto">
+              <TranscriptView content={transcriptText} />
             </div>
           </div>
         </div>
