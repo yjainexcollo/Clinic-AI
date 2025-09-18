@@ -184,25 +184,39 @@ app = create_app()
 @app.get("/")
 async def root():
     """Root endpoint with API information."""
-    settings = get_settings()
-    return {
-        "service": "Clinic-AI Intake Assistant",
-        "version": settings.app_version,
-        "environment": settings.app_env,
-        "status": "running",
-        "docs": "/docs" if settings.debug else "disabled",
-        "endpoints": {
-            "health": "/health",
-            "register_patient": "POST /patients/",
-            "answer_intake": "POST /patients/consultations/answer",
-            "pre_visit_summary": "POST /patients/summary/previsit",
-            "get_summary": "GET /patients/{patient_id}/visits/{visit_id}/summary",
-            # Step-03 endpoints
-            "transcribe_audio": "POST /notes/transcribe",
-            "generate_soap": "POST /notes/soap/generate",
-            "get_transcript": "GET /notes/{patient_id}/visits/{visit_id}/transcript",
-            "get_soap": "GET /notes/{patient_id}/visits/{visit_id}/soap",
-            # Prescription endpoints
-            "upload_prescriptions": "POST /prescriptions/upload",
-        },
-    }
+    try:
+        settings = get_settings()
+        return {
+            "service": "Clinic-AI Intake Assistant",
+            "version": settings.app_version,
+            "environment": settings.app_env,
+            "status": "running",
+            "docs": "/docs" if settings.debug else "disabled",
+            "endpoints": {
+                "health": "/health",
+                "register_patient": "POST /patients/",
+                "answer_intake": "POST /patients/consultations/answer",
+                "pre_visit_summary": "POST /patients/summary/previsit",
+                "get_summary": "GET /patients/{patient_id}/visits/{visit_id}/summary",
+                # Step-03 endpoints
+                "transcribe_audio": "POST /notes/transcribe",
+                "generate_soap": "POST /notes/soap/generate",
+                "get_transcript": "GET /notes/{patient_id}/visits/{visit_id}/transcript",
+                "get_soap": "GET /notes/{patient_id}/visits/{visit_id}/soap",
+                # Prescription endpoints
+                "upload_prescriptions": "POST /prescriptions/upload",
+            },
+        }
+    except Exception as e:
+        return {
+            "service": "Clinic-AI Intake Assistant",
+            "status": "error",
+            "error": str(e),
+            "message": "Backend is running but configuration failed"
+        }
+
+# Simple test endpoint
+@app.get("/test")
+async def test():
+    """Simple test endpoint to verify backend is running."""
+    return {"status": "ok", "message": "Backend is running"}

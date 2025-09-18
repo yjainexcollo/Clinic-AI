@@ -8,16 +8,16 @@ import logging
 import traceback
 from typing import Union, Optional, List
 
-from clinicai.application.dto.patient_dto import (
+from ...application.dto.patient_dto import (
     AnswerIntakeRequest,
     PreVisitSummaryRequest,
     RegisterPatientRequest,
 )
-from clinicai.application.dto.patient_dto import EditAnswerRequest
-from clinicai.application.use_cases.answer_intake import AnswerIntakeUseCase
-from clinicai.application.use_cases.generate_pre_visit_summary import GeneratePreVisitSummaryUseCase
-from clinicai.application.use_cases.register_patient import RegisterPatientUseCase
-from clinicai.domain.errors import (
+from ...application.dto.patient_dto import EditAnswerRequest
+from ...application.use_cases.answer_intake import AnswerIntakeUseCase
+from ...application.use_cases.generate_pre_visit_summary import GeneratePreVisitSummaryUseCase
+from ...application.use_cases.register_patient import RegisterPatientUseCase
+from ...domain.errors import (
     DuplicatePatientError,
     DuplicateQuestionError,
     IntakeAlreadyCompletedError,

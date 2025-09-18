@@ -61,3 +61,11 @@ async def liveness_check():
     Returns whether the service is alive.
     """
     return {"status": "alive", "timestamp": datetime.utcnow()}
+
+
+@router.get("/simple")
+async def simple_health():
+    """
+    Simple health check that doesn't depend on any external services.
+    """
+    return {"status": "ok", "message": "Backend is running"}
