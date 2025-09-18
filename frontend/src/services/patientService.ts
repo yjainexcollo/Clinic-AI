@@ -35,6 +35,16 @@ export interface BackendAnswerRequest {
   answer: string;
 }
 
+export interface OCRQualityInfo {
+  quality: 'excellent' | 'good' | 'poor' | 'failed';
+  confidence: number;
+  extracted_text: string;
+  extracted_medications: string[];
+  suggestions: string[];
+  word_count: number;
+  has_medication_keywords: boolean;
+}
+
 export interface BackendAnswerResponse {
   next_question: string | null;
   is_complete: boolean;
@@ -43,6 +53,7 @@ export interface BackendAnswerResponse {
   completion_percent: number;
   message: string;
   allows_image_upload?: boolean;
+  ocr_quality?: OCRQualityInfo | null;
 }
 
 // Register patient against backend FastAPI
@@ -252,5 +263,30 @@ export async function getPatient(
   } catch (error) {
     console.error("Error getting patient:", error);
     throw new Error("Failed to get patient details. Please try again.");
+  }
+}
+
+// Get pre-visit summary from backend
+export async function getPreVisitSummary(
+  patientId: string,
+  visitId: string
+): Promise<{ patient_id: string; visit_id: string; summary: string; generated_at: string }> {
+  try {
+    const response = await fetch(`${BACKEND_BASE_URL}/patients/${patientId}/visits/${visitId}/summary`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Backend error ${response.status}: ${response.statusText}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("Error getting pre-visit summary:", error);
+    throw new Error("Failed to get pre-visit summary. Please try again.");
   }
 }

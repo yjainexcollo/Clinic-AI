@@ -12,6 +12,8 @@ from ..dto.patient_dto import (
     AnswerIntakeResponse,
     EditAnswerRequest,
     EditAnswerResponse,
+    OCRQualityInfo,
+    PreVisitSummaryRequest,
 )
 from ..ports.repositories.patient_repo import PatientRepository
 from ..ports.services.question_service import QuestionService
@@ -65,6 +67,8 @@ class AnswerIntakeUseCase:
         # Add the question and answer
         # Extract OCR texts from embedded markers in answer if present
         ocr_texts: list[str] = []
+        ocr_quality_info = None
+        
         if "[OCR]:" in request.answer:
             try:
                 marker = request.answer.split("[OCR]:", 1)[1].strip()
@@ -74,6 +78,36 @@ class AnswerIntakeUseCase:
                     ocr_texts = parts
             except Exception:
                 ocr_texts = []
+        
+        # Process OCR quality if we have image attachments
+        if request.attachment_image_paths and len(request.attachment_image_paths) > 0:
+            # Use the first image for quality assessment
+            first_image_path = request.attachment_image_paths[0]
+            try:
+                from clinicai.core.utils.image_ocr import extract_text_with_quality
+                ocr_result = extract_text_with_quality(first_image_path)
+                
+                ocr_quality_info = OCRQualityInfo(
+                    quality=ocr_result.quality,
+                    confidence=ocr_result.confidence,
+                    extracted_text=ocr_result.text,
+                    extracted_medications=ocr_result.extracted_medications,
+                    suggestions=ocr_result.suggestions,
+                    word_count=ocr_result.word_count,
+                    has_medication_keywords=ocr_result.has_medication_keywords
+                )
+            except Exception:
+                # If OCR processing fails, create a failed quality info
+                ocr_quality_info = OCRQualityInfo(
+                    quality="failed",
+                    confidence=0.0,
+                    extracted_text="",
+                    extracted_medications=[],
+                    suggestions=["OCR processing failed. Please try uploading a clearer image."],
+                    word_count=0,
+                    has_medication_keywords=False
+                )
+        
         visit.add_question_answer(
             current_question,
             request.answer,
@@ -98,12 +132,19 @@ class AnswerIntakeUseCase:
         # Enforce minimum of 5 questions before completion unless service decides to stop after >=5
         min_questions_required = 5
         reached_minimum = visit.intake_session.current_question_count >= min_questions_required
+        
+        # Log completion decision for debugging
+        import logging
+        logger = logging.getLogger("clinicai")
+        logger.info(f"Completion check: should_stop={should_stop}, reached_minimum={reached_minimum}, "
+                   f"can_ask_more={visit.can_ask_more_questions()}, current_count={visit.intake_session.current_question_count}")
 
         if (should_stop and reached_minimum) or not visit.can_ask_more_questions():
             # Complete the intake
             visit.complete_intake()
             is_complete = True
             message = "Intake completed successfully. Ready for next step."
+            logger.info(f"Intake completed for visit {request.visit_id} with {visit.intake_session.current_question_count} questions")
         else:
             # Generate next question for the NEXT round and cache it as pending
             previous_answers = [qa.answer for qa in visit.intake_session.questions_asked]
@@ -137,6 +178,21 @@ class AnswerIntakeUseCase:
         # Save the updated patient
         await self._patient_repository.save(patient)
 
+        # Generate pre-visit summary if intake was completed
+        if is_complete:
+            try:
+                from .generate_pre_visit_summary import GeneratePreVisitSummaryUseCase
+                summary_use_case = GeneratePreVisitSummaryUseCase(self._patient_repository, self._question_service)
+                summary_request = PreVisitSummaryRequest(
+                    patient_id=request.patient_id,
+                    visit_id=request.visit_id,
+                )
+                await summary_use_case.execute(summary_request)
+                logger.info(f"Pre-visit summary generated successfully for visit {request.visit_id}")
+            except Exception as e:
+                # Log error but don't fail the intake completion
+                logger.warning(f"Failed to generate pre-visit summary: {e}")
+
         # Raise domain events
         # Note: In a real implementation, you'd have an event bus
 
@@ -153,6 +209,7 @@ class AnswerIntakeUseCase:
             completion_percent=completion_percent,
             message=message,
             allows_image_upload=allows_image_upload,
+            ocr_quality=ocr_quality_info,
         )
 
     async def edit(self, request: EditAnswerRequest) -> EditAnswerResponse:
@@ -173,9 +230,27 @@ class AnswerIntakeUseCase:
         if idx < 0 or idx >= len(visit.intake_session.questions_asked):
             raise ValueError("Invalid question_number")
 
-        # Apply edit
+        # Apply edit (update answer and any attachments/ocr markers)
         qa = visit.intake_session.questions_asked[idx]
         qa.answer = request.new_answer.strip()
+        # Parse markers for attachments and OCR
+        try:
+            if "[IMAGES]:" in qa.answer:
+                # extract comma-separated paths after [IMAGES]:
+                trailing = qa.answer.split("[IMAGES]:", 1)[1]
+                first_line = trailing.split("\n", 1)[0]
+                paths = [p.strip() for p in first_line.split(",") if p.strip()]
+                if paths:
+                    qa.attachment_image_paths = paths
+            if "[OCR]:" in qa.answer:
+                trailing = qa.answer.split("[OCR]:", 1)[1]
+                first_line = trailing.split("\n", 1)[0]
+                texts = [p.strip() for p in first_line.split("|") if p.strip()]
+                if texts:
+                    qa.ocr_texts = texts
+        except Exception:
+            # ignore parsing errors; keep best-effort
+            pass
 
         # Truncate all questions AFTER the edited one to allow dynamic regeneration
         visit.truncate_questions_after(request.question_number)

@@ -3,9 +3,23 @@ Pydantic schemas for patient-related API endpoints.
 """
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 from pydantic import BaseModel, Field, validator
+
+
+def exclude_revision_id(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Remove revision_id from data dictionary recursively."""
+    if isinstance(data, dict):
+        # Remove revision_id from current level
+        data = {k: v for k, v in data.items() if k != "revision_id"}
+        # Recursively process nested dictionaries and lists
+        for key, value in data.items():
+            if isinstance(value, dict):
+                data[key] = exclude_revision_id(value)
+            elif isinstance(value, list):
+                data[key] = [exclude_revision_id(item) if isinstance(item, dict) else item for item in value]
+    return data
 
 
 class RegisterPatientRequest(BaseModel):
@@ -70,6 +84,17 @@ class AnswerIntakeRequest(BaseModel):
         return v.strip()
 
 
+class OCRQualityInfo(BaseModel):
+    """OCR quality assessment information."""
+    quality: str = Field(..., description="OCR quality: excellent, good, poor, or failed")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="OCR confidence score (0.0 to 1.0)")
+    extracted_text: str = Field(..., description="Text extracted from the image")
+    extracted_medications: List[str] = Field(default_factory=list, description="Potential medication names found")
+    suggestions: List[str] = Field(default_factory=list, description="Suggestions for better image quality")
+    word_count: int = Field(..., description="Number of words extracted")
+    has_medication_keywords: bool = Field(..., description="Whether medication-related keywords were found")
+
+
 class AnswerIntakeResponse(BaseModel):
     """Response schema for answering intake questions."""
 
@@ -80,6 +105,7 @@ class AnswerIntakeResponse(BaseModel):
     completion_percent: int = Field(..., ge=0, le=100, description="LLM-assessed completion percent")
     message: str = Field(..., description="Status message")
     allows_image_upload: bool = Field(False, description="Whether the next question allows image upload")
+    ocr_quality: Optional[OCRQualityInfo] = Field(None, description="OCR quality information if image was uploaded")
 
 
 class EditAnswerRequest(BaseModel):
@@ -109,13 +135,18 @@ class QuestionAnswerSchema(BaseModel):
     answer: str = Field(..., description="Answer text")
     timestamp: datetime = Field(..., description="Timestamp")
     question_number: int = Field(..., description="Question number in sequence")
+    attachment_image_paths: Optional[List[str]] = Field(None, description="Paths to attached images")
+    ocr_texts: Optional[List[str]] = Field(None, description="OCR extracted text from images")
+
+    class Config:
+        # Exclude revision_id and other MongoDB-specific fields
+        exclude = {"revision_id"}
 
 
 class IntakeSummarySchema(BaseModel):
     """Schema for intake session summary."""
 
     visit_id: str = Field(..., description="Visit ID")
-    symptom: str = Field(..., description="Primary symptom")
     status: str = Field(..., description="Visit status")
     questions_asked: List[QuestionAnswerSchema] = Field(
         ..., description="List of questions and answers"
@@ -125,6 +156,10 @@ class IntakeSummarySchema(BaseModel):
     intake_status: str = Field(..., description="Intake session status")
     started_at: datetime = Field(..., description="Intake start time")
     completed_at: Optional[datetime] = Field(None, description="Intake completion time")
+
+    class Config:
+        # Exclude revision_id and other MongoDB-specific fields
+        exclude = {"revision_id"}
 
 
 class PatientSummarySchema(BaseModel):
@@ -140,6 +175,10 @@ class PatientSummarySchema(BaseModel):
     latest_visit: Optional[IntakeSummarySchema] = Field(
         None, description="Latest visit details"
     )
+
+    class Config:
+        # Exclude revision_id and other MongoDB-specific fields
+        exclude = {"revision_id"}
 
 
 class ErrorResponse(BaseModel):

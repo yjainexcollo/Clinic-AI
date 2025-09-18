@@ -51,8 +51,6 @@ tags:
     description: Health check endpoints
   - name: patients
     description: Patient management and intake endpoints
-  - name: intake
-    description: Intake schema and validation endpoints
   - name: notes
     description: Audio transcription and SOAP note generation endpoints
 
@@ -102,12 +100,6 @@ paths:
                       edit_answer:
                         type: string
                         example: "PATCH /patients/consultations/answer"
-                      intake_schema:
-                        type: string
-                        example: "GET /intake/schema"
-                      intake_validate:
-                        type: string
-                        example: "POST /intake/validate"
                       pre_visit_summary:
                         type: string
                         example: "POST /patients/summary/previsit"
@@ -1030,69 +1022,6 @@ paths:
 
 components:
   schemas:
-    IntakeQuestion:
-      type: object
-      properties:
-        question_id:
-          type: string
-        text:
-          type: string
-        type:
-          type: string
-          enum: [string, number, boolean, array, object]
-        required:
-          type: boolean
-          default: false
-        enum:
-          type: array
-          items:
-            type: string
-        depends_on:
-          type: string
-          nullable: true
-        visible_if:
-          type: object
-          additionalProperties: true
-          nullable: true
-
-    IntakeSchema:
-      type: object
-      properties:
-        version:
-          type: string
-        clinic_code:
-          type: string
-          nullable: true
-        max_questions:
-          type: integer
-        questions:
-          type: array
-          items:
-            $ref: "#/components/schemas/IntakeQuestion"
-
-    ValidateAnswersRequest:
-      type: object
-      required: [answers]
-      properties:
-        patient_id:
-          type: string
-          nullable: true
-        answers:
-          type: object
-          additionalProperties: true
-
-    ValidateAnswersResponse:
-      type: object
-      properties:
-        valid:
-          type: boolean
-        errors:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
-        message:
-          type: string
     RegisterPatientRequest:
       type: object
       required:
@@ -1184,6 +1113,54 @@ components:
           description: Patient's answer to the question
           example: "I have been experiencing high blood pressure for 3 months"
 
+    OCRQualityInfo:
+      type: object
+      required:
+        - quality
+        - confidence
+        - extracted_text
+        - extracted_medications
+        - suggestions
+        - word_count
+        - has_medication_keywords
+      properties:
+        quality:
+          type: string
+          enum: [excellent, good, poor, failed]
+          description: OCR quality assessment
+          example: "good"
+        confidence:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          description: OCR confidence score (0.0 to 1.0)
+          example: 0.75
+        extracted_text:
+          type: string
+          description: Text extracted from the image
+          example: "Paracetamol 500mg tablets, Take 1-2 tablets every 4-6 hours"
+        extracted_medications:
+          type: array
+          items:
+            type: string
+          description: Potential medication names found
+          example: ["Paracetamol"]
+        suggestions:
+          type: array
+          items:
+            type: string
+          description: Suggestions for better image quality
+          example: ["Text quality is acceptable but could be better:", "Consider retaking with better lighting"]
+        word_count:
+          type: integer
+          description: Number of words extracted
+          example: 12
+        has_medication_keywords:
+          type: boolean
+          description: Whether medication-related keywords were found
+          example: true
+
     AnswerIntakeResponse:
       type: object
       required:
@@ -1228,6 +1205,10 @@ components:
           type: boolean
           description: Whether the next question allows image upload
           example: false
+        ocr_quality:
+          $ref: '#/components/schemas/OCRQualityInfo'
+          nullable: true
+          description: OCR quality information if image was uploaded
 
     EditAnswerRequest:
       type: object

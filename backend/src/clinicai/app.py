@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .api.routers import health, patients, notes, prescriptions, intake
+from .api.routers import health, patients, notes, prescriptions
 from .core.config import get_settings
 from .domain.errors import DomainError
 
@@ -28,9 +28,7 @@ async def lifespan(app: FastAPI):
 
         # Import models for registration
         from .adapters.db.mongo.models.patient_m import (
-            IntakeSessionMongo,
             PatientMongo,
-            QuestionAnswerMongo,
             VisitMongo,
             TranscriptionSessionMongo,
             SoapNoteMongo,
@@ -48,8 +46,6 @@ async def lifespan(app: FastAPI):
                 # Patient models
                 PatientMongo,
                 VisitMongo,
-                IntakeSessionMongo,
-                QuestionAnswerMongo,
                 TranscriptionSessionMongo,
                 SoapNoteMongo,
                 
@@ -109,7 +105,6 @@ def create_app() -> FastAPI:
     # Include routers
     app.include_router(health.router)
     app.include_router(patients.router)
-    app.include_router(intake.router)
     app.include_router(notes.router)
     app.include_router(prescriptions.router)
 

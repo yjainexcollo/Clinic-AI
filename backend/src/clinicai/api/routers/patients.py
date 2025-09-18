@@ -224,6 +224,7 @@ async def answer_intake_question(
                 patient_id=decode_patient_id(form_patient_id),
                 visit_id=form_visit_id,
                 answer=form_answer,
+                attachment_image_paths=image_paths if image_paths else None,
             )
         else:
             raise HTTPException(
@@ -247,6 +248,7 @@ async def answer_intake_question(
             completion_percent=result.completion_percent,
             message=result.message,
             allows_image_upload=result.allows_image_upload,
+            ocr_quality=result.ocr_quality,
         )
     except PatientNotFoundError as e:
         raise HTTPException(
@@ -450,8 +452,9 @@ async def get_pre_visit_summary(
     try:
         from ...domain.value_objects.patient_id import PatientId
         
-        # Find patient
-        patient_id_obj = PatientId(patient_id)
+        # Find patient (decode opaque id from client)
+        internal_patient_id = decode_patient_id(patient_id)
+        patient_id_obj = PatientId(internal_patient_id)
         patient = await patient_repo.find_by_id(patient_id_obj)
         if not patient:
             raise PatientNotFoundError(patient_id)

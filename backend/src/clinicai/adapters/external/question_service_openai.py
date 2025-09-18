@@ -165,6 +165,9 @@ class OpenAIQuestionService(QuestionService):
                 "Do not repeat topics or demographics. Return only the question text."
             )
         else:
+            # Define covered categories for the prompt
+            covered_categories_str = "None specified - use clinical judgment"
+            
             prompt = f"""
 SYSTEM PROMPT:
 You are a professional, respectful, and efficient clinical intake assistant.
@@ -238,8 +241,8 @@ OUTPUT RULES:
         # Always stop at the hard cap
         if current_count >= max_count:
             return True
-        # Require a small minimum before stopping early
-        if current_count < 6:
+        # Require a small minimum before stopping early (aligned with completion logic)
+        if current_count < 5:
             return False
         # Otherwise continue until near cap
         return current_count >= (max_count - 1)

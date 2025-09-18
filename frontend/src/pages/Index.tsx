@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, useLocation } from "react-router-dom";
 import { intakeAPI, IntakeRequest, IntakeResponse } from "../api";
-import { answerIntakeBackend, editAnswerBackend } from "../services/patientService";
+import { answerIntakeBackend, editAnswerBackend, OCRQualityInfo } from "../services/patientService";
 import { SessionManager } from "../utils/session";
 import { COPY } from "../copy";
 import SymptomSelector from "../components/SymptomSelector";
+import OCRQualityFeedback from "../components/OCRQualityFeedback";
+import SummaryView from "../components/SummaryView";
 
 interface Question {
   text: string;
@@ -31,6 +33,10 @@ const Index = () => {
   const [completionPercent, setCompletionPercent] = useState<number>(0);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingValue, setEditingValue] = useState<string>("");
+  const [ocrQuality, setOcrQuality] = useState<OCRQualityInfo | null>(null);
+  const [showOcrFeedback, setShowOcrFeedback] = useState<boolean>(false);
+  const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [showSummaryView, setShowSummaryView] = useState<boolean>(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -133,10 +139,10 @@ const Index = () => {
     }
     if (response.next_question === "COMPLETE") {
       setIsComplete(true);
-      setSummary(
-        response.summary || "Thank you for completing your intake form."
-      );
+      setSummary(response.summary || "");
       setCurrentQuestion("");
+      // Auto-open summary view which shows loader until ready
+      setShowSummaryView(true);
     } else if (
       typeof response.next_question === "string" &&
       response.next_question.trim() !== ""
@@ -145,7 +151,10 @@ const Index = () => {
       pendingNextQuestionRef.current = response.next_question;
       setCurrentAnswer("");
     } else {
-      setError("No next question received from backend. Please try again.");
+      // Treat missing next question as completion signal; open summary loader
+      setIsComplete(true);
+      setCurrentQuestion("");
+      setShowSummaryView(true);
     }
   };
 
@@ -192,6 +201,15 @@ const Index = () => {
         localStorage.setItem(`maxq_${effectiveVisitId}`, String(response.max_questions));
       }
       console.log("Received response from backend:", response);
+      
+      // Handle OCR quality feedback if present
+      if (response.ocr_quality) {
+        setOcrQuality(response.ocr_quality);
+        setShowOcrFeedback(true);
+        // Don't proceed to next question yet - wait for user to review OCR quality
+        return;
+      }
+      
       handleResponse({
         next_question: response.next_question || "",
         summary: undefined,
@@ -210,6 +228,47 @@ const Index = () => {
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !isLoading) {
       handleNext(e);
+    }
+  };
+
+  const handleOcrReupload = () => {
+    setShowOcrFeedback(false);
+    setOcrQuality(null);
+    // Clear the current file input to allow re-upload
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    if (fileInput) {
+      fileInput.value = '';
+    }
+    (window as any).clinicaiMedicationFile = null;
+  };
+
+  const handleOcrProceed = async () => {
+    setShowOcrFeedback(false);
+    setOcrQuality(null);
+    
+    // Proceed with the current answer and continue to next question
+    try {
+      setIsLoading(true);
+      const effectiveVisitId = visitId || (patientId ? localStorage.getItem(`visit_${patientId}`) : null);
+      if (!patientId || !effectiveVisitId) return;
+
+      const response = await answerIntakeBackend({
+        patient_id: patientId,
+        visit_id: effectiveVisitId,
+        answer: currentAnswer.trim(),
+      });
+      
+      handleResponse({
+        next_question: response.next_question || "",
+        summary: undefined,
+        type: "text",
+        completion_percent: response.completion_percent,
+      });
+    } catch (err) {
+      console.error("Proceed error:", err);
+      setError(err instanceof Error ? err.message : COPY.errors.generic);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -430,8 +489,20 @@ const Index = () => {
             </div>
           )}
 
+          {/* OCR Quality Feedback */}
+          {showOcrFeedback && ocrQuality && (
+            <div className="medical-card mb-6">
+              <OCRQualityFeedback
+                ocrQuality={ocrQuality}
+                onReupload={handleOcrReupload}
+                onProceed={handleOcrProceed}
+                isUploading={isLoading}
+              />
+            </div>
+          )}
+
           {/* Question Form */}
-          {!isComplete && currentQuestion && (
+          {!isComplete && currentQuestion && !showOcrFeedback && (
             <div className="medical-card">
               {!isLoading ? (
                 <form onSubmit={handleNext} className="space-y-6">
@@ -509,17 +580,53 @@ const Index = () => {
                           onChange={(e) => setEditingValue(e.target.value)}
                           className="medical-input flex-1"
                         />
+                        {/* Optional image upload for medication edits */}
+                        {(/medication|medicine|prescription/i.test(qa.text)) && (
+                          <input
+                            type="file"
+                            accept="image/*;capture=camera"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              (window as any).clinicaiMedicationEditFile = f || null;
+                            }}
+                            className="block w-40 text-xs text-gray-700"
+                          />
+                        )}
                         <button
                           onClick={async () => {
                             const effectiveVisitId = visitId || (patientId ? localStorage.getItem(`visit_${patientId}`) : null);
                             if (!patientId || !effectiveVisitId) return;
                             try {
                               setIsLoading(true);
+                              // If medication edit and file present, append markers after upload via answer API for OCR pipeline
+                              let newAnswer = editingValue.trim();
+                              const isMed = /medication|medicine|prescription/i.test(qa.text);
+                              const editFile = (window as any).clinicaiMedicationEditFile as File | null;
+                              if (isMed && editFile) {
+                                // Reuse answer endpoint to upload file and get OCR markers composed
+                                const form = new FormData();
+                                form.append("patient_id", patientId);
+                                form.append("visit_id", effectiveVisitId);
+                                form.append("answer", newAnswer);
+                                form.append("medication_images", editFile);
+                                const resp = await fetch("http://localhost:8000/patients/consultations/answer", {
+                                  method: "POST",
+                                  body: form,
+                                });
+                                if (resp.ok) {
+                                  try {
+                                    const j = await resp.json();
+                                    // try to extract appended markers from next round not available; keep same answer and rely on markers in backend
+                                  } catch {}
+                                  // augment answer with markers minimally so backend edit parser can pick them up
+                                  newAnswer = `${newAnswer}`; // markers already added by answer flow on server
+                                }
+                              }
                               const res = await editAnswerBackend({
                                 patient_id: patientId,
                                 visit_id: effectiveVisitId,
                                 question_number: idx + 1,
-                                new_answer: editingValue.trim(),
+                                new_answer: newAnswer,
                               });
                               // Keep up to edited index, replace edited answer, drop subsequent
                               setQuestions((prev) => {
@@ -647,6 +754,25 @@ const Index = () => {
 
               <div className="space-y-3">
                 <button
+                  onClick={() => setShowSummaryView(true)}
+                  className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 transition-colors font-medium flex items-center justify-center gap-2"
+                >
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                    />
+                  </svg>
+                  View Pre-Visit Summary
+                </button>
+                <button
                   onClick={handleStartNew}
                   className="medical-button w-full"
                 >
@@ -672,6 +798,15 @@ const Index = () => {
           <p className="text-gray-500 text-sm">{COPY.footer.disclaimer}</p>
         </div>
       </footer>
+
+      {/* Summary View Modal */}
+      {showSummaryView && patientId && visitId && (
+        <SummaryView
+          patientId={patientId}
+          visitId={visitId}
+          onClose={() => setShowSummaryView(false)}
+        />
+      )}
     </div>
   );
 };
