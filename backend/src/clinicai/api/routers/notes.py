@@ -109,70 +109,31 @@ async def test_transcribe_simple(
 
 @router.post(
     "/transcribe",
-    response_model=AudioTranscriptionResponse,
     status_code=status.HTTP_200_OK,
-    responses={
-        400: {"model": ErrorResponse, "description": "Validation error"},
-        404: {"model": ErrorResponse, "description": "Patient or visit not found"},
-        422: {"model": ErrorResponse, "description": "Invalid audio file or visit status"},
-        500: {"model": ErrorResponse, "description": "Internal server error"},
-    },
 )
 async def transcribe_audio(
-    patient_repo: PatientRepositoryDep,
-    transcription_service: TranscriptionServiceDep,
     patient_id: str = Form(...),
     visit_id: str = Form(...),
     audio_file: UploadFile = File(...),
 ):
     """
-    Simplified transcribe audio file for a visit - temporarily bypasses encryption and complex processing.
+    Ultra-simplified transcribe endpoint - no dependencies, no complex processing.
     """
-    logger.info(f"Transcribe audio request received for patient_id: {patient_id}, visit_id: {visit_id}")
-    logger.info(f"Audio file: {audio_file.filename}, content_type: {audio_file.content_type}, size: {audio_file.size}")
-    
     try:
-        # Check if this is a preflight request
-        if not audio_file.filename:
-            logger.warning("Received request without audio file - might be preflight")
-            return {
-                "status": "error",
-                "message": "No audio file provided",
-                "transcript": "",
-                "audio_duration": 0,
-                "error_details": {
-                    "error": "NO_AUDIO_FILE",
-                    "message": "No audio file provided",
-                    "details": {},
-                }
-            }
-        
-        # Log file details for debugging
-        logger.info(f"Processing audio file: {audio_file.filename}, size: {audio_file.size}, content_type: {audio_file.content_type}")
-        
-        # For now, just return a mock response to test CORS and basic functionality
-        # This bypasses all the complex processing that might be causing the 502 error
-        logger.info("Returning mock transcription response for testing")
         return {
             "status": "success",
-            "message": "Audio file received successfully (mock response)",
-            "transcript": "This is a mock transcript for testing purposes. The audio file was received successfully.",
+            "message": "Audio file received successfully (ultra-simple response)",
+            "transcript": "This is a mock transcript for testing purposes.",
             "audio_duration": 30.0,
             "error_details": None
         }
-        
     except Exception as e:
-        logger.error(f"Error in transcribe_audio: {str(e)}", exc_info=True)
         return {
             "status": "error",
-            "message": f"Transcription failed: {str(e)}",
+            "message": f"Error: {str(e)}",
             "transcript": "",
             "audio_duration": 0,
-            "error_details": {
-                "error": "TRANSCRIPTION_FAILED",
-                "message": f"Transcription failed: {str(e)}",
-                "details": {"exception": str(e), "type": e.__class__.__name__},
-            }
+            "error_details": {"error": str(e)}
         }
 
 
