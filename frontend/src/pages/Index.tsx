@@ -37,6 +37,7 @@ const Index = () => {
   const [showOcrFeedback, setShowOcrFeedback] = useState<boolean>(false);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [showSummaryView, setShowSummaryView] = useState<boolean>(false);
+  const [allowsImageUpload, setAllowsImageUpload] = useState<boolean>(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -132,10 +133,14 @@ const Index = () => {
     }
   };
 
-  const handleResponse = (response: IntakeResponse & { completion_percent?: number }) => {
+  const handleResponse = (response: IntakeResponse & { completion_percent?: number, allows_image_upload?: boolean }) => {
     console.log("Backend response:", response);
     if (typeof response.completion_percent === "number") {
       setCompletionPercent(Math.max(0, Math.min(100, response.completion_percent)));
+    }
+    // This flag indicates whether the UPCOMING question allows image upload
+    if (typeof (response as any).allows_image_upload === 'boolean') {
+      setAllowsImageUpload((response as any).allows_image_upload);
     }
     if (response.next_question === "COMPLETE") {
       setIsComplete(true);
@@ -189,14 +194,17 @@ const Index = () => {
         return next;
       });
 
-      // If the question suggests medication/photo, send optional image via service (multipart)
-      const medsHint = currentQuestion.includes("You can upload a clear photo") || /medication|medicine|prescription/i.test(currentQuestion);
-      const imageFile = medsHint ? (window as any).clinicaiMedicationFile : undefined;
+      // Use backend-provided flag to decide if image should be sent with this answer
+      const imageFile = allowsImageUpload ? (window as any).clinicaiMedicationFile : undefined;
       const response = await answerIntakeBackend({
         patient_id: patientId,
         visit_id: effectiveVisitId!,
         answer: answerToSend,
       }, imageFile);
+      // Clear the temp file reference after sending
+      if (imageFile) {
+        (window as any).clinicaiMedicationFile = null;
+      }
       if (response && typeof response.max_questions === "number") {
         localStorage.setItem(`maxq_${effectiveVisitId}`, String(response.max_questions));
       }
@@ -215,6 +223,7 @@ const Index = () => {
         summary: undefined,
         type: "text",
         completion_percent: response.completion_percent,
+        allows_image_upload: response.allows_image_upload,
       });
     } catch (err) {
       console.error("Submit error:", err);
@@ -510,7 +519,7 @@ const Index = () => {
                     <label className="block text-gray-800 font-medium mb-3 text-lg leading-relaxed">
                       {currentQuestion}
                     </label>
-                    {questions.length === 0 ? (
+          {questions.length === 0 ? (
                       <SymptomSelector
                         selectedSymptoms={selectedSymptoms}
                         onSymptomsChange={setSelectedSymptoms}
@@ -527,7 +536,7 @@ const Index = () => {
                           placeholder="Type your answer here..."
                           required
                         />
-                        {(/medication|medicine|prescription/i.test(currentQuestion)) && (
+              {allowsImageUpload && (
                           <div className="flex items-center gap-2">
                             <input
                               type="file"

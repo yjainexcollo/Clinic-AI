@@ -54,8 +54,9 @@ class RegisterPatientUseCase:
                 message="Existing patient found. New visit started.",
             )
 
-        # Generate patient ID for new patient (internal ID for persistence)
-        patient_id = PatientId.generate(request.name, request.mobile)
+        # Generate patient ID using FIRST NAME only (lowercased inside VO) and mobile
+        first_name_only = (request.name or "").strip().split(" ")[0]
+        patient_id = PatientId.generate(first_name_only, request.mobile)
 
         # Check for family members (mobile-only match) for analytics
         family_members = await self._patient_repository.find_by_mobile(request.mobile)  # noqa: F841

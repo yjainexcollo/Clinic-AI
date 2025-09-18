@@ -25,26 +25,30 @@ def exclude_revision_id(data: Dict[str, Any]) -> Dict[str, Any]:
 class RegisterPatientRequest(BaseModel):
     """Request schema for patient registration."""
 
-    name: str = Field(..., min_length=2, max_length=80, description="Patient name")
-    mobile: str = Field(..., min_length=10, max_length=15, description="Mobile number")
-    age: int = Field(..., ge=0, le=120, description="Patient age")
+    first_name: str = Field(..., min_length=1, max_length=40, description="Patient first name")
+    last_name: str = Field(..., min_length=1, max_length=40, description="Patient last name")
+    mobile: str = Field(..., min_length=8, max_length=16, description="Phone in E.164 format: +[country][national number]")
+    age: int = Field(..., ge=0, le=120, description="Patient age (0-120)")
     gender: str = Field(..., description="Patient gender (e.g., male, female, other)")
     recently_travelled: bool = Field(False, description="Has the patient travelled recently")
     consent: bool = Field(..., description="Patient consent for data processing (must be true)")
+    country: str = Field("US", description="ISO 3166-1 alpha-2 country code (default US)")
 
-    @validator("name")
-    def validate_name(cls, v):
+    @validator("first_name", "last_name")
+    def validate_names(cls, v):
         if not v or not v.strip():
-            raise ValueError("Name cannot be empty")
+            raise ValueError("Name fields cannot be empty")
         return v.strip()
 
     @validator("mobile")
     def validate_mobile(cls, v):
-        # Remove all non-digit characters
-        clean_mobile = "".join(filter(str.isdigit, v))
-        if len(clean_mobile) < 10 or len(clean_mobile) > 15:
-            raise ValueError("Mobile number must be 10-15 digits")
-        return clean_mobile
+        # Accept generic E.164 phones: +[1-9][7-14 digits]
+        # (overall 8-16 chars incl '+')
+        import re
+        s = (v or "").strip()
+        if not re.fullmatch(r"^\+[1-9]\d{7,14}$", s):
+            raise ValueError("Phone must be E.164 (+ country code followed by 7-14 digits), e.g., +14155552671")
+        return s
 
     @validator("gender")
     def validate_gender(cls, v):
