@@ -161,6 +161,7 @@ async def answer_intake_question(
     """
     try:
         content_type = request.headers.get("content-type", "")
+        logger.info(f"[AnswerIntake] Incoming content-type: {content_type}")
         if content_type.startswith("application/json"):
             body = await request.json()
             dto_request = AnswerIntakeRequest(
@@ -192,7 +193,14 @@ async def answer_intake_question(
                 # Fallback to reading via form in case Swagger binds differently
                 try:
                     form = await request.form()
-                    files = [f for f in form.getlist("medication_images") if isinstance(f, UploadFile)]
+                    # Try multiple common field names
+                    candidates: List[UploadFile] = []
+                    for key in ["medication_images", "medication_image", "image", "file", "photo"]:
+                        try:
+                            candidates.extend([f for f in form.getlist(key) if isinstance(f, UploadFile)])
+                        except Exception:
+                            pass
+                    files = [f for f in candidates if getattr(f, "filename", None)]
                 except Exception:
                     files = []
             if files:
@@ -229,8 +237,7 @@ async def answer_intake_question(
                 answer=form_answer,
                 attachment_image_paths=image_paths if image_paths else None,
             )
-            if image_paths:
-                logger.info(f"[AnswerIntake] Persisting {len(image_paths)} attachment path(s): {image_paths}")
+            logger.info(f"[AnswerIntake] Attachment paths to persist: {image_paths}")
         else:
             raise HTTPException(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,

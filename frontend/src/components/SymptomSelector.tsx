@@ -17,8 +17,12 @@ const SYMPTOM_CATEGORIES = {
     "Chest Pain",
     "Breathing Difficulty",
     "Fatigue / Weakness",
-    "Body Pain / Joint Pain",
-    "Skin Rash / Itching"
+    // Split slash pairs that represent different symptoms
+    "Body Pain",
+    "Joint Pain",
+    "Skin Rash",
+    "Itching",
+    "Diabetes"
   ]
 };
 

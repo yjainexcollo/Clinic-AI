@@ -292,14 +292,11 @@ class Visit:
             ),
         }
 
-    def store_pre_visit_summary(self, summary: str, structured_data: Dict[str, Any]) -> None:
-        """Store pre-visit summary in EHR."""
+    def store_pre_visit_summary(self, summary: str) -> None:
+        """Store pre-visit summary in EHR (minimal schema)."""
         self.pre_visit_summary = {
             "summary": summary,
-            "structured_data": structured_data,
             "generated_at": datetime.utcnow().isoformat(),
-            "visit_id": self.visit_id.value,
-            "patient_id": self.patient_id,
         }
         self.updated_at = datetime.utcnow()
 
