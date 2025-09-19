@@ -22,53 +22,49 @@ async def lifespan(app: FastAPI):
     print(f"🚀 Starting Clinic-AI Intake Assistant v{settings.app_version}")
     print(f"📊 Environment: {settings.app_env}")
     print(f"🔧 Debug mode: {settings.debug}")
-    
-    # Skip database initialization for now to test if that's causing the 502 error
-    print("⚠️ Skipping database initialization for testing")
-    
-    # # Initialize database connection (MongoDB + Beanie)
-    # try:
-    #     from beanie import init_beanie  # type: ignore
-    #     from motor.motor_asyncio import AsyncIOMotorClient  # type: ignore
-    #     import certifi  # type: ignore
+    # Initialize database connection (MongoDB + Beanie)
+    try:
+        from beanie import init_beanie  # type: ignore
+        from motor.motor_asyncio import AsyncIOMotorClient  # type: ignore
+        import certifi  # type: ignore
 
-    #     # Import models for registration
-    #     from .adapters.db.mongo.models.patient_m import (
-    #         PatientMongo,
-    #         VisitMongo,
-    #     )
+        # Import models for registration
+        from .adapters.db.mongo.models.patient_m import (
+            PatientMongo,
+            VisitMongo,
+        )
 
-    #     # Use configured URI
-    #     mongo_uri = settings.database.uri
-    #     db_name = settings.database.db_name
-    #     print(f"🗄️ Connecting to Mongo: {mongo_uri}")
+        # Use configured URI
+        mongo_uri = settings.database.uri
+        db_name = settings.database.db_name
+        print(f"🗄️ Connecting to Mongo: {mongo_uri}")
 
-    #     # Enable TLS only for Atlas SRV URIs
-    #     if mongo_uri.startswith("mongodb+srv://"):
-    #         ca_path = certifi.where()
-    #         client = AsyncIOMotorClient(
-    #             mongo_uri,
-    #             serverSelectionTimeoutMS=15000,
-    #             tls=True,
-    #             tlsCAFile=ca_path,
-    #             tlsAllowInvalidCertificates=False,
-    #         )
-    #     else:
-    #         # Local/standard connection (no TLS)
-    #         client = AsyncIOMotorClient(
-    #             mongo_uri,
-    #             serverSelectionTimeoutMS=15000,
-    #         )
+        # Enable TLS only for Atlas SRV URIs
+        if mongo_uri.startswith("mongodb+srv://"):
+            ca_path = certifi.where()
+            client = AsyncIOMotorClient(
+                mongo_uri,
+                serverSelectionTimeoutMS=15000,
+                tls=True,
+                tlsCAFile=ca_path,
+                tlsAllowInvalidCertificates=False,
+            )
+        else:
+            # Local/standard connection (no TLS)
+            client = AsyncIOMotorClient(
+                mongo_uri,
+                serverSelectionTimeoutMS=15000,
+            )
 
-    #     db = client[db_name]
-    #     await init_beanie(
-    #         database=db,
-    #         document_models=[PatientMongo, VisitMongo],
-    #     )
-    #     print("✅ Database connection established")
-    # except Exception as e:
-    #     print(f"❌ Database connection failed: {e}")
-    #     raise
+        db = client[db_name]
+        await init_beanie(
+            database=db,
+            document_models=[PatientMongo, VisitMongo],
+        )
+        print("✅ Database connection established")
+    except Exception as e:
+        print(f"❌ Database connection failed: {e}")
+        raise
 
     yield
 
@@ -188,39 +184,25 @@ app = create_app()
 @app.get("/")
 async def root():
     """Root endpoint with API information."""
-    try:
-        settings = get_settings()
-        return {
-            "service": "Clinic-AI Intake Assistant",
-            "version": settings.app_version,
-            "environment": settings.app_env,
-            "status": "running",
-            "docs": "/docs" if settings.debug else "disabled",
-            "endpoints": {
-                "health": "/health",
-                "register_patient": "POST /patients/",
-                "answer_intake": "POST /patients/consultations/answer",
-                "pre_visit_summary": "POST /patients/summary/previsit",
-                "get_summary": "GET /patients/{patient_id}/visits/{visit_id}/summary",
-                # Step-03 endpoints
-                "transcribe_audio": "POST /notes/transcribe",
-                "generate_soap": "POST /notes/soap/generate",
-                "get_transcript": "GET /notes/{patient_id}/visits/{visit_id}/transcript",
-                "get_soap": "GET /notes/{patient_id}/visits/{visit_id}/soap",
-                # Prescription endpoints
-                "upload_prescriptions": "POST /prescriptions/upload",
-            },
-        }
-    except Exception as e:
-        return {
-            "service": "Clinic-AI Intake Assistant",
-            "status": "error",
-            "error": str(e),
-            "message": "Backend is running but configuration failed"
-        }
-
-# Simple test endpoint
-@app.get("/test")
-async def test():
-    """Simple test endpoint to verify backend is running."""
-    return {"status": "ok", "message": "Backend is running"}
+    settings = get_settings()
+    return {
+        "service": "Clinic-AI Intake Assistant",
+        "version": settings.app_version,
+        "environment": settings.app_env,
+        "status": "running",
+        "docs": "/docs" if settings.debug else "disabled",
+        "endpoints": {
+            "health": "/health",
+            "register_patient": "POST /patients/",
+            "answer_intake": "POST /patients/consultations/answer",
+            "pre_visit_summary": "POST /patients/summary/previsit",
+            "get_summary": "GET /patients/{patient_id}/visits/{visit_id}/summary",
+            # Step-03 endpoints
+            "transcribe_audio": "POST /notes/transcribe",
+            "generate_soap": "POST /notes/soap/generate",
+            "get_transcript": "GET /notes/{patient_id}/visits/{visit_id}/transcript",
+            "get_soap": "GET /notes/{patient_id}/visits/{visit_id}/soap",
+            # Prescription endpoints
+            "upload_prescriptions": "POST /prescriptions/upload",
+        },
+    }

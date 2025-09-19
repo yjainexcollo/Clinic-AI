@@ -8,16 +8,16 @@ import logging
 import traceback
 from typing import Union, Optional, List
 
-from ...application.dto.patient_dto import (
+from clinicai.application.dto.patient_dto import (
     AnswerIntakeRequest,
     PreVisitSummaryRequest,
     RegisterPatientRequest,
 )
-from ...application.dto.patient_dto import EditAnswerRequest
-from ...application.use_cases.answer_intake import AnswerIntakeUseCase
-from ...application.use_cases.generate_pre_visit_summary import GeneratePreVisitSummaryUseCase
-from ...application.use_cases.register_patient import RegisterPatientUseCase
-from ...domain.errors import (
+from clinicai.application.dto.patient_dto import EditAnswerRequest
+from clinicai.application.use_cases.answer_intake import AnswerIntakeUseCase
+from clinicai.application.use_cases.generate_pre_visit_summary import GeneratePreVisitSummaryUseCase
+from clinicai.application.use_cases.register_patient import RegisterPatientUseCase
+from clinicai.domain.errors import (
     DuplicatePatientError,
     DuplicateQuestionError,
     IntakeAlreadyCompletedError,
@@ -206,8 +206,8 @@ async def answer_intake_question(
             if files:
                 import os
                 from uuid import uuid4
-                from ...core.utils.file_utils import create_directory
-                from ...core.utils.image_ocr import extract_text_from_image
+                from clinicai.core.utils.file_utils import create_directory
+                from clinicai.core.utils.image_ocr import extract_text_from_image
 
                 uploads_dir = os.getenv("UPLOADS_DIR", "/tmp/clinicai_uploads")
                 create_directory(uploads_dir)

@@ -43,98 +43,165 @@ async def test_cors():
     """Test endpoint to verify CORS is working."""
     return {"message": "CORS is working", "timestamp": "2024-01-01T00:00:00Z"}
 
-@router.get("/test-encryption")
-async def test_encryption():
-    """Test endpoint to verify encryption key is working."""
-    from ...core.utils.crypto import encode_patient_id, decode_patient_id
-    import os
-    
-    try:
-        # Test encryption/decryption
-        test_id = "test_1234567890"
-        encoded = encode_patient_id(test_id)
-        decoded = decode_patient_id(encoded)
-        
-        return {
-            "status": "success",
-            "encryption_key_set": bool(os.getenv("ENCRYPTION_KEY")),
-            "test_id": test_id,
-            "encoded": encoded,
-            "decoded": decoded,
-            "match": test_id == decoded
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "encryption_key_set": bool(os.getenv("ENCRYPTION_KEY")),
-            "error": str(e),
-            "error_type": type(e).__name__
-        }
-
-@router.post("/test-upload")
-async def test_upload(audio_file: UploadFile = File(...)):
-    """Test endpoint to verify file upload works without encryption."""
-    return {
-        "status": "success",
-        "filename": audio_file.filename,
-        "content_type": audio_file.content_type,
-        "size": audio_file.size
-    }
-
-@router.post("/test-transcribe-simple")
-async def test_transcribe_simple(
-    patient_id: str = Form(...),
-    visit_id: str = Form(...),
-    audio_file: UploadFile = File(...)
-):
-    """Simplified test endpoint for transcribe without complex processing."""
-    try:
-        # Just return basic info without doing any processing
-        return {
-            "status": "success",
-            "message": "File received successfully",
-            "patient_id": patient_id,
-            "visit_id": visit_id,
-            "filename": audio_file.filename,
-            "content_type": audio_file.content_type,
-            "size": audio_file.size
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Error: {str(e)}",
-            "error_type": type(e).__name__
-        }
-
 
 @router.post(
     "/transcribe",
+    response_model=AudioTranscriptionResponse,
     status_code=status.HTTP_200_OK,
+    responses={
+        400: {"model": ErrorResponse, "description": "Validation error"},
+        404: {"model": ErrorResponse, "description": "Patient or visit not found"},
+        422: {"model": ErrorResponse, "description": "Invalid audio file or visit status"},
+        500: {"model": ErrorResponse, "description": "Internal server error"},
+    },
 )
 async def transcribe_audio(
+    patient_repo: PatientRepositoryDep,
+    transcription_service: TranscriptionServiceDep,
     patient_id: str = Form(...),
     visit_id: str = Form(...),
     audio_file: UploadFile = File(...),
 ):
     """
-    Ultra-simplified transcribe endpoint - no dependencies, no complex processing.
+    Transcribe audio file for a visit.
+    
+    This endpoint:
+    1. Validates the audio file format and size
+    2. Saves the file temporarily
+    3. Transcribes using AI service
+    4. Updates visit status to soap_generation
+    5. Cleans up temporary file
     """
+    logger.info(f"Transcribe audio request received for patient_id: {patient_id}, visit_id: {visit_id}")
+    logger.info(f"Audio file: {audio_file.filename}, content_type: {audio_file.content_type}, size: {audio_file.size}")
+    
+    # Check if this is a preflight request
+    if not audio_file.filename:
+        logger.warning("Received request without audio file - might be preflight")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "NO_AUDIO_FILE",
+                "message": "No audio file provided",
+                "details": {},
+            },
+        )
+    
+    # Log file details for debugging
+    logger.info(f"Processing audio file: {audio_file.filename}, size: {audio_file.size}, content_type: {audio_file.content_type}")
+    
+    temp_file_path = None
+    
     try:
-        return {
-            "status": "success",
-            "message": "Audio file received successfully (ultra-simple response)",
-            "transcript": "This is a mock transcript for testing purposes.",
-            "audio_duration": 30.0,
-            "error_details": None
-        }
+        # Validate file type (allow common audio types and mpeg containers)
+        content_type = audio_file.content_type or ""
+        is_audio_like = content_type.startswith("audio/")
+        is_mpeg_container = content_type in ("video/mpeg",)
+        is_generic_stream = content_type in ("application/octet-stream",)
+        if not (is_audio_like or is_mpeg_container or is_generic_stream):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": "INVALID_FILE_TYPE",
+                    "message": "File must be an audio file",
+                    "details": {"content_type": audio_file.content_type},
+                },
+            )
+        
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{audio_file.filename.split('.')[-1]}") as temp_file:
+            content = await audio_file.read()
+            temp_file.write(content)
+            temp_file_path = temp_file.name
+        
+        # Decode opaque patient id from client
+        try:
+            internal_patient_id = decode_patient_id(patient_id)
+            logger.info(f"Successfully decoded patient_id: {internal_patient_id}")
+        except Exception as e:
+            logger.warning(f"Failed to decode patient_id '{patient_id}': {e}")
+            # If decryption fails, try to use the raw patient_id if it's in the correct format
+            if '_' in patient_id and patient_id.count('_') >= 1:
+                internal_patient_id = patient_id
+                logger.info(f"Using raw patient_id as fallback: {internal_patient_id}")
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={
+                        "error": "INVALID_PATIENT_ID",
+                        "message": "Invalid patient ID format",
+                        "details": {"patient_id": patient_id},
+                    },
+                )
+
+        # Create request
+        request = AudioTranscriptionRequest(
+            patient_id=internal_patient_id,
+            visit_id=visit_id,
+            audio_file_path=temp_file_path
+        )
+        
+        # Execute use case
+        try:
+            use_case = TranscribeAudioUseCase(patient_repo, transcription_service)
+            result = await use_case.execute(request)
+            logger.info(f"Transcription completed successfully for patient {internal_patient_id}")
+            return result
+        except Exception as e:
+            logger.error(f"Transcription use case failed: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={
+                    "error": "TRANSCRIPTION_FAILED",
+                    "message": f"Transcription failed: {str(e)}",
+                    "details": {},
+                },
+            )
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error": "INVALID_REQUEST",
+                "message": str(e),
+                "details": {},
+            },
+        )
+    except PatientNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": "PATIENT_NOT_FOUND",
+                "message": e.message,
+                "details": e.details,
+            },
+        )
+    except VisitNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": "VISIT_NOT_FOUND",
+                "message": e.message,
+                "details": e.details,
+            },
+        )
     except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Error: {str(e)}",
-            "transcript": "",
-            "audio_duration": 0,
-            "error_details": {"error": str(e)}
-        }
+        logger.error("Unhandled error in transcribe_audio", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "INTERNAL_ERROR",
+                "message": "An unexpected error occurred",
+                "details": {"exception": str(e) or repr(e), "type": e.__class__.__name__},
+            },
+        )
+    finally:
+        # Clean up temporary file
+        if temp_file_path and os.path.exists(temp_file_path):
+            try:
+                os.unlink(temp_file_path)
+            except Exception:
+                pass  # Ignore cleanup errors
 
 
 @router.post(
