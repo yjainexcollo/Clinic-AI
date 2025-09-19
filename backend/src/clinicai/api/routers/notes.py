@@ -231,12 +231,75 @@ async def generate_soap_note(
     5. Returns structured SOAP note
     """
     try:
-        # Execute use case
+        # Support opaque patient_id by decoding before invoking use case
+        from ...core.utils.crypto import decode_patient_id
+        try:
+            decoded_pid = decode_patient_id(request.patient_id)
+        except Exception:
+            decoded_pid = request.patient_id
+
+        # Try the strict use case path first (requires transcript readiness)
         use_case = GenerateSoapNoteUseCase(patient_repo, soap_service)
-        result = await use_case.execute(request)
-        
-        return result
-        
+        from ...application.dto.patient_dto import SoapGenerationRequest as SoapGenDTO
+        try:
+            result = await use_case.execute(SoapGenDTO(patient_id=decoded_pid, visit_id=request.visit_id))
+            return result
+        except ValueError:
+            # Fallback: generate SOAP using available intake/pre-visit data even without transcript
+            from ...domain.value_objects.patient_id import PatientId
+            from ...application.ports.services.soap_service import SoapService
+
+            pid = PatientId(decoded_pid)
+            patient = await patient_repo.find_by_id(pid)
+            if not patient:
+                raise PatientNotFoundError(decoded_pid)
+            visit = patient.get_visit_by_id(request.visit_id)
+            if not visit:
+                raise VisitNotFoundError(request.visit_id)
+
+            # Build minimal context
+            patient_context = {
+                "patient_id": patient.patient_id.value,
+                "name": getattr(patient, "name", "Patient"),
+                "age": getattr(patient, "age", None),
+                "mobile": getattr(patient, "mobile", None),
+                "symptom": visit.symptom,
+            }
+            intake_data = visit.get_intake_summary() if visit.is_intake_complete() else None
+            pre_visit_summary = visit.get_pre_visit_summary()
+
+            # Generate SOAP with minimal transcript as fallback
+            fallback_transcript = f"Patient consultation for {visit.symptom}. Intake completed with {len(visit.intake_session.question_answers) if visit.intake_session else 0} questions answered."
+            soap_result = await soap_service.generate_soap_note(
+                transcript=fallback_transcript,
+                patient_context=patient_context,
+                intake_data=intake_data,
+                pre_visit_summary=pre_visit_summary,
+            )
+
+            # Validate and persist
+            is_valid = await soap_service.validate_soap_structure(soap_result)
+            if not is_valid:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={
+                        "error": "SOAP_VALIDATION_FAILED",
+                        "message": "Generated SOAP note failed validation",
+                        "details": {},
+                    },
+                )
+
+            visit.store_soap_note(soap_result)
+            await patient_repo.save(patient)
+
+            return SoapGenerationResponse(
+                patient_id=patient.patient_id.value,
+                visit_id=visit.visit_id.value,
+                soap_note=soap_result,
+                generated_at=visit.soap_note.generated_at.isoformat(),
+                message="SOAP note generated successfully (fallback mode)",
+            )
+
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -400,9 +463,19 @@ async def get_soap_note(
     """Get SOAP note for a visit."""
     try:
         from ...domain.value_objects.patient_id import PatientId
-        
-        # Find patient
-        patient_id_obj = PatientId(patient_id)
+        from ...core.utils.crypto import decode_patient_id
+        import urllib.parse
+
+        # Support opaque patient_id from clients: URL-decode then attempt decryption
+        decoded_param = urllib.parse.unquote(patient_id)
+        try:
+            internal_patient_id = decode_patient_id(decoded_param)
+        except Exception:
+            # Fallback to raw if already internal format
+            internal_patient_id = decoded_param
+
+        # Find patient using internal id
+        patient_id_obj = PatientId(internal_patient_id)
         patient = await patient_repo.find_by_id(patient_id_obj)
         if not patient:
             raise PatientNotFoundError(patient_id)

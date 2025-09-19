@@ -790,10 +790,45 @@ const Index = () => {
                   View Pre-Visit Summary
                 </button>
                 <button
+                  onClick={() => {
+                    if (!patientId || !visitId) {
+                      alert('SOAP summary unavailable: missing patient or visit id');
+                      return;
+                    }
+                    window.location.href = `/soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`;
+                  }}
+                  className="w-full bg-indigo-600 text-white py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors font-medium"
+                >
+                  View SOAP Summary
+                </button>
+                <button
                   onClick={() => setShowUploadAudio(true)}
                   className="w-full bg-purple-600 text-white py-3 px-4 rounded-md hover:bg-purple-700 transition-colors font-medium"
                 >
                   Upload Audio & Transcribe
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      if (!patientId || !visitId) return;
+                      const resp = await fetch(`${BACKEND_BASE_URL}/notes/soap/generate`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        body: JSON.stringify({ patient_id: patientId, visit_id: visitId })
+                      });
+                      if (!resp.ok) {
+                        const txt = await resp.text();
+                        throw new Error(`SOAP generation failed ${resp.status}: ${txt}`);
+                      }
+                      // Navigate to SOAP page after successful generation
+                      window.location.href = `/soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId!)}`;
+                    } catch (e: any) {
+                      alert(e?.message || 'Failed to generate SOAP note.');
+                    }
+                  }}
+                  className="w-full bg-green-600 text-white py-3 px-4 rounded-md hover:bg-green-700 transition-colors font-medium"
+                >
+                  Generate SOAP Note
                 </button>
                 <button
                   onClick={async () => {

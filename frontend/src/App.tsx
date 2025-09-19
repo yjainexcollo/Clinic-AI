@@ -7,6 +7,7 @@ import {
 } from "react-router-dom";
 import PersonalForm from "./components/PersonalForm";
 import Index from "./pages/Index";
+import SoapSummary from "./pages/SoapSummary";
 
 const App: React.FC = () => {
   return (
@@ -21,6 +22,7 @@ const App: React.FC = () => {
           element={<PatientRegistrationPage />}
         />
         <Route path="/intake/:patientId" element={<IntakePage />} />
+        <Route path="/soap/:patientId/:visitId" element={<SoapSummary />} />
       </Routes>
     </Router>
   );

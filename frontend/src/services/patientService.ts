@@ -297,3 +297,36 @@ export async function getPreVisitSummary(
     throw new Error("Failed to get pre-visit summary. Please try again.");
   }
 }
+
+// Get SOAP note from backend
+export interface SoapNoteResponse {
+  subjective: string;
+  objective: string;
+  assessment: string;
+  plan: string;
+  highlights?: string[];
+  red_flags?: string[];
+  generated_at?: string;
+  model_info?: Record<string, any> | null;
+  confidence_score?: number | null;
+}
+
+export async function getSoapNote(
+  patientId: string,
+  visitId: string
+): Promise<SoapNoteResponse> {
+  try {
+    const resp = await fetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/soap`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`Backend error ${resp.status}: ${text}`);
+    }
+    return await resp.json();
+  } catch (err) {
+    console.error("Error fetching SOAP note:", err);
+    throw err;
+  }
+}
