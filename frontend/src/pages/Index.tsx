@@ -799,6 +799,26 @@ const Index = () => {
                   onClick={async () => {
                     try {
                       if (!patientId || !visitId) return;
+                      // Attempt to generate SOAP (idempotent if already exists)
+                      await fetch(`${BACKEND_BASE_URL}/notes/soap/generate`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        body: JSON.stringify({ patient_id: patientId, visit_id: visitId })
+                      });
+                      // Navigate to SOAP viewer route if available, else fetch and inline show
+                      window.location.href = `/soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`;
+                    } catch (e) {
+                      alert('Failed to generate SOAP note. Please try again after transcript is ready.');
+                    }
+                  }}
+                  className="w-full bg-indigo-600 text-white py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors font-medium"
+                >
+                  View SOAP Summary
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      if (!patientId || !visitId) return;
                       const resp = await fetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/transcript`);
                       if (!resp.ok) {
                         const txt = await resp.text();
