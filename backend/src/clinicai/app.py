@@ -12,6 +12,7 @@ import logging
 from .api.routers import health, patients, notes, prescriptions
 from .core.config import get_settings
 from .domain.errors import DomainError
+import asyncio
 
 
 @asynccontextmanager
@@ -64,6 +65,8 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"❌ Database connection failed: {e}")
         raise
+
+    # Whisper warm-up disabled to reduce startup memory footprint
 
     yield
 

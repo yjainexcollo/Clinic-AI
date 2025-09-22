@@ -816,12 +816,6 @@ const Index = () => {
                   View Transcript
                 </button>
                 <button
-                  onClick={handleStartNew}
-                  className="medical-button w-full"
-                >
-                  {COPY.form.startNew}
-                </button>
-                <button
                   onClick={() =>
                     (window.location.href = "/patient-registration")
                   }
@@ -898,13 +892,35 @@ const Index = () => {
                   console.log('Response status:', resp.status);
                   console.log('Response headers:', Object.fromEntries(resp.headers.entries()));
                   
-                  if (!resp.ok) {
+                  if (resp.status === 202) {
+                    // queued → poll transcript endpoint until ready
+                    setShowUploadAudio(false);
+                    const pollStart = Date.now();
+                    const poll = async () => {
+                      try {
+                        const t = await fetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/transcript`);
+                        if (t.ok) {
+                          const data = await t.json();
+                          setTranscriptText(data.transcript || '');
+                          setShowTranscript(true);
+                          return;
+                        }
+                      } catch {}
+                      if (Date.now() - pollStart < 300000) { // up to 5 minutes
+                        setTimeout(poll, 3000);
+                      } else {
+                        alert('Audio uploaded. Processing may take longer; try View Transcript in a moment.');
+                      }
+                    };
+                    poll();
+                  } else if (!resp.ok) {
                     const txt = await resp.text();
                     console.error('Upload failed:', txt);
                     throw new Error(`Upload failed ${resp.status}: ${txt}`);
+                  } else {
+                    setShowUploadAudio(false);
+                    alert('Audio uploaded. Transcription started.');
                   }
-                  setShowUploadAudio(false);
-                  alert('Audio uploaded. Transcription started.');
                 } catch (err: any) {
                   console.error('Audio upload error:', err);
                   if (err.name === 'AbortError') {
