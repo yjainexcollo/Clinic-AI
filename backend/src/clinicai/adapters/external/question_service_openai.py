@@ -5,11 +5,7 @@ OpenAI implementation of QuestionService for AI-powered question generation.
 import asyncio
 import logging
 import re
-<<<<<<< HEAD
-from typing import Any, Dict, List
-=======
 from typing import Any, Dict, List, Optional
->>>>>>> 67e0c72c6572ff8c5f65661e5117e6bd1c80673a
 
 from openai import OpenAI
 
@@ -36,15 +32,8 @@ class OpenAIQuestionService(QuestionService):
 
         # Look for API key in settings or environment
         api_key = self._settings.openai.api_key or os.getenv("OPENAI_API_KEY", "")
-<<<<<<< HEAD
-        # Question generation mode: 'autonomous' (default) or 'guided'
         self._mode = (os.getenv("QUESTION_MODE", "autonomous") or "autonomous").strip().lower()
 
-        # If key not found, attempt to manually load from .env in current or parent dirs
-=======
-        self._mode = (os.getenv("QUESTION_MODE", "autonomous") or "autonomous").strip().lower()
-
->>>>>>> 67e0c72c6572ff8c5f65661e5117e6bd1c80673a
         if not api_key and load_dotenv is not None:
             cwd = Path(os.getcwd()).resolve()
             for parent in [cwd, *cwd.parents]:
@@ -58,20 +47,11 @@ class OpenAIQuestionService(QuestionService):
         if not api_key:
             raise ValueError("OPENAI_API_KEY is not set")
 
-<<<<<<< HEAD
-        # Explicit client initialization avoids relying on ambient env
-=======
->>>>>>> 67e0c72c6572ff8c5f65661e5117e6bd1c80673a
         self._client = OpenAI(api_key=api_key)
 
     async def _chat_completion(
         self, messages: List[Dict[str, str]], max_tokens: int, temperature: float
     ) -> str:
-<<<<<<< HEAD
-        """Wrapper for OpenAI chat.completions with logging and async support."""
-
-=======
->>>>>>> 67e0c72c6572ff8c5f65661e5117e6bd1c80673a
         def _run() -> str:
             logger = logging.getLogger("clinicai")
             logger.info(
@@ -102,21 +82,11 @@ class OpenAIQuestionService(QuestionService):
     # Shared classifier
     # ----------------------
     def _classify_question(self, text: str) -> str:
-<<<<<<< HEAD
-        """
-        Classify a question into one of the structured intake categories.
-        """
-=======
->>>>>>> 67e0c72c6572ff8c5f65661e5117e6bd1c80673a
         t = (text or "").lower().strip()
 
         if any(k in t for k in ["how long", "since when", "duration"]):
             return "duration"
-<<<<<<< HEAD
-        if any(k in t for k in ["trigger", "worse", "aggrav", "what makes", "factors"]):
-=======
         if any(k in t for k in ["trigger", "worse", "aggrav", "what makes", "factors", "relieving"]):
->>>>>>> 67e0c72c6572ff8c5f65661e5117e6bd1c80673a
             return "triggers"
         if any(
             k in t
@@ -126,71 +96,15 @@ class OpenAIQuestionService(QuestionService):
                 "morning",
                 "evening",
                 "night",
-<<<<<<< HEAD
-                "day",
-                "seasonal",
-                "cyclical",
-                "worse at",
-                "better at",
-                "timing",
-                "when does",
-=======
                 "seasonal",
                 "cyclical",
                 "timing",
->>>>>>> 67e0c72c6572ff8c5f65661e5117e6bd1c80673a
                 "what time",
             ]
         ):
             return "temporal"
         if "pain" in t or any(
             k in t
-<<<<<<< HEAD
-            for k in [
-                "scale",
-                "intensity",
-                "sharp",
-                "dull",
-                "burning",
-                "throbbing",
-                "radiat",
-                "radiation",
-                "move",
-                "stay in one location",
-                "travels",
-                "spreads",
-            ]
-        ):
-            return "pain"
-        if any(k in t for k in ["travel", "endemic", "abroad", "sick contact"]):
-            return "travel"
-        if any(k in t for k in ["allerg", "hives", "rash", "swelling", "wheeze", "sneeze", "runny nose"]):
-            return "allergies"
-        if any(
-            k in t
-            for k in [
-                "medicat",
-                "treatment",
-                "drug",
-                "dose",
-                "frequency",
-                "prescript",
-                "otc",
-                "over-the-counter",
-                "supplement",
-                "supplements",
-                "remedy",
-                "remedies",
-                "route",
-                "oral",
-                "topical",
-                "injection",
-                "how often",
-                "medication name",
-                "effectiveness",
-            ]
-        ):
-=======
             for k in ["scale", "intensity", "sharp", "dull", "burning", "throbbing", "radiat", "spreads", "0-10"]
         ):
             return "pain"
@@ -199,38 +113,12 @@ class OpenAIQuestionService(QuestionService):
         if any(k in t for k in ["allerg", "hives", "rash", "swelling", "wheeze", "sneeze", "runny nose"]):
             return "allergies"
         if any(k in t for k in ["medicat", "treatment", "drug", "dose", "frequency", "remedy", "otc", "supplement"]):
->>>>>>> 67e0c72c6572ff8c5f65661e5117e6bd1c80673a
             return "medications"
         if any(
             k in t
             for k in [
                 "history of present illness",
                 "hpi",
-<<<<<<< HEAD
-                "chronic",
-                "past medical",
-                "medical history",
-                "prior conditions",
-                "surgery",
-                "hospitalization",
-                "diabetes",
-                "hypertension",
-                "heart disease",
-                "asthma",
-                "copd",
-                "cancer",
-                "stroke",
-            ]
-        ):
-            return "hpi"
-        if any(k in t for k in ["family", "family history", "anyone in your family", "parents", "siblings", "grandparents", "hereditary", "genetic"]):
-            return "family"
-        if any(k in t for k in ["smoke", "alcohol", "diet", "exercise", "occupation", "work", "exposure"]):
-            return "social"
-        if any(k in t for k in ["pregnan", "gyneco", "obstet", "menstru", "period"]):
-            return "gyn"
-        if any(k in t for k in ["functional", "mobility", "walk", "daily activity", "impair", "neurologic"]):
-=======
                 "fever",
                 "cough",
                 "infection",
@@ -265,7 +153,6 @@ class OpenAIQuestionService(QuestionService):
         if any(k in t for k in ["pregnan", "gyneco", "obstet", "menstru", "period", "lmp", "vaginal"]):
             return "gyn"
         if any(k in t for k in ["functional", "mobility", "walk", "daily activity", "impair", "adl"]):
->>>>>>> 67e0c72c6572ff8c5f65661e5117e6bd1c80673a
             return "functional"
 
         return "other"
@@ -287,12 +174,6 @@ class OpenAIQuestionService(QuestionService):
         prior_summary: Optional[Any] = None,
         prior_qas: Optional[List[str]] = None,
     ) -> str:
-<<<<<<< HEAD
-        """
-        Generate the next intake question using structured sequence and context.
-        """
-=======
->>>>>>> 67e0c72c6572ff8c5f65661e5117e6bd1c80673a
         mandatory_closing = "Have we missed anything important about your condition or any concerns you want us to address?"
         if current_count >= max_count - 1:
             already_asked = any(
@@ -300,19 +181,6 @@ class OpenAIQuestionService(QuestionService):
             )
             if not already_asked:
                 return mandatory_closing
-<<<<<<< HEAD
-
-        # Build prompt with category applicability and duplicate prevention
-        covered_categories = sorted({self._classify_question(q) for q in (asked_questions or []) if q})
-        covered_categories_str = ", ".join(c for c in covered_categories if c and c != "other") or "none"
-
-        prompt = f"""
-SYSTEM PROMPT:
-        """Generate the next question based on context."""
-        import re
-        from difflib import SequenceMatcher
-=======
->>>>>>> 67e0c72c6572ff8c5f65661e5117e6bd1c80673a
 
         covered_categories = sorted({self._classify_question(q) for q in (asked_questions or []) if q})
         covered_categories_str = ", ".join(c for c in covered_categories if c and c != "other") or "none"
@@ -355,93 +223,17 @@ SYSTEM PROMPT:
         if prior_qas:
             prior_block += "Prior QAs: " + "; ".join(prior_qas[:6]) + "\n"
 
-<<<<<<< HEAD
-        def _is_duplicate(candidate: str, history: List[str]) -> bool:
-            cand_norm = _normalize(candidate)
-            for h in history:
-                h_norm = _normalize(h)
-                if cand_norm == h_norm:
-                    return True
-                if SequenceMatcher(None, cand_norm, h_norm).ratio() >= 0.85:
-                    return True
-            return False
-
-        # Prompt (autonomous vs guided)
-        if self._mode == "autonomous":
-            prompt = (
-                f"Chief complaint: {disease or 'N/A'}. Last answers: {', '.join(previous_answers[-3:])}. "
-                f"Already asked: {asked_questions}.\n"
-                "Ask ONE concise, clinically relevant next question based on context.\n"
-                "Do not repeat topics or demographics. Return only the question text."
-            )
-        else:
-            # Define covered categories for the prompt
-            covered_categories_str = "None specified - use clinical judgment"
-            
-            prompt = f""" 
-            SYSTEM PROMPT:
-You are a professional, respectful, and efficient clinical intake assistant.
-Ask one concise, medically relevant question at a time.
-Never repeat or rephrase already asked questions or categories.
-
-Never repeat or rephrase already asked questions or categories.
-=======
         prompt = f"""
 SYSTEM PROMPT:
 You are a Clinical Intake Assistant.
 Ask ONE and only ONE medically relevant question at a time.
 Do not repeat or rephrase any question that is already in "Already asked" or "Covered categories."
->>>>>>> 67e0c72c6572ff8c5f65661e5117e6bd1c80673a
 CONTEXT:
 - Chief complaint(s): {disease or "N/A"}
 - Last 3 answers: {', '.join(previous_answers[-3:])}
 - Already asked: {asked_questions}
 - Covered categories: {covered_categories_str}
 - Progress: {current_count}/{max_count}
-<<<<<<< HEAD
-- Recently travelled: {recently_travelled} (true/false)
-PRIORITY RULES (follow in this exact order):
-1. Do not repeat any question, topic, or meaning from "Already asked questions" or Covered categories.
-2. Strictky ask categories if clinically relevant:
-   - Pain → ONLY if pain symptoms are reported from the user.
-   - Allergies → ONLY if allergy symptoms exist (rash, swelling, hives, wheeze, sneeze, runny nose).
-   - Triggers → Skip if complaint is only a chronic disease (e.g., diabetes, hypertension) without acute symptoms.
-   - Family history → ONLY if a hereditary/chronic condition is present (diabetes, hypertension, heart disease, cancer, autoimmune, blood, neurologic, genetic disorders).
-   - HPI → ONLY if acute/new symptoms exist (fever, cough, chest pain, infection, stomach pain). Do NOT ask for stable chronic diseases alone (e.g., diabetes, hypertension).
-   - Gynecologic/obstetric → ONLY if female (age 10–60) AND menstrual/pregnancy symptoms are present.
-3. If a category is irrelevant, SKIP it completely and move to the next one.
-4. Follow the sequence below ONLY for categories that are relevant and unasked.
-SEQUENCE OF QUESTIONS:
-1) Duration of symptoms (overall course).
-2) Triggers / aggravating or relieving factors (overall).
-3) Pain assessment: ONLY if pain present → ask location, duration, intensity (0–10), character, radiation, relieving/aggravating factors.
-4) Temporal factors: timing patterns (morning/evening, night/day, seasonal/cyclical).
-5) Travel history: ONLY if recently_travelled = true AND infection-related symptoms (fever, diarrhea, cough, breathlessness, rash, jaundice).
-6) Allergies: ONLY if allergy relevance exists (rash, hives, swelling, wheeze, sneeze, runny nose).
-7) Medications & remedies: ask about drug name, dose, route, frequency; include OTC/supplements/home remedies, and effectiveness.
-8) History of Present Illness (HPI): ONLY if acute/new symptoms exist (fever, chest pain, cough, infection, stomach pain).
-9) Family history: REQUIRED if chronic/hereditary condition is present (diabetes, hypertension, heart disease, cancer, autoimmune, blood, neurologic, genetic).
-10) Lifestyle: diet, exercise, occupation, exposures; ask if clinically relevant (e.g., thyroid, obesity, chronic illness).
-11) Gynecologic/obstetric: ONLY if female (10–60) with abdominal/stomach or reproductive symptoms.
-12) Functional status: ONLY if pain, mobility, or neurologic impairment likely.
-STOP LOGIC:
-- Continue until at least 6 questions are asked.
-- Always stop if current_count >= max_count.
-- If >=6 questions asked AND enough info collected, stop early and ask the closing question.
-MANDATORY CLOSING QUESTION:
-"Have we missed anything important about your condition or any concerns you want us to address?"
-
-OUTPUT RULES:
-- Return ONLY one question ending with a question mark.
-- No explanations, no multiple questions in one turn.
-- For multiple complaints/symptoms, consolidate into ONE comprehensive question per category.
-- Never force irrelevant questions just to fill the sequence.
-settings = {
-    "temperature": 0.2,
-    "max_tokens": 256
-}
-""" 
-=======
 - Recently travelled: {recently_travelled}
 - Prior context: {prior_block or 'none'}
 RULES:
@@ -481,8 +273,7 @@ STOPPING
 OUTPUT
 Return only one patient-friendly question ending with "?".
 No lists, no category names, no explanations.
-"""
->>>>>>> 67e0c72c6572ff8c5f65661e5117e6bd1c80673a
+""" 
 
         try:
             text = await self._chat_completion(
@@ -496,8 +287,6 @@ No lists, no category names, no explanations.
             text = text.replace("\n", " ").strip()
             if not text.endswith("?"):
                 text = text.rstrip(".") + "?"
-<<<<<<< HEAD
-=======
 
             # Normalize to canonical category for deduplication
             def _normalize(q: str) -> str:
@@ -524,16 +313,10 @@ No lists, no category names, no explanations.
                     recently_travelled=recently_travelled,
                 )
 
->>>>>>> 67e0c72c6572ff8c5f65661e5117e6bd1c80673a
             return text
         except Exception:
             raise
 
-<<<<<<< HEAD
-    # ----------------------
-    # Stop logic
-    # ----------------------
-=======
     def _deterministic_next_question(
         self,
         disease: str,
@@ -616,7 +399,6 @@ No lists, no category names, no explanations.
 
         return "Have we missed anything important about your condition or any concerns you want us to address?"
 
->>>>>>> 67e0c72c6572ff8c5f65661e5117e6bd1c80673a
     async def should_stop_asking(
         self,
         disease: str,
@@ -624,18 +406,9 @@ No lists, no category names, no explanations.
         current_count: int,
         max_count: int,
     ) -> bool:
-<<<<<<< HEAD
-        """Determine if sufficient information has been collected."""
         if current_count >= max_count:
             return True
         if current_count < 6:
-        # Require a small minimum before stopping early (aligned with completion logic)
-        if current_count < 5:
-=======
-        if current_count >= max_count:
-            return True
-        if current_count < 6:
->>>>>>> 67e0c72c6572ff8c5f65661e5117e6bd1c80673a
             return False
         return False
 
@@ -652,15 +425,8 @@ No lists, no category names, no explanations.
         prior_summary: Optional[Any] = None,
         prior_qas: Optional[List[str]] = None,
     ) -> int:
-<<<<<<< HEAD
-        """Estimate completion percent."""
         try:
             covered = {self._classify_question(q) for q in (asked_questions or [])}
-
-=======
-        try:
-            covered = {self._classify_question(q) for q in (asked_questions or [])}
->>>>>>> 67e0c72c6572ff8c5f65661e5117e6bd1c80673a
             key_set = {
                 "duration",
                 "triggers",
@@ -671,20 +437,6 @@ No lists, no category names, no explanations.
                 "medications",
                 "hpi",
                 "family",
-<<<<<<< HEAD
-                "social",
-                "gyn",
-                "functional",
-            }
-
-            covered_keys = len(covered & key_set)
-            coverage_ratio = covered_keys / len(key_set)
-
-            progress_ratio = 0.0
-            if max_count > 0:
-                progress_ratio = min(max(current_count / max_count, 0.0), 1.0)
-
-=======
                 "lifestyle",
                 "gyn",
                 "functional",
@@ -694,7 +446,6 @@ No lists, no category names, no explanations.
             progress_ratio = 0.0
             if max_count > 0:
                 progress_ratio = min(max(current_count / max_count, 0.0), 1.0)
->>>>>>> 67e0c72c6572ff8c5f65661e5117e6bd1c80673a
             score = (0.7 * coverage_ratio + 0.3 * progress_ratio) * 100.0
             return max(0, min(int(round(score)), 100))
         except Exception:
@@ -706,13 +457,8 @@ No lists, no category names, no explanations.
     # Medication check
     # ----------------------
     def is_medication_question(self, question: str) -> bool:
-<<<<<<< HEAD
-        """Detect if a question is about medications, remedies, or treatments."""
-        return self._classify_question(question) == "medications"
-=======
         return self._classify_question(question) == "medications"
 
->>>>>>> 67e0c72c6572ff8c5f65661e5117e6bd1c80673a
     # ----------------------
     # Pre-visit summary
     # ----------------------

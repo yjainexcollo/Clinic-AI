@@ -175,9 +175,17 @@ async def generate_soap_note(
     5. Returns structured SOAP note
     """
     try:
-        # Execute use case
+        # Decode opaque patient_id if provided by client
+        from ...core.utils.crypto import decode_patient_id
+        try:
+            decoded_pid = decode_patient_id(request.patient_id)
+        except Exception:
+            decoded_pid = request.patient_id
+
+        # Execute use case with decoded patient id
         use_case = GenerateSoapNoteUseCase(patient_repo, soap_service)
-        result = await use_case.execute(request)
+        from ...application.dto.patient_dto import SoapGenerationRequest as SoapGenDTO
+        result = await use_case.execute(SoapGenDTO(patient_id=decoded_pid, visit_id=request.visit_id))
         
         return result
         
@@ -253,7 +261,6 @@ async def get_transcript(
         try:
             patient_id_obj = PatientId(internal_patient_id)
         except ValueError as ve:
-            from fastapi import HTTPException, status
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail={
@@ -273,19 +280,34 @@ async def get_transcript(
         if not visit:
             raise VisitNotFoundError(visit_id)
 
-        # Check if transcript exists
-        if not visit.transcription_session or not visit.transcription_session.transcript:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={
-                    "error": "TRANSCRIPT_NOT_FOUND",
-                    "message": f"No transcript found for visit {visit_id}",
-                    "details": {"visit_id": visit_id},
-                },
+        # If transcription session not started or not yet completed, return a processing status
+        if not visit.transcription_session:
+            return TranscriptionSessionDTO(
+                audio_file_path=None,
+                transcript=None,
+                transcription_status="pending",
+                started_at=None,
+                completed_at=None,
+                error_message=None,
+                audio_duration_seconds=None,
+                word_count=None,
             )
 
-        # Return transcript data
         session = visit.transcription_session
+        if not session.transcript:
+            # Still processing or failed without transcript; surface current session state
+            return TranscriptionSessionDTO(
+                audio_file_path=session.audio_file_path,
+                transcript=None,
+                transcription_status=session.transcription_status or "processing",
+                started_at=session.started_at.isoformat() if session.started_at else None,
+                completed_at=session.completed_at.isoformat() if session.completed_at else None,
+                error_message=session.error_message,
+                audio_duration_seconds=session.audio_duration_seconds,
+                word_count=session.word_count,
+            )
+
+        # Transcript available
         return TranscriptionSessionDTO(
             audio_file_path=session.audio_file_path,
             transcript=session.transcript,
@@ -294,7 +316,7 @@ async def get_transcript(
             completed_at=session.completed_at.isoformat() if session.completed_at else None,
             error_message=session.error_message,
             audio_duration_seconds=session.audio_duration_seconds,
-            word_count=session.word_count
+            word_count=session.word_count,
         )
 
     except PatientNotFoundError as e:
@@ -344,12 +366,21 @@ async def get_soap_note(
     """Get SOAP note for a visit."""
     try:
         from ...domain.value_objects.patient_id import PatientId
-        
+        from ...core.utils.crypto import decode_patient_id
+        import urllib.parse
+
+        # Support opaque patient_id tokens from clients
+        decoded_param = urllib.parse.unquote(patient_id)
+        try:
+            internal_patient_id = decode_patient_id(decoded_param)
+        except Exception:
+            internal_patient_id = decoded_param
+
         # Find patient
-        patient_id_obj = PatientId(patient_id)
+        patient_id_obj = PatientId(internal_patient_id)
         patient = await patient_repo.find_by_id(patient_id_obj)
         if not patient:
-            raise PatientNotFoundError(patient_id)
+            raise PatientNotFoundError(internal_patient_id)
 
         # Find visit
         visit = patient.get_visit_by_id(visit_id)
