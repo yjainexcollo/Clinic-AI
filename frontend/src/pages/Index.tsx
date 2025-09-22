@@ -41,6 +41,7 @@ const Index = () => {
   const [allowsImageUpload, setAllowsImageUpload] = useState<boolean>(false);
   const [showUploadAudio, setShowUploadAudio] = useState<boolean>(false);
   const [isTranscribingAudio, setIsTranscribingAudio] = useState<boolean>(false);
+  const [isProcessingAudio, setIsProcessingAudio] = useState<boolean>(false);
   const [uploadAudioError, setUploadAudioError] = useState<string>("");
   const [showTranscript, setShowTranscript] = useState<boolean>(false);
   const [transcriptText, setTranscriptText] = useState<string>("");
@@ -893,8 +894,8 @@ const Index = () => {
                   console.log('Response headers:', Object.fromEntries(resp.headers.entries()));
                   
                   if (resp.status === 202) {
-                    // queued → poll transcript endpoint until ready
-                    setShowUploadAudio(false);
+                    // queued → keep modal open and show processing until transcript is saved
+                    setIsProcessingAudio(true);
                     const pollStart = Date.now();
                     const poll = async () => {
                       try {
@@ -902,6 +903,8 @@ const Index = () => {
                         if (t.ok) {
                           const data = await t.json();
                           setTranscriptText(data.transcript || '');
+                          setIsProcessingAudio(false);
+                          setShowUploadAudio(false);
                           setShowTranscript(true);
                           return;
                         }
@@ -909,6 +912,7 @@ const Index = () => {
                       if (Date.now() - pollStart < 300000) { // up to 5 minutes
                         setTimeout(poll, 3000);
                       } else {
+                        setIsProcessingAudio(false);
                         alert('Audio uploaded. Processing may take longer; try View Transcript in a moment.');
                       }
                     };
@@ -950,19 +954,25 @@ const Index = () => {
                   type="button"
                   onClick={() => setShowUploadAudio(false)}
                   className="px-4 py-2 rounded bg-gray-200 text-gray-800"
-                  disabled={isTranscribingAudio}
+                  disabled={isTranscribingAudio || isProcessingAudio}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-2 rounded bg-purple-600 text-white disabled:opacity-60"
-                  disabled={isTranscribingAudio}
+                  disabled={isTranscribingAudio || isProcessingAudio}
                 >
-                  {isTranscribingAudio ? 'Uploading...' : 'Upload & Transcribe'}
+                  {isProcessingAudio ? 'Processing...' : (isTranscribingAudio ? 'Uploading...' : 'Upload & Transcribe')}
                 </button>
               </div>
             </form>
+            {isProcessingAudio && (
+              <div className="mt-3 text-sm text-gray-600 flex items-center gap-2">
+                <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+                Processing audio… this can take a minute.
+              </div>
+            )}
           </div>
         </div>
       )}
