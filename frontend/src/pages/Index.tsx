@@ -8,6 +8,7 @@ import SymptomSelector from "../components/SymptomSelector";
 import OCRQualityFeedback from "../components/OCRQualityFeedback";
 import SummaryView from "../components/SummaryView";
 import TranscriptView from "../components/TranscriptView";
+import MedicationImageUploader from "../components/MedicationImageUploader";
 
 interface Question {
   text: string;
@@ -41,7 +42,6 @@ const Index = () => {
   const [allowsImageUpload, setAllowsImageUpload] = useState<boolean>(false);
   const [showUploadAudio, setShowUploadAudio] = useState<boolean>(false);
   const [isTranscribingAudio, setIsTranscribingAudio] = useState<boolean>(false);
-  const [isProcessingAudio, setIsProcessingAudio] = useState<boolean>(false);
   const [uploadAudioError, setUploadAudioError] = useState<string>("");
   const [showTranscript, setShowTranscript] = useState<boolean>(false);
   const [transcriptText, setTranscriptText] = useState<string>("");
@@ -545,18 +545,11 @@ const Index = () => {
                           placeholder="Type your answer here..."
                           required
                         />
-              {allowsImageUpload && (
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="file"
-                              accept="image/*;capture=camera"
-                              onChange={(e) => {
-                                const f = e.target.files?.[0];
-                                (window as any).clinicaiMedicationFile = f || null;
-                              }}
-                              className="block w-full text-sm text-gray-700"
-                            />
-                          </div>
+                        {allowsImageUpload && patientId && (visitId || localStorage.getItem(`visit_${patientId}`)) && (
+                          <MedicationImageUploader
+                            patientId={patientId}
+                            visitId={(visitId || localStorage.getItem(`visit_${patientId}`)) as string}
+                          />
                         )}
                       </div>
                     )}
@@ -790,12 +783,7 @@ const Index = () => {
                   </svg>
                   View Pre-Visit Summary
                 </button>
-                <button
-                  onClick={() => setShowUploadAudio(true)}
-                  className="w-full bg-purple-600 text-white py-3 px-4 rounded-md hover:bg-purple-700 transition-colors font-medium"
-                >
-                  Upload Audio & Transcribe
-                </button>
+                
                 <button
                   onClick={async () => {
                     try {
@@ -894,8 +882,8 @@ const Index = () => {
                   console.log('Response headers:', Object.fromEntries(resp.headers.entries()));
                   
                   if (resp.status === 202) {
-                    // queued → keep modal open and show processing until transcript is saved
-                    setIsProcessingAudio(true);
+                    // queued → poll transcript endpoint until ready
+                    setShowUploadAudio(false);
                     const pollStart = Date.now();
                     const poll = async () => {
                       try {
@@ -903,8 +891,6 @@ const Index = () => {
                         if (t.ok) {
                           const data = await t.json();
                           setTranscriptText(data.transcript || '');
-                          setIsProcessingAudio(false);
-                          setShowUploadAudio(false);
                           setShowTranscript(true);
                           return;
                         }
@@ -912,7 +898,6 @@ const Index = () => {
                       if (Date.now() - pollStart < 300000) { // up to 5 minutes
                         setTimeout(poll, 3000);
                       } else {
-                        setIsProcessingAudio(false);
                         alert('Audio uploaded. Processing may take longer; try View Transcript in a moment.');
                       }
                     };
@@ -954,25 +939,19 @@ const Index = () => {
                   type="button"
                   onClick={() => setShowUploadAudio(false)}
                   className="px-4 py-2 rounded bg-gray-200 text-gray-800"
-                  disabled={isTranscribingAudio || isProcessingAudio}
+                  disabled={isTranscribingAudio}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-2 rounded bg-purple-600 text-white disabled:opacity-60"
-                  disabled={isTranscribingAudio || isProcessingAudio}
+                  disabled={isTranscribingAudio}
                 >
-                  {isProcessingAudio ? 'Processing...' : (isTranscribingAudio ? 'Uploading...' : 'Upload & Transcribe')}
+                  {isTranscribingAudio ? 'Uploading...' : 'Upload & Transcribe'}
                 </button>
               </div>
             </form>
-            {isProcessingAudio && (
-              <div className="mt-3 text-sm text-gray-600 flex items-center gap-2">
-                <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
-                Processing audio… this can take a minute.
-              </div>
-            )}
           </div>
         </div>
       )}
