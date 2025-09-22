@@ -5,7 +5,7 @@ const API_ENDPOINT =
 // Backend API base URL (FastAPI)
 const BACKEND_BASE_URL: string =
   ((import.meta as any).env?.VITE_BACKEND_BASE_URL as string) ||
-  "http://localhost:8000";
+  "https://clinic-ai.onrender.com";
 
 export { BACKEND_BASE_URL };
 
