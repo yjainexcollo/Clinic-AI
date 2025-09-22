@@ -8,6 +8,7 @@ import SymptomSelector from "../components/SymptomSelector";
 import OCRQualityFeedback from "../components/OCRQualityFeedback";
 import SummaryView from "../components/SummaryView";
 import TranscriptView from "../components/TranscriptView";
+import MedicationImageUploader from "../components/MedicationImageUploader";
 
 interface Question {
   text: string;
@@ -39,9 +40,7 @@ const Index = () => {
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [showSummaryView, setShowSummaryView] = useState<boolean>(false);
   const [allowsImageUpload, setAllowsImageUpload] = useState<boolean>(false);
-  const [showUploadAudio, setShowUploadAudio] = useState<boolean>(false);
-  const [isTranscribingAudio, setIsTranscribingAudio] = useState<boolean>(false);
-  const [uploadAudioError, setUploadAudioError] = useState<string>("");
+  
   const [showTranscript, setShowTranscript] = useState<boolean>(false);
   const [transcriptText, setTranscriptText] = useState<string>("");
 
@@ -544,18 +543,11 @@ const Index = () => {
                           placeholder="Type your answer here..."
                           required
                         />
-              {allowsImageUpload && (
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="file"
-                              accept="image/*;capture=camera"
-                              onChange={(e) => {
-                                const f = e.target.files?.[0];
-                                (window as any).clinicaiMedicationFile = f || null;
-                              }}
-                              className="block w-full text-sm text-gray-700"
-                            />
-                          </div>
+                        {allowsImageUpload && patientId && (visitId || localStorage.getItem(`visit_${patientId}`)) && (
+                          <MedicationImageUploader
+                            patientId={patientId}
+                            visitId={(visitId || localStorage.getItem(`visit_${patientId}`)) as string}
+                          />
                         )}
                       </div>
                     )}
@@ -789,12 +781,7 @@ const Index = () => {
                   </svg>
                   View Pre-Visit Summary
                 </button>
-                <button
-                  onClick={() => setShowUploadAudio(true)}
-                  className="w-full bg-purple-600 text-white py-3 px-4 rounded-md hover:bg-purple-700 transition-colors font-medium"
-                >
-                  Upload Audio & Transcribe
-                </button>
+                
                 <button
                   onClick={async () => {
                     try {
@@ -845,127 +832,7 @@ const Index = () => {
         />
       )}
 
-      {/* Upload Audio Modal */}
-      {showUploadAudio && patientId && visitId && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Upload Consultation Audio</h3>
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                setUploadAudioError("");
-                try {
-                  setIsTranscribingAudio(true);
-                  const input = document.getElementById('upload-audio-input') as HTMLInputElement | null;
-                  const file = input?.files && input.files[0] ? input.files[0] : null;
-                  if (!file) {
-                    setUploadAudioError('Please choose an audio file.');
-                    setIsTranscribingAudio(false);
-                    return;
-                  }
-                  const form = new FormData();
-                  form.append('patient_id', patientId);
-                  form.append('visit_id', visitId);
-                  form.append('audio_file', file);
-                  console.log('Uploading audio file:', file.name, file.type, file.size);
-                  console.log('Form data:', {
-                    patient_id: patientId,
-                    visit_id: visitId,
-                    audio_file: file.name
-                  });
-                  
-                  const controller = new AbortController();
-                  const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout
-                  
-                  const resp = await fetch(`${BACKEND_BASE_URL}/notes/transcribe`, {
-                    method: 'POST',
-                    body: form,
-                    headers: {
-                      'Accept': 'application/json',
-                    },
-                    mode: 'cors',
-                    signal: controller.signal,
-                  });
-                  
-                  clearTimeout(timeoutId);
-                  
-                  console.log('Response status:', resp.status);
-                  console.log('Response headers:', Object.fromEntries(resp.headers.entries()));
-                  
-                  if (resp.status === 202) {
-                    // queued → poll transcript endpoint until ready
-                    setShowUploadAudio(false);
-                    const pollStart = Date.now();
-                    const poll = async () => {
-                      try {
-                        const t = await fetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/transcript`);
-                        if (t.ok) {
-                          const data = await t.json();
-                          setTranscriptText(data.transcript || '');
-                          setShowTranscript(true);
-                          return;
-                        }
-                      } catch {}
-                      if (Date.now() - pollStart < 300000) { // up to 5 minutes
-                        setTimeout(poll, 3000);
-                      } else {
-                        alert('Audio uploaded. Processing may take longer; try View Transcript in a moment.');
-                      }
-                    };
-                    poll();
-                  } else if (!resp.ok) {
-                    const txt = await resp.text();
-                    console.error('Upload failed:', txt);
-                    throw new Error(`Upload failed ${resp.status}: ${txt}`);
-                  } else {
-                    setShowUploadAudio(false);
-                    alert('Audio uploaded. Transcription started.');
-                  }
-                } catch (err: any) {
-                  console.error('Audio upload error:', err);
-                  if (err.name === 'AbortError') {
-                    setUploadAudioError('Upload timed out. Please try again with a shorter audio file.');
-                  } else if (err.message.includes('Failed to fetch')) {
-                    setUploadAudioError('Network error. Please check your connection and try again.');
-                  } else {
-                    setUploadAudioError(err?.message || 'Failed to upload audio. Please try again.');
-                  }
-                } finally {
-                  setIsTranscribingAudio(false);
-                }
-              }}
-              className="space-y-4"
-            >
-              <input
-                id="upload-audio-input"
-                type="file"
-                accept="audio/*,video/mpeg,.mp3,.m4a,.aac,.wav,.ogg,.flac,.amr,.mpeg"
-                className="block w-full text-sm text-gray-700"
-              />
-              {uploadAudioError && (
-                <div className="text-sm text-red-600">{uploadAudioError}</div>
-              )}
-              <div className="flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowUploadAudio(false)}
-                  className="px-4 py-2 rounded bg-gray-200 text-gray-800"
-                  disabled={isTranscribingAudio}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded bg-purple-600 text-white disabled:opacity-60"
-                  disabled={isTranscribingAudio}
-                >
-                  {isTranscribingAudio ? 'Uploading...' : 'Upload & Transcribe'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      
 
       {/* Transcript Modal */}
       {showTranscript && (

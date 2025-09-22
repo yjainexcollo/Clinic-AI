@@ -39,6 +39,10 @@ from ..schemas.patient import (
     EditAnswerResponse as EditAnswerResponseSchema,
 )
 from ..schemas.patient import RegisterPatientRequest as RegisterPatientRequestSchema
+from fastapi import UploadFile, File, Form
+from pathlib import Path
+from datetime import datetime
+import os
 
 router = APIRouter(prefix="/patients", tags=["patients"])
 logger = logging.getLogger("clinicai")
@@ -164,8 +168,16 @@ async def answer_intake_question(
         logger.info(f"[AnswerIntake] Incoming content-type: {content_type}")
         if content_type.startswith("application/json"):
             body = await request.json()
+            raw_pid = (body.get("patient_id", "").strip())
+            try:
+                internal_pid = decode_patient_id(raw_pid)
+            except Exception as e:
+                logger.warning("[AnswerIntake][JSON] Failed to decode patient_id '%s': %s; using raw value", raw_pid, e)
+                internal_pid = raw_pid
+            # If internal_pid looks like an opaque token (has non-alnum/underscore), don't construct PatientId later
+            # The use case accepts raw string; repository lookup will handle both forms.
             dto_request = AnswerIntakeRequest(
-                patient_id=decode_patient_id((body.get("patient_id", "").strip())),
+                patient_id=internal_pid,
                 visit_id=(body.get("visit_id", "").strip()),
                 answer=(body.get("answer", "").strip()),
             )
@@ -231,8 +243,13 @@ async def answer_intake_question(
                 form_answer = f"{form_answer}\n[IMAGES]: {', '.join(image_paths)}"
                 if 'ocr_texts' in locals() and ocr_texts:
                     form_answer = f"{form_answer}\n[OCR]: {' | '.join(ocr_texts)}"
+            try:
+                internal_pid = decode_patient_id(form_patient_id)
+            except Exception as e:
+                logger.warning("[AnswerIntake][FORM] Failed to decode patient_id '%s': %s; using raw value", form_patient_id, e)
+                internal_pid = form_patient_id
             dto_request = AnswerIntakeRequest(
-                patient_id=decode_patient_id(form_patient_id),
+                patient_id=internal_pid,
                 visit_id=form_visit_id,
                 answer=form_answer,
                 attachment_image_paths=image_paths if image_paths else None,
@@ -353,6 +370,75 @@ async def edit_intake_answer(
                 "error": "INTERNAL_ERROR",
                 "message": "An unexpected error occurred",
                 "details": {"exception": str(e) or repr(e), "type": e.__class__.__name__},
+            },
+        )
+
+
+# Lightweight webhook to receive medication images during intake (per requirements)
+@router.post("/webhook/image")
+async def upload_medication_image(
+    image: UploadFile = File(...),
+    patient_id: str = Form(...),
+    visit_id: str = Form(...),
+):
+    try:
+        # Normalize/resolve patient id (opaque token from client → internal id)
+        try:
+            internal_patient_id = decode_patient_id(patient_id)
+        except Exception:
+            internal_patient_id = patient_id
+        # Validate content type
+        content_type = (image.content_type or "").lower()
+        valid_types = {"image/jpeg", "image/jpg", "image/png"}
+        if content_type not in valid_types:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "INVALID_FILE_TYPE",
+                    "message": f"Only jpg, jpeg, png allowed (got {content_type or 'unknown'})",
+                    "details": {},
+                },
+            )
+
+        # Save file to local storage
+        from pathlib import Path
+        from datetime import datetime
+        import uuid
+        base_dir = Path(os.getenv("CLINICAI_UPLOAD_DIR", "uploads")) / "medications"
+        base_dir.mkdir(parents=True, exist_ok=True)
+        suffix = ".png" if content_type.endswith("png") else ".jpg"
+        ts = datetime.utcnow().strftime("%Y%m%dT%H%M%S%f")
+        safe_name = f"{ts}_{uuid.uuid4().hex}{suffix}"
+        dest = base_dir / safe_name
+        content = await image.read()
+        dest.write_bytes(content)
+
+        # Store DB record
+        from ...adapters.db.mongo.models.patient_m import MedicationImageMongo
+        doc = MedicationImageMongo(
+            patient_id=str(internal_patient_id),
+            visit_id=str(visit_id),
+            file_path=str(dest.as_posix()),
+        )
+        inserted = await doc.insert()
+
+        return {
+            "status": "success",
+            "patient_id": internal_patient_id,
+            "visit_id": visit_id,
+            "file_path": str(dest.as_posix()),
+            "id": str(getattr(inserted, "id", "")),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Unhandled error in upload_medication_image", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "INTERNAL_ERROR",
+                "message": "Failed to upload image",
+                "details": {"exception": str(e), "type": e.__class__.__name__},
             },
         )
 

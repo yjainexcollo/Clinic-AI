@@ -3,9 +3,20 @@ const API_ENDPOINT =
   "https://n8n-excollo.azurewebsites.net/webhook";
 
 // Backend API base URL (FastAPI)
-const BACKEND_BASE_URL: string =
+let BACKEND_BASE_URL: string =
   ((import.meta as any).env?.VITE_BACKEND_BASE_URL as string) ||
-  "https://clinic-ai.onrender.com";
+  "http://localhost:8000";
+
+// Normalize common dev misconfigurations for browser access
+try {
+  const raw = BACKEND_BASE_URL?.trim();
+  if (raw && /(^|\/)0\.0\.0\.0(?=[:/]|$)/.test(raw)) {
+    BACKEND_BASE_URL = raw.replace(/0\.0\.0\.0/g, "localhost");
+  }
+  if (BACKEND_BASE_URL && !/^https?:\/\//i.test(BACKEND_BASE_URL)) {
+    BACKEND_BASE_URL = `http://${BACKEND_BASE_URL}`;
+  }
+} catch {}
 
 export { BACKEND_BASE_URL };
 

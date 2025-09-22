@@ -118,3 +118,15 @@ class PatientMongo(Document):
             "mobile",
             "created_at"
         ]
+
+
+class MedicationImageMongo(Document):
+    """MongoDB model for uploaded medication images linked to a visit."""
+    patient_id: str = Field(..., description="Patient ID reference")
+    visit_id: str = Field(..., description="Visit ID reference")
+    file_path: str = Field(..., description="Local filesystem path or remote URL")
+    uploaded_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Settings:
+        name = "medication_images"
+        indexes = ["patient_id", "visit_id", "uploaded_at"]
