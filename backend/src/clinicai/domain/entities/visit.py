@@ -47,41 +47,37 @@ class IntakeSession:
         if self.symptom:
             self.symptom = self.symptom.strip()
 
-    def add_question_answer(self, question: str, answer: str, attachment_image_paths: Optional[List[str]] = None, ocr_texts: Optional[List[str]] = None) -> None:
-        """Add a question and answer to the intake."""
-        # Check if intake is already completed
-        if self.status == "completed":
-            raise IntakeAlreadyCompletedError(
-                "Cannot add questions to completed intake"
-            )
+ def add_question_answer(
+    self,
+    question: str,
+    answer: str,
+    attachment_image_paths: Optional[List[str]] = None,
+    ocr_texts: Optional[List[str]] = None,
+) -> None:
+    # Check limit
+    if self.current_question_count >= self.max_questions:
+        raise QuestionLimitExceededError(self.current_question_count, self.max_questions)
 
-        # Check question limit
-        if self.current_question_count >= self.max_questions:
-            raise QuestionLimitExceededError(
-                self.current_question_count, self.max_questions
-            )
+    # Prevent duplicates
+    for qa in self.questions_asked:
+        if (qa.question or "").lower().strip() == (question or "").lower().strip():
+            raise DuplicateQuestionError(question)
 
-        # Check for duplicate questions
-        for qa in self.questions_asked:
-            if qa.question.lower().strip() == question.lower().strip():
-                raise DuplicateQuestionError(question)
-
-        question_id = QuestionId.generate()
-        question_answer = QuestionAnswer(
-            question_id=question_id,
-            question=question,
-            answer=answer,
-            timestamp=datetime.utcnow(),
-            question_number=self.current_question_count + 1,
-            attachment_image_paths=attachment_image_paths,
-            ocr_texts=ocr_texts,
-        )
-
-        self.questions_asked.append(question_answer)
-        self.current_question_count += 1
-        # Clear pending once answered
-        self.pending_question = None
-
+    # Append QA
+    qid = QuestionId.generate()
+    qa = QuestionAnswer(
+        question_id=qid,
+        question=question,
+        answer=answer,
+        timestamp=datetime.utcnow(),
+        question_number=self.current_question_count + 1,
+        attachment_image_paths=attachment_image_paths,
+        ocr_texts=ocr_texts,
+    )
+    self.questions_asked.append(qa)
+    self.current_question_count += 1
+    self.pending_question = None
+    
     def truncate_after(self, index_inclusive: int) -> None:
         """Remove all questions after the given 0-based index, keep up to index, and reset state.
 
@@ -200,11 +196,6 @@ class Visit:
         if self.intake_session is None:
             self.intake_session = IntakeSession(symptom=self.symptom)
 
-<<<<<<< HEAD
-    def add_question_answer(self, question: str, answer: str, attachment_image_paths: Optional[List[str]] = None, ocr_texts: Optional[List[str]] = None) -> None:
-        """Add a question and answer to the intake session."""
-        self.intake_session.add_question_answer(question, answer, attachment_image_paths=attachment_image_paths, ocr_texts=ocr_texts)
-=======
     def add_question_answer(
         self,
         question: str,
@@ -219,7 +210,6 @@ class Visit:
             attachment_image_paths=attachment_image_paths,
             ocr_texts=ocr_texts,
         )
->>>>>>> f8bdc4f192a057dc922dfb14423108987d939839
         self.updated_at = datetime.utcnow()
 
     def set_pending_question(self, question: Optional[str]) -> None:
