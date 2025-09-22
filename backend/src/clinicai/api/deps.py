@@ -4,7 +4,7 @@ Formatting-only changes; behavior preserved.
 """
 
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Optional
 
 from fastapi import Depends
 
@@ -38,12 +38,16 @@ def get_question_service() -> QuestionService:
 
 
 
-@lru_cache()
+# Maintain a single instance of the transcription service per process so the
+# Whisper model is loaded only once and reused across requests.
+_TRANSCRIPTION_SERVICE_SINGLETON: Optional[TranscriptionService] = None
+
 def get_transcription_service() -> TranscriptionService:
-    """Get transcription service instance."""
-    # In a real implementation, this would come from the DI container
-    # For now, we'll create it directly
-    return WhisperTranscriptionService()
+    """Get transcription service instance (singleton)."""
+    global _TRANSCRIPTION_SERVICE_SINGLETON
+    if _TRANSCRIPTION_SERVICE_SINGLETON is None:
+        _TRANSCRIPTION_SERVICE_SINGLETON = WhisperTranscriptionService()
+    return _TRANSCRIPTION_SERVICE_SINGLETON
 
 
 @lru_cache()

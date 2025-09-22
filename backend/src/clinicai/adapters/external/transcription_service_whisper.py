@@ -18,8 +18,17 @@ class WhisperTranscriptionService(TranscriptionService):
 
     def __init__(self):
         self._settings = get_settings()
-        # Load Whisper model from configuration
-        self._model = whisper.load_model(self._settings.whisper.model)
+        self._model = None
+        self._download_root = None  # cache disabled per deployment request
+
+    def _get_model(self):
+        """Lazy load the Whisper model only when needed."""
+        if self._model is None:
+            print(f"Loading Whisper model: {self._settings.whisper.model}")
+            # Load without explicit download_root (let whisper handle temp cache)
+            self._model = whisper.load_model(self._settings.whisper.model)
+            print("Whisper model loaded successfully")
+        return self._model
 
     async def transcribe_audio(
         self, 
@@ -75,8 +84,9 @@ class WhisperTranscriptionService(TranscriptionService):
             # You can add medical-specific prompts or fine-tuning here
             pass
         
-        # Transcribe
-        result = self._model.transcribe(audio_file_path, **options)
+        # Transcribe using lazy-loaded model
+        model = self._get_model()
+        result = model.transcribe(audio_file_path, **options)
         
         return {
             "text": result["text"].strip(),
