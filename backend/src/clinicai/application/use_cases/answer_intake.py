@@ -41,6 +41,23 @@ class AnswerIntakeUseCase:
         if not visit:
             raise VisitNotFoundError(request.visit_id)
 
+        # Build prior context from latest completed visit (excluding current)
+        prior_summary: str | None = None
+        prior_qas: list[str] | None = None
+        try:
+            latest = patient.get_latest_visit()
+            if latest and latest.visit_id.value != visit.visit_id.value:
+                if latest.pre_visit_summary and latest.pre_visit_summary.get("summary"):
+                    prior_summary = latest.pre_visit_summary.get("summary")
+                if latest.intake_session and latest.intake_session.questions_asked:
+                    prior_qas = [
+                        f"Q: {qa.question} | A: {qa.answer}"
+                        for qa in latest.intake_session.questions_asked[:8]
+                    ]
+        except Exception:
+            prior_summary = None
+            prior_qas = None
+
         # Check if intake is already completed
         if visit.is_intake_complete():
             raise IntakeAlreadyCompletedError(request.visit_id)
@@ -62,6 +79,9 @@ class AnswerIntakeUseCase:
                     asked_questions=asked_questions,
                     current_count=visit.intake_session.current_question_count,
                     max_count=visit.intake_session.max_questions,
+                    recently_travelled=patient.recently_travelled,
+                    prior_summary=prior_summary,
+                    prior_qas=prior_qas,
                 )
 
         # Add the question and answer
@@ -110,6 +130,9 @@ class AnswerIntakeUseCase:
                 asked_questions=asked_questions,
                 current_count=visit.intake_session.current_question_count,
                 max_count=visit.intake_session.max_questions,
+                recently_travelled=patient.recently_travelled,
+                prior_summary=prior_summary,
+                prior_qas=prior_qas,
             )
             visit.set_pending_question(next_question)
             message = (
@@ -124,6 +147,8 @@ class AnswerIntakeUseCase:
             asked_questions=[qa.question for qa in visit.intake_session.questions_asked],
             current_count=visit.intake_session.current_question_count,
             max_count=visit.intake_session.max_questions,
+            prior_summary=prior_summary,
+            prior_qas=prior_qas,
         )
 
         # Force 100% on completion
@@ -203,6 +228,7 @@ class AnswerIntakeUseCase:
             asked_questions=asked_questions,
             current_count=current_count,
             max_count=max_count,
+            recently_travelled=patient.recently_travelled,
         )
         visit.set_pending_question(next_question)
 

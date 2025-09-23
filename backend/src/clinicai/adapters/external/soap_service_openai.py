@@ -28,7 +28,7 @@ class OpenAISoapService(SoapService):
             except Exception:
                 pass
         if not api_key:
-            raise ValueError("OPENAI_API_KEY is not set")
+            raise ValueError("OPENAI_API_KEY is not set. Please set the OPENAI_API_KEY environment variable or add it to your .env file.")
         
         self._client = OpenAI(api_key=api_key)
         # Optional: log model and presence of key (masked)
@@ -61,6 +61,12 @@ class OpenAISoapService(SoapService):
         
         if pre_visit_summary:
             context_parts.append(f"Pre-visit Summary: {pre_visit_summary.get('summary', 'Not available')}")
+            
+            # Add vitals data if available
+            if 'vitals' in pre_visit_summary:
+                vitals_data = pre_visit_summary['vitals']['data']
+                vitals_text = self._format_vitals_for_soap(vitals_data)
+                context_parts.append(f"Vitals Data: {vitals_text}")
         
         if intake_data and intake_data.get('questions_asked'):
             intake_responses = []
@@ -197,6 +203,75 @@ Generate the SOAP note now:
             normalized["confidence_score"] = 0.7
 
         return normalized
+
+    def _format_vitals_for_soap(self, vitals_data: Dict[str, Any]) -> str:
+        """Format vitals data for SOAP note generation."""
+        parts = []
+        
+        # Blood Pressure
+        if vitals_data.get('systolic') and vitals_data.get('diastolic'):
+            bp_text = f"Blood pressure {vitals_data['systolic']}/{vitals_data['diastolic']} mmHg"
+            if vitals_data.get('bpArm'):
+                bp_text += f" ({vitals_data['bpArm']} arm)"
+            if vitals_data.get('bpPosition'):
+                bp_text += f" ({vitals_data['bpPosition']})"
+            parts.append(bp_text)
+        
+        # Heart Rate
+        if vitals_data.get('heartRate'):
+            hr_text = f"Heart rate {vitals_data['heartRate']} bpm"
+            if vitals_data.get('rhythm'):
+                hr_text += f" ({vitals_data['rhythm']})"
+            parts.append(hr_text)
+        
+        # Respiratory Rate
+        if vitals_data.get('respiratoryRate'):
+            parts.append(f"Respiratory rate {vitals_data['respiratoryRate']} breaths/min")
+        
+        # Temperature
+        if vitals_data.get('temperature'):
+            temp_text = f"Temperature {vitals_data['temperature']}{vitals_data.get('tempUnit', '°C')}"
+            if vitals_data.get('tempMethod'):
+                temp_text += f" ({vitals_data['tempMethod']})"
+            parts.append(temp_text)
+        
+        # Oxygen Saturation
+        if vitals_data.get('oxygenSaturation'):
+            parts.append(f"SpO₂ {vitals_data['oxygenSaturation']}% on room air")
+        
+        # Height, Weight, BMI
+        if vitals_data.get('height') and vitals_data.get('weight'):
+            height_text = f"{vitals_data['height']} {vitals_data.get('heightUnit', 'cm')}"
+            weight_text = f"{vitals_data['weight']} {vitals_data.get('weightUnit', 'kg')}"
+            parts.append(f"Height {height_text}, Weight {weight_text}")
+            
+            # Calculate BMI if both height and weight are provided
+            try:
+                height_val = float(vitals_data['height'])
+                weight_val = float(vitals_data['weight'])
+                height_unit = vitals_data.get('heightUnit', 'cm')
+                weight_unit = vitals_data.get('weightUnit', 'kg')
+                
+                # Convert to metric if needed
+                if height_unit == 'ft/in':
+                    height_val = height_val * 0.3048  # Convert feet to meters
+                elif height_unit == 'cm':
+                    height_val = height_val / 100  # Convert cm to meters
+                
+                if weight_unit == 'lbs':
+                    weight_val = weight_val * 0.453592  # Convert lbs to kg
+                
+                if height_val > 0 and weight_val > 0:
+                    bmi = weight_val / (height_val * height_val)
+                    parts.append(f"BMI {bmi:.1f}")
+            except (ValueError, ZeroDivisionError):
+                pass  # Skip BMI calculation if conversion fails
+        
+        # Pain Score
+        if vitals_data.get('painScore'):
+            parts.append(f"Pain score {vitals_data['painScore']}/10")
+        
+        return ", ".join(parts) + "." if parts else "No vitals recorded"
 
     async def validate_soap_structure(self, soap_data: Dict[str, Any]) -> bool:
         """Validate SOAP note structure and completeness."""
