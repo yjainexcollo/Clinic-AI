@@ -98,15 +98,17 @@ export async function registerPatientBackend(payload: {
 // Answer intake question via backend
 export async function answerIntakeBackend(
   payload: BackendAnswerRequest,
-  imageFile?: File
+  imageFile?: File,
+  imageFiles?: File[]
 ): Promise<BackendAnswerResponse> {
   let resp: Response;
-  if (imageFile) {
+  const files: File[] | undefined = imageFiles && imageFiles.length ? imageFiles : (imageFile ? [imageFile] : undefined);
+  if (files && files.length) {
     const form = new FormData();
     form.append("patient_id", payload.patient_id);
     form.append("visit_id", payload.visit_id);
     form.append("answer", payload.answer);
-    form.append("medication_images", imageFile);
+    files.forEach((f) => form.append("medication_images", f));
     resp = await fetch(`${BACKEND_BASE_URL}/patients/consultations/answer`, {
       method: "POST",
       body: form,
@@ -118,6 +120,27 @@ export async function answerIntakeBackend(
       body: JSON.stringify(payload),
     });
   }
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Backend error ${resp.status}: ${text}`);
+  }
+  return resp.json();
+}
+
+// Upload multiple medication images via webhook route
+export async function uploadMedicationImages(
+  patientId: string,
+  visitId: string,
+  files: File[]
+): Promise<{ uploaded_images: Array<{ id: string; filename: string; content_type?: string }>; status: string }>{
+  const form = new FormData();
+  files.forEach((f) => form.append("images", f));
+  form.append("patient_id", patientId);
+  form.append("visit_id", visitId);
+  const resp = await fetch(`${BACKEND_BASE_URL}/patients/webhook/images`, {
+    method: "POST",
+    body: form,
+  });
   if (!resp.ok) {
     const text = await resp.text();
     throw new Error(`Backend error ${resp.status}: ${text}`);

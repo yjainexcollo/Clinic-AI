@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, useLocation } from "react-router-dom";
 import { intakeAPI, IntakeRequest, IntakeResponse } from "../api";
-import { answerIntakeBackend, editAnswerBackend, OCRQualityInfo, BACKEND_BASE_URL } from "../services/patientService";
+import { answerIntakeBackend, editAnswerBackend, OCRQualityInfo, BACKEND_BASE_URL, uploadMedicationImages } from "../services/patientService";
 import { SessionManager } from "../utils/session";
 import { COPY } from "../copy";
 import SymptomSelector from "../components/SymptomSelector";
@@ -204,16 +204,25 @@ const Index = () => {
       // Use backend-provided flag to decide if image should be sent with this answer
       const fileInputEl = document.querySelector('input[type="file"]') as HTMLInputElement | null;
       const chosenFile = fileInputEl?.files && fileInputEl.files[0] ? fileInputEl.files[0] : undefined;
-      const imageFile = allowsImageUpload ? ((window as any).clinicaiMedicationFile || chosenFile) : undefined;
+      const stagedFiles: File[] | undefined = allowsImageUpload ? ((window as any).clinicaiMedicationFiles as File[] | undefined) : undefined;
+      const imageFile = undefined; // we prefer stagedFiles now
+      // If we have staged images, hit the webhook route first so the images route is definitely called
+      if (stagedFiles && stagedFiles.length) {
+        try {
+          await uploadMedicationImages(patientId, effectiveVisitId!, stagedFiles);
+        } catch (e) {
+          console.error("Image upload failed:", e);
+          // Continue with answer submission even if images failed, but keep user informed
+        }
+      }
+
       const response = await answerIntakeBackend({
         patient_id: patientId,
         visit_id: effectiveVisitId!,
         answer: answerToSend,
-      }, imageFile);
+      }, imageFile, stagedFiles && stagedFiles.length ? stagedFiles : undefined);
       // Clear the temp file reference after sending
-      if (imageFile) {
-        (window as any).clinicaiMedicationFile = null;
-      }
+      (window as any).clinicaiMedicationFiles = undefined;
       if (response && typeof response.max_questions === "number") {
         localStorage.setItem(`maxq_${effectiveVisitId}`, String(response.max_questions));
       }

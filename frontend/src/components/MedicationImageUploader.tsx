@@ -54,15 +54,16 @@ const MedicationImageUploader: React.FC<Props> = ({ patientId, visitId, title = 
 
   const onPick = (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    setError("");
-    setSuccessMsg("");
-
+    // Stage locally; will be uploaded with the answer submission
     const newItems: QueuedImage[] = Array.from(files).map((file) => ({
       id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2)}`,
       file,
       previewUrl: URL.createObjectURL(file),
     }));
-    setQueue((prev) => [...prev, ...newItems]);
+    const next = [...queue, ...newItems];
+    setQueue(next);
+    ;(window as any).clinicaiMedicationFiles = next.map(q => q.file);
+    if (onChange) onChange();
   };
 
   const clearQueuePreviews = () => {
@@ -114,7 +115,9 @@ const MedicationImageUploader: React.FC<Props> = ({ patientId, visitId, title = 
   const removeQueued = (id: string) => {
     const item = queue.find((q) => q.id === id);
     if (item) URL.revokeObjectURL(item.previewUrl);
-    setQueue((prev) => prev.filter((q) => q.id !== id));
+    const next = queue.filter((q) => q.id !== id);
+    setQueue(next);
+    ;(window as any).clinicaiMedicationFiles = next.map(q => q.file);
   };
 
   const removeImage = async (id: string) => {
@@ -143,10 +146,10 @@ const MedicationImageUploader: React.FC<Props> = ({ patientId, visitId, title = 
         className="block w-full text-sm text-gray-700"
       />
 
-      {/* Queue previews with remove-before-upload */}
+      {/* Queue previews staged for submit */}
       {queue.length > 0 && (
         <div className="mt-2">
-          <div className="text-xs text-gray-600 mb-2">Selected (not yet uploaded):</div>
+          <div className="text-xs text-gray-600 mb-2">Selected (will upload when you submit your answer):</div>
           <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
             {queue.map((q) => (
               <div key={q.id} className="relative group border rounded p-1 bg-gray-50">
@@ -162,16 +165,7 @@ const MedicationImageUploader: React.FC<Props> = ({ patientId, visitId, title = 
               </div>
             ))}
           </div>
-          <div className="flex justify-end mt-2">
-            <button
-              type="button"
-              onClick={uploadQueued}
-              disabled={isUploading}
-              className="px-3 py-1.5 rounded bg-blue-600 text-white text-sm disabled:opacity-60"
-            >
-              {isUploading ? `Uploading... ${formatElapsed(elapsed)}` : `Upload ${queue.length} image(s)`}
-            </button>
-          </div>
+          <div className="flex justify-end mt-2 text-[11px] text-gray-500">Images will be sent with your answer.</div>
         </div>
       )}
 

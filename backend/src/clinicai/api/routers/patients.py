@@ -454,6 +454,7 @@ async def upload_multiple_medication_images(
     request: Request,
     patient_id: str = Form(...),
     visit_id: str = Form(...),
+    images: Optional[List[UploadFile]] = File(None),
 ):
     try:
         logger.info("[WebhookImages] Incoming upload for patient_id=%s visit_id=%s", patient_id, visit_id)
@@ -467,22 +468,23 @@ async def upload_multiple_medication_images(
         uploaded_images = []
         errors = []
         
-        # Parse all files from the form manually to avoid binding inconsistencies
-        file_list: List[UploadFile] = []
-        try:
-            form = await request.form()
-            candidates: List[UploadFile] = []
-            for key in ["images", "medication_images", "medication_image", "image", "file", "photo"]:
-                try:
-                    items = form.getlist(key)
-                    for item in items:
-                        if isinstance(item, UploadFile) and getattr(item, "filename", None):
-                            candidates.append(item)
-                except Exception:
-                    pass
-            file_list = candidates
-        except Exception:
-            file_list = []
+        # Prefer FastAPI-bound files; fallback to manual parse
+        file_list: List[UploadFile] = [f for f in (images or []) if getattr(f, "filename", None)]
+        if not file_list:
+            try:
+                form = await request.form()
+                candidates: List[UploadFile] = []
+                for key in ["images", "medication_images", "medication_image", "image", "file", "photo"]:
+                    try:
+                        items = form.getlist(key)
+                        for item in items:
+                            if isinstance(item, UploadFile) and getattr(item, "filename", None):
+                                candidates.append(item)
+                    except Exception:
+                        pass
+                file_list = candidates
+            except Exception:
+                file_list = []
 
         logger.info("[WebhookImages] Parsed %d file(s) from form", len(file_list))
         for i, image in enumerate(file_list):
