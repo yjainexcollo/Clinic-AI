@@ -54,8 +54,11 @@ const MedicationImageUploader: React.FC<Props> = ({ patientId, visitId, title = 
 
   const onPick = (files: FileList | null) => {
     if (!files || files.length === 0) return;
+<<<<<<< HEAD
     setError("");
     setSuccessMsg("");
+=======
+>>>>>>> 9a8d5ba (commit)
     // Stage locally; will be uploaded with the answer submission
     const newItems: QueuedImage[] = Array.from(files).map((file) => ({
       id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2)}`,
