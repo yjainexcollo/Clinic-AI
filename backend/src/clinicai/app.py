@@ -83,8 +83,8 @@ def create_app() -> FastAPI:
         title="Clinic-AI Intake Assistant",
         description="AI-powered clinical intake system for small and mid-sized clinics",
         version=settings.app_version,
-        docs_url="/docs",
-        redoc_url="/redoc",
+        docs_url="/docs" if settings.debug else None,
+        redoc_url="/redoc" if settings.debug else None,
         lifespan=lifespan,
     )
 
@@ -193,7 +193,7 @@ async def root():
         "version": settings.app_version,
         "environment": settings.app_env,
         "status": "running",
-        "docs": "/docs",
+        "docs": "/docs" if settings.debug else "disabled",
         "endpoints": {
             "health": "/health",
             "register_patient": "POST /patients/",

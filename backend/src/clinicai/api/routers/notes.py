@@ -6,7 +6,6 @@ from typing import Optional, Dict, Any
 import tempfile
 import os
 import asyncio
-from datetime import datetime
 
 from openai import OpenAI  # type: ignore
 
@@ -18,7 +17,6 @@ from clinicai.application.dto.patient_dto import (
     SoapNoteDTO,
     TranscriptionSessionDTO
 )
-from pydantic import BaseModel
 from clinicai.application.use_cases.transcribe_audio import TranscribeAudioUseCase
 from clinicai.application.use_cases.generate_soap_note import GenerateSoapNoteUseCase
 from clinicai.domain.errors import (
@@ -32,40 +30,6 @@ from ...core.config import get_settings
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 logger = logging.getLogger("clinicai")
-
-
-# Vitals data models
-class VitalsData(BaseModel):
-    # Make types align with JSON schema
-    systolic: int
-    diastolic: int
-    bpArm: str = ""  # optional: "Left" | "Right"
-    bpPosition: str = ""  # optional: "Sitting" | "Standing" | "Lying"
-    heartRate: int
-    rhythm: str = ""  # optional
-    respiratoryRate: int
-    temperature: float
-    tempUnit: str = "C"  # "C" | "F"
-    tempMethod: str = ""  # optional
-    oxygenSaturation: int
-    height: float | None = None  # optional cm
-    heightUnit: str = "cm"
-    weight: float
-    weightUnit: str = "kg"
-    painScore: int | None = None
-    notes: str = ""
-
-
-class VitalsRequest(BaseModel):
-    patient_id: str
-    visit_id: str
-    vitals: VitalsData
-
-
-class VitalsResponse(BaseModel):
-    success: bool
-    message: str
-    vitals_id: str
 
 
 @router.options("/transcribe")
@@ -211,82 +175,21 @@ async def generate_soap_note(
     5. Returns structured SOAP note
     """
     try:
-        # Decode opaque patient_id if provided by client
-        from ...core.utils.crypto import decode_patient_id
-        try:
-            decoded_pid = decode_patient_id(request.patient_id)
-        except Exception:
-            decoded_pid = request.patient_id
-
-        # Execute use case with decoded patient id
+        # Execute use case
         use_case = GenerateSoapNoteUseCase(patient_repo, soap_service)
-        from ...application.dto.patient_dto import SoapGenerationRequest as SoapGenDTO
-        try:
-            result = await use_case.execute(SoapGenDTO(patient_id=decoded_pid, visit_id=request.visit_id))
-            return result
-        except ValueError as e:
-            # Fallback path: allow SOAP generation even if transcript/status not ready
-            # Build minimal context and generate SOAP using available data (intake + pre-visit + vitals)
-            try:
-                from ...domain.value_objects.patient_id import PatientId
-                pid = PatientId(decoded_pid)
-                patient = await patient_repo.find_by_id(pid)
-                if not patient:
-                    raise PatientNotFoundError(decoded_pid)
-                visit = patient.get_visit_by_id(request.visit_id)
-                if not visit:
-                    raise VisitNotFoundError(request.visit_id)
-
-                transcript = visit.get_transcript() or ""
-                intake_data = visit.get_intake_summary() if visit.is_intake_complete() else None
-                pre_visit_summary = visit.get_pre_visit_summary() or {}
-
-                # Temporarily set status so we can store the SOAP note
-                prev_status = visit.status
-                try:
-                    visit.status = "soap_generation"
-                    soap_dict = await soap_service.generate_soap_note(
-                        transcript=transcript or "Transcript not available; generate Objective from vitals and intake if present.",
-                        patient_context={
-                            "patient_id": patient.patient_id.value,
-                            "name": getattr(patient, "name", "Unknown"),
-                            "age": getattr(patient, "age", "Unknown"),
-                            "symptom": visit.symptom,
-                        },
-                        intake_data=intake_data,
-                        pre_visit_summary=pre_visit_summary,
-                    )
-
-                    # Validate and store
-                    is_valid = await soap_service.validate_soap_structure(soap_dict)
-                    if not is_valid:
-                        raise ValueError("Generated SOAP note failed validation (fallback)")
-
-                    visit.store_soap_note(soap_dict)
-                    await patient_repo.save(patient)
-
-                    return SoapGenerationResponse(
-                        patient_id=patient.patient_id.value,
-                        visit_id=visit.visit_id.value,
-                        soap_note=soap_dict,
-                        generated_at=visit.soap_note.generated_at.isoformat(),
-                        message="SOAP note generated successfully (fallback without transcript)",
-                    )
-                finally:
-                    # If store_soap_note succeeded, status is moved to prescription_analysis.
-                    # If it failed, restore previous status.
-                    if visit.status == prev_status:
-                        visit.status = prev_status
-            except Exception as inner:
-                # If fallback also fails, surface original error message.
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail={
-                        "error": "INVALID_REQUEST",
-                        "message": str(e),
-                        "details": {"fallback_error": str(inner)},
-                    },
-                )
+        result = await use_case.execute(request)
+        
+        return result
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error": "INVALID_REQUEST",
+                "message": str(e),
+                "details": {},
+            },
+        )
     except PatientNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -368,34 +271,19 @@ async def get_transcript(
         if not visit:
             raise VisitNotFoundError(visit_id)
 
-        # If transcription session not started or not yet completed, return a processing status
-        if not visit.transcription_session:
-            return TranscriptionSessionDTO(
-                audio_file_path=None,
-                transcript=None,
-                transcription_status="pending",
-                started_at=None,
-                completed_at=None,
-                error_message=None,
-                audio_duration_seconds=None,
-                word_count=None,
+        # Check if transcript exists
+        if not visit.transcription_session or not visit.transcription_session.transcript:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "error": "TRANSCRIPT_NOT_FOUND",
+                    "message": f"No transcript found for visit {visit_id}",
+                    "details": {"visit_id": visit_id},
+                },
             )
 
+        # Return transcript data
         session = visit.transcription_session
-        if not session.transcript:
-            # Still processing or failed without transcript; surface current session state
-            return TranscriptionSessionDTO(
-                audio_file_path=session.audio_file_path,
-                transcript=None,
-                transcription_status=session.transcription_status or "processing",
-                started_at=session.started_at.isoformat() if session.started_at else None,
-                completed_at=session.completed_at.isoformat() if session.completed_at else None,
-                error_message=session.error_message,
-                audio_duration_seconds=session.audio_duration_seconds,
-                word_count=session.word_count,
-            )
-
-        # Transcript available
         return TranscriptionSessionDTO(
             audio_file_path=session.audio_file_path,
             transcript=session.transcript,
@@ -404,7 +292,7 @@ async def get_transcript(
             completed_at=session.completed_at.isoformat() if session.completed_at else None,
             error_message=session.error_message,
             audio_duration_seconds=session.audio_duration_seconds,
-            word_count=session.word_count,
+            word_count=session.word_count
         )
 
     except PatientNotFoundError as e:
@@ -454,21 +342,12 @@ async def get_soap_note(
     """Get SOAP note for a visit."""
     try:
         from ...domain.value_objects.patient_id import PatientId
-        from ...core.utils.crypto import decode_patient_id
-        import urllib.parse
-
-        # Support opaque patient_id tokens from clients
-        decoded_param = urllib.parse.unquote(patient_id)
-        try:
-            internal_patient_id = decode_patient_id(decoded_param)
-        except Exception:
-            internal_patient_id = decoded_param
-
+        
         # Find patient
-        patient_id_obj = PatientId(internal_patient_id)
+        patient_id_obj = PatientId(patient_id)
         patient = await patient_repo.find_by_id(patient_id_obj)
         if not patient:
-            raise PatientNotFoundError(internal_patient_id)
+            raise PatientNotFoundError(patient_id)
 
         # Find visit
         visit = patient.get_visit_by_id(visit_id)
@@ -657,179 +536,6 @@ async def structure_dialogue(
         )
     except Exception as e:
         logger.error("Unhandled error in structure_dialogue", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={
-                "error": "INTERNAL_ERROR",
-                "message": "An unexpected error occurred",
-                "details": {"exception": str(e) or repr(e), "type": e.__class__.__name__},
-            },
-        )
-
-
-@router.post(
-    "/vitals",
-    response_model=VitalsResponse,
-    status_code=status.HTTP_200_OK,
-    responses={
-        400: {"model": ErrorResponse, "description": "Validation error"},
-        404: {"model": ErrorResponse, "description": "Patient or visit not found"},
-        500: {"model": ErrorResponse, "description": "Internal server error"},
-    },
-)
-async def store_vitals(
-    request: VitalsRequest,
-    patient_repo: PatientRepositoryDep,
-):
-    """Store vitals data for a visit."""
-    try:
-        from ...domain.value_objects.patient_id import PatientId
-        from ...core.utils.crypto import decode_patient_id
-        import urllib.parse
-        import uuid
-
-        # Decode opaque patient_id if provided
-        decoded_param = urllib.parse.unquote(request.patient_id)
-        try:
-            internal_patient_id = decode_patient_id(decoded_param)
-        except Exception:
-            internal_patient_id = decoded_param
-
-        # Find patient
-        patient_id_obj = PatientId(internal_patient_id)
-        patient = await patient_repo.find_by_id(patient_id_obj)
-        if not patient:
-            raise PatientNotFoundError(internal_patient_id)
-
-        # Find visit
-        visit = patient.get_visit_by_id(request.visit_id)
-        if not visit:
-            raise VisitNotFoundError(request.visit_id)
-
-        # Store vitals data in visit (we'll add this to the Visit entity)
-        vitals_id = str(uuid.uuid4())
-        
-        # For now, store in visit's pre_visit_summary or create a new field
-        if not visit.pre_visit_summary:
-            visit.pre_visit_summary = {}
-        
-        visit.pre_visit_summary["vitals"] = {
-            "vitals_id": vitals_id,
-            "data": request.vitals.dict(),
-            "timestamp": datetime.utcnow().isoformat()
-        }
-
-        # Save updated visit
-        await patient_repo.save(patient)
-
-        return VitalsResponse(
-            success=True,
-            message="Vitals data stored successfully",
-            vitals_id=vitals_id
-        )
-
-    except PatientNotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={
-                "error": "PATIENT_NOT_FOUND",
-                "message": e.message,
-                "details": e.details,
-            },
-        )
-    except VisitNotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={
-                "error": "VISIT_NOT_FOUND",
-                "message": e.message,
-                "details": e.details,
-            },
-        )
-    except Exception as e:
-        logger.error("Unhandled error in store_vitals", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={
-                "error": "INTERNAL_ERROR",
-                "message": "An unexpected error occurred",
-                "details": {"exception": str(e) or repr(e), "type": e.__class__.__name__},
-            },
-        )
-
-
-@router.get(
-    "/{patient_id}/visits/{visit_id}/vitals",
-    response_model=VitalsData,
-    status_code=status.HTTP_200_OK,
-    responses={
-        404: {"model": ErrorResponse, "description": "Patient, visit, or vitals not found"},
-        500: {"model": ErrorResponse, "description": "Internal server error"},
-    },
-)
-async def get_vitals(
-    patient_id: str,
-    visit_id: str,
-    patient_repo: PatientRepositoryDep,
-):
-    """Get vitals data for a visit."""
-    try:
-        from ...domain.value_objects.patient_id import PatientId
-        from ...core.utils.crypto import decode_patient_id
-        import urllib.parse
-
-        # Decode opaque patient_id if provided
-        decoded_param = urllib.parse.unquote(patient_id)
-        try:
-            internal_patient_id = decode_patient_id(decoded_param)
-        except Exception:
-            internal_patient_id = decoded_param
-
-        # Find patient
-        patient_id_obj = PatientId(internal_patient_id)
-        patient = await patient_repo.find_by_id(patient_id_obj)
-        if not patient:
-            raise PatientNotFoundError(internal_patient_id)
-
-        # Find visit
-        visit = patient.get_visit_by_id(visit_id)
-        if not visit:
-            raise VisitNotFoundError(visit_id)
-
-        # Get vitals data
-        if not visit.pre_visit_summary or "vitals" not in visit.pre_visit_summary:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail={
-                    "error": "VITALS_NOT_FOUND",
-                    "message": f"No vitals data found for visit {visit_id}",
-                    "details": {"visit_id": visit_id},
-                },
-            )
-
-        vitals_data = visit.pre_visit_summary["vitals"]["data"]
-        return VitalsData(**vitals_data)
-
-    except PatientNotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={
-                "error": "PATIENT_NOT_FOUND",
-                "message": e.message,
-                "details": e.details,
-            },
-        )
-    except VisitNotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={
-                "error": "VISIT_NOT_FOUND",
-                "message": e.message,
-                "details": e.details,
-            },
-        )
-    except Exception as e:
-        logger.error("Unhandled error in get_vitals", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={

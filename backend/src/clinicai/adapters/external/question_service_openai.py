@@ -1,51 +1,31 @@
+"""
+OpenAI implementation of QuestionService for AI-powered question generation.
+"""
+
 import asyncio
 import logging
 import re
 from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
+
 from clinicai.application.ports.services.question_service import QuestionService
 from clinicai.core.config import get_settings
 
 
-# ----------------------
-# Question Templates (Fallbacks)
-# ----------------------
-QUESTION_TEMPLATES: Dict[str, str] = {
-    "duration": "How long have you been experiencing these symptoms?",
-    "triggers": "What makes your symptoms better or worse, such as activity, food, or stress?",
-    "pain": "If you have any pain, tell the location, duration, intensity (0–10), character, radiation, and relieving/aggravating factors.",
-    "temporal": "Do your symptoms vary by timing patterns (morning/evening, night/day, seasonal/cyclical)?",
-    "travel": "Have you travelled in the last 1–3 months? If yes, where did you go, and did you eat unsafe food or drink untreated water?",
-    "allergies": "Do you have any allergies such as rash, hives, swelling, wheeze, sneezing, or runny nose?",
-    "medications": "What medications or remedies are you currently taking? Please include prescribed drugs, OTC, supplements, or home remedies.",
-    "hpi": "Have you had any recent acute symptoms like fever, cough, chest pain, stomach pain, or infection?",
-    "family": "Does anyone in your family have diabetes, hypertension, heart disease, cancer, or similar conditions?",
-    "lifestyle": "Can you describe your typical diet, exercise, or lifestyle habits?",
-    "gyn": "When was your last menstrual period and are your cycles regular?",
-    "functional": "Do your symptoms affect your daily activities or mobility?",
-}
-
-
-# ----------------------
-# OpenAI QuestionService
-# ----------------------
 class OpenAIQuestionService(QuestionService):
+    """OpenAI-based implementation of the QuestionService for intake question generation."""
+
     def __init__(self) -> None:
         import os
         from pathlib import Path
-        from dotenv import load_dotenv
 
         try:
-            # dotenv is optional but helps in local development
             from dotenv import load_dotenv  # type: ignore
         except Exception:
             load_dotenv = None
 
-        # Load project settings (includes model name, tokens, temperature, etc.)
         self._settings = get_settings()
-        self._debug_prompts = getattr(self._settings, "debug_prompts", False)
-
         api_key = self._settings.openai.api_key or os.getenv("OPENAI_API_KEY", "")
         self._mode = (os.getenv("QUESTION_MODE", "autonomous") or "autonomous").strip().lower()
 
@@ -58,35 +38,38 @@ class OpenAIQuestionService(QuestionService):
                     api_key = os.getenv("OPENAI_API_KEY", "")
                     if api_key:
                         break
+
         if not api_key:
             raise ValueError("OPENAI_API_KEY is not set")
 
         self._client = OpenAI(api_key=api_key)
 
     async def _chat_completion(
-        self, messages: List[Dict[str, str]], max_tokens: int = 64, temperature: float = 0.3
+        self, messages: List[Dict[str, str]], max_tokens: int, temperature: float
     ) -> str:
         def _run() -> str:
             logger = logging.getLogger("clinicai")
+            logger.info(
+                "[QuestionService] Calling OpenAI chat.completions",
+                extra={
+                    "model": self._settings.openai.model,
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                },
+            )
             try:
-                if self._debug_prompts:
-                    logger.debug("[QuestionService] Sending messages to OpenAI:\n%s", messages)
-
                 resp = self._client.chat.completions.create(
                     model=self._settings.openai.model,
                     messages=messages,
                     max_tokens=max_tokens,
                     temperature=temperature,
                 )
-                output = resp.choices[0].message.content.strip()
-
-                if self._debug_prompts:
-                    logger.debug("[QuestionService] Received response: %s", output)
-
-                return output
+                text = resp.choices[0].message.content.strip()
+                logger.info("[QuestionService] OpenAI call succeeded")
+                return text
             except Exception:
                 logger.error("[QuestionService] OpenAI call failed", exc_info=True)
-                return ""
+                raise
 
         return await asyncio.to_thread(_run)
 
@@ -182,12 +165,17 @@ class OpenAIQuestionService(QuestionService):
         asked_questions: List[str],
         current_count: int,
         max_count: int,
-        asked_categories: Optional[List[str]] = None,
         recently_travelled: bool = False,
         prior_summary: Optional[Any] = None,
         prior_qas: Optional[List[str]] = None,
     ) -> str:
         mandatory_closing = "Have we missed anything important about your condition or any concerns you want us to address?"
+        if current_count >= max_count - 1:
+            already_asked = any(
+                mandatory_closing.lower() in (q or "").lower() for q in (asked_questions or [])
+            )
+            if not already_asked:
+                return mandatory_closing
 
         covered_categories = sorted({self._classify_question(q) for q in (asked_questions or []) if q})
         covered_categories_str = ", ".join(c for c in covered_categories if c and c != "other") or "none"
@@ -280,7 +268,7 @@ STOPPING
 OUTPUT
 Return only one patient-friendly question ending with "?".
 No lists, no category names, no explanations.
-""" 
+"""
 
         try:
             text = await self._chat_completion(
@@ -412,6 +400,7 @@ No lists, no category names, no explanations.
         previous_answers: List[str],
         current_count: int,
         max_count: int,
+        recently_travelled: bool = False,
     ) -> bool:
         if current_count >= max_count:
             return True
@@ -457,9 +446,6 @@ No lists, no category names, no explanations.
                 return 0
             return max(0, min(int(round((current_count / max_count) * 100.0)), 100))
 
-    # ----------------------
-    # Medication check
-    # ----------------------
     def is_medication_question(self, question: str) -> bool:
         return self._classify_question(question) == "medications"
 
@@ -486,7 +472,7 @@ No lists, no category names, no explanations.
             "- Do not use placeholders like \"N/A\" or \"Not provided\".\n"
             "- Use patient-facing phrasing: \"Patient reports …\", \"Denies …\", \"On meds: …\".\n"
             "- Do not include clinician observations, diagnoses, plans, vitals, or exam findings (previsit is patient-reported only).\n"
-            '- Normalize obvious medical mispronunciations to correct terms (e.g., "diabetes mellitus" -> "diabetes mellitus") without adding new information.\n\n'
+            "- Normalize obvious medical mispronunciations to correct terms (e.g., \"die-a-bee-tees mellitis\" → \"diabetes mellitus\") without adding new information.\n\n"
             "Headings (use EXACT casing; include only if you have data)\n"
             "Chief Complaint:\n"
             "HPI:\n"
@@ -705,4 +691,3 @@ No lists, no category names, no explanations.
                 cleaned.append(line)
         flush_section()
         return "\n".join(cleaned)
-

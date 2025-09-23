@@ -3,7 +3,7 @@ Question service interface for AI-powered question generation.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 
 
 class QuestionService(ABC):
@@ -22,9 +22,6 @@ class QuestionService(ABC):
         asked_questions: List[str],
         current_count: int,
         max_count: int,
-        recently_travelled: bool = False,
-        prior_summary: Optional[str] = None,
-        prior_qas: Optional[List[str]] = None,
     ) -> str:
         """Generate the next question based on context."""
         pass
@@ -57,8 +54,18 @@ class QuestionService(ABC):
         asked_questions: List[str],
         current_count: int,
         max_count: int,
-        prior_summary: Optional[str] = None,
-        prior_qas: Optional[List[str]] = None,
+    ) -> int:
+        """Return completion percent (0-100) based on information coverage."""
+        pass
+
+    @abstractmethod
+    async def assess_completion_percent(
+        self,
+        disease: str,
+        previous_answers: List[str],
+        asked_questions: List[str],
+        current_count: int,
+        max_count: int,
     ) -> int:
         """Return completion percent (0-100) based on information coverage."""
         pass
