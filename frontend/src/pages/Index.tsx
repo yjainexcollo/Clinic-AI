@@ -591,17 +591,16 @@ const Index = () => {
                           onChange={(e) => setEditingValue(e.target.value)}
                           className="medical-input flex-1"
                         />
-                        {/* Optional image upload for medication edits */}
-                        {(/medication|medicine|prescription/i.test(qa.text)) && (
-                          <input
-                            type="file"
-                            accept="image/*;capture=camera"
-                            onChange={(e) => {
-                              const f = e.target.files?.[0];
-                              (window as any).clinicaiMedicationEditFile = f || null;
-                            }}
-                            className="block w-40 text-xs text-gray-700"
-                          />
+                        {/* Manage images for this question (multi-upload, delete) */}
+                        {(/medication|medicine|prescription/i.test(qa.text)) && patientId && (visitId || localStorage.getItem(`visit_${patientId}`)) && (
+                          <div className="w-full">
+                            <MedicationImageUploader
+                              patientId={patientId}
+                              visitId={(visitId || localStorage.getItem(`visit_${patientId}`)) as string}
+                              title="Update prescription images (optional)"
+                              onChange={() => {/* optional refresh hooks */}}
+                            />
+                          </div>
                         )}
                         <button
                           onClick={async () => {
@@ -609,30 +608,7 @@ const Index = () => {
                             if (!patientId || !effectiveVisitId) return;
                             try {
                               setIsLoading(true);
-                              // If medication edit and file present, append markers after upload via answer API for OCR pipeline
-                              let newAnswer = editingValue.trim();
-                              const isMed = /medication|medicine|prescription/i.test(qa.text);
-                              const editFile = (window as any).clinicaiMedicationEditFile as File | null;
-                              if (isMed && editFile) {
-                                // Reuse answer endpoint to upload file and get OCR markers composed
-                                const form = new FormData();
-                                form.append("patient_id", patientId);
-                                form.append("visit_id", effectiveVisitId);
-                                form.append("answer", newAnswer);
-                                form.append("medication_images", editFile);
-                                const resp = await fetch(`${BACKEND_BASE_URL}/patients/consultations/answer`, {
-                                  method: "POST",
-                                  body: form,
-                                });
-                                if (resp.ok) {
-                                  try {
-                                    const j = await resp.json();
-                                    // try to extract appended markers from next round not available; keep same answer and rely on markers in backend
-                                  } catch {}
-                                  // augment answer with markers minimally so backend edit parser can pick them up
-                                  newAnswer = `${newAnswer}`; // markers already added by answer flow on server
-                                }
-                              }
+                              const newAnswer = editingValue.trim();
                               const res = await editAnswerBackend({
                                 patient_id: patientId,
                                 visit_id: effectiveVisitId,
@@ -783,6 +759,12 @@ const Index = () => {
                   </svg>
                   View Pre-Visit Summary
                 </button>
+                <button
+                  onClick={() => setShowUploadAudio(true)}
+                  className="w-full bg-indigo-600 text-white py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors font-medium"
+                >
+                  Upload Transcript
+                </button>
                 
                 <button
                   onClick={async () => {
@@ -878,14 +860,15 @@ const Index = () => {
                   
                   clearTimeout(timeoutId);
                   
-                  console.log('Response status:', resp.status);
-                  console.log('Response headers:', Object.fromEntries(resp.headers.entries()));
-                  
+                  // State machine: uploading done -> processing with backoff polling
                   if (resp.status === 202) {
-                    // queued → poll transcript endpoint until ready
                     setShowUploadAudio(false);
-                    const pollStart = Date.now();
+                    const start = Date.now();
+                    let attempt = 0;
+                    const maxMs = 300000; // 5 minutes
                     const poll = async () => {
+                      attempt += 1;
+                      const delay = Math.min(6000, 2000 + attempt * 500);
                       try {
                         const t = await fetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/transcript`);
                         if (t.ok) {
@@ -895,10 +878,11 @@ const Index = () => {
                           return;
                         }
                       } catch {}
-                      if (Date.now() - pollStart < 300000) { // up to 5 minutes
-                        setTimeout(poll, 3000);
+                      if (Date.now() - start < maxMs) {
+                        setTimeout(poll, delay);
                       } else {
-                        alert('Audio uploaded. Processing may take longer; try View Transcript in a moment.');
+                        setUploadAudioError('Processing timed out. Please re-upload your audio.');
+                        setShowUploadAudio(true);
                       }
                     };
                     poll();

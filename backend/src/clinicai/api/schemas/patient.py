@@ -145,8 +145,6 @@ class QuestionAnswerSchema(BaseModel):
     answer: str = Field(..., description="Answer text")
     timestamp: datetime = Field(..., description="Timestamp")
     question_number: int = Field(..., description="Question number in sequence")
-    attachment_image_paths: Optional[List[str]] = Field(None, description="Paths to attached images")
-    ocr_texts: Optional[List[str]] = Field(None, description="OCR extracted text from images")
 
     class Config:
         # Exclude revision_id and other MongoDB-specific fields
@@ -214,3 +212,6 @@ class PreVisitSummaryResponse(BaseModel):
     visit_id: str = Field(..., description="Visit ID")
     summary: str = Field(..., description="Clinical summary in markdown/plain text")
     generated_at: str = Field(..., description="Summary generation timestamp")
+    medication_images: Optional[List[Dict[str, Any]]] = Field(
+        None, description="Uploaded medication images metadata for the visit, if any"
+    )
