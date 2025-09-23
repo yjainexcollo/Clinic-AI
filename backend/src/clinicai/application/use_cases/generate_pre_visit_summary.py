@@ -52,11 +52,8 @@ class GeneratePreVisitSummaryUseCase:
             patient_data, intake_answers
         )
 
-        # Store summary in visit for EHR
-        visit.store_pre_visit_summary(
-            summary_result["summary"], 
-            {}
-        )
+        # Store minimal summary in visit for EHR
+        visit.store_pre_visit_summary(summary_result["summary"])
 
         # Save the updated visit to repository
         await self._patient_repository.save(patient)

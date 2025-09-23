@@ -1,8 +1,27 @@
 const API_ENDPOINT =
+  (import.meta as any).env?.VITE_N8N_WEBHOOK_URL ||
   "https://n8n-excollo.azurewebsites.net/webhook";
 
-// Backend API base URL (FastAPI)
-const BACKEND_BASE_URL = "http://localhost:8000";
+// Backend API base URL (FastAPI) with normalization
+function normalizeBaseUrl(input?: string): string {
+  let url = (input || "").trim();
+  if (!url) return "http://localhost:8000";
+  // Add protocol if missing
+  if (!/^https?:\/\//i.test(url)) {
+    url = `http://${url}`;
+  }
+  // Map 0.0.0.0 to localhost for browser requests
+  url = url.replace(/\b0\.0\.0\.0\b/g, "localhost");
+  // Drop trailing slashes
+  url = url.replace(/\/+$/g, "");
+  return url;
+}
+
+const BACKEND_BASE_URL: string = normalizeBaseUrl(
+  (import.meta as any).env?.VITE_BACKEND_BASE_URL as string
+) || "http://localhost:8000";
+
+export { BACKEND_BASE_URL };
 
 export interface PatientData {
   fullName: string;
@@ -291,4 +310,44 @@ export async function getPreVisitSummary(
     console.error("Error getting pre-visit summary:", error);
     throw new Error("Failed to get pre-visit summary. Please try again.");
   }
+}
+
+// ------------------------
+// SOAP note API
+// ------------------------
+export interface SoapNoteResponse {
+  subjective: string;
+  objective: string;
+  assessment: string;
+  plan: string;
+  highlights?: string[];
+  red_flags?: string[];
+  generated_at?: string;
+  model_info?: Record<string, any> | null;
+  confidence_score?: number | null;
+}
+
+export async function generateSoapNote(patientId: string, visitId: string): Promise<{ message: string } | any> {
+  const res = await fetch(`${BACKEND_BASE_URL}/notes/soap/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ patient_id: patientId, visit_id: visitId }),
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`Backend error ${res.status}: ${t}`);
+  }
+  return res.json();
+}
+
+export async function getSoapNote(patientId: string, visitId: string): Promise<SoapNoteResponse> {
+  const res = await fetch(
+    `${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/soap`,
+    { headers: { Accept: "application/json" } }
+  );
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`Backend error ${res.status}: ${t}`);
+  }
+  return res.json();
 }

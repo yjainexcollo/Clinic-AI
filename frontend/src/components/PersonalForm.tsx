@@ -48,23 +48,23 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
     switch (country) {
       case "US":
       case "CA":
-        return { dial: "+1", maxDigits: 10, placeholder: "+1 415 555 2671" };
+        return { dial: "+1", maxDigits: 10, placeholder: "415 555 2671" };
       case "GB":
-        return { dial: "+44", maxDigits: 10, placeholder: "+44 7123 456 789" };
+        return { dial: "+44", maxDigits: 10, placeholder: "7123 456 789" };
       case "IN":
-        return { dial: "+91", maxDigits: 10, placeholder: "+91 98765 43210" };
+        return { dial: "+91", maxDigits: 10, placeholder: "98765 43210" };
       case "AU":
-        return { dial: "+61", maxDigits: 9, placeholder: "+61 412 345 678" };
+        return { dial: "+61", maxDigits: 9, placeholder: "412 345 678" };
       case "DE":
-        return { dial: "+49", maxDigits: 11, placeholder: "+49 1512 3456789" };
+        return { dial: "+49", maxDigits: 11, placeholder: "1512 3456789" };
       case "FR":
-        return { dial: "+33", maxDigits: 9, placeholder: "+33 6 12 34 56 78" };
+        return { dial: "+33", maxDigits: 9, placeholder: "6 12 34 56 78" };
       case "SG":
-        return { dial: "+65", maxDigits: 8, placeholder: "+65 9123 4567" };
+        return { dial: "+65", maxDigits: 8, placeholder: "9123 4567" };
       case "AE":
-        return { dial: "+971", maxDigits: 9, placeholder: "+971 50 123 4567" };
+        return { dial: "+971", maxDigits: 9, placeholder: "50 123 4567" };
       default:
-        return { dial: "+1", maxDigits: 10, placeholder: "+1 415 555 2671" };
+        return { dial: "+1", maxDigits: 10, placeholder: "415 555 2671" };
     }
   };
 

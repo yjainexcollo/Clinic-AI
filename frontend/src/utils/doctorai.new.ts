@@ -1,7 +1,9 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: "https://n8n-excollo.azurewebsites.net/webhook/intake-dynamic-doctor",
+  baseURL:
+    (import.meta as any).env?.VITE_N8N_WEBHOOK_URL ||
+    "https://n8n-excollo.azurewebsites.net/webhook/intake-dynamic-doctor",
   timeout: 15000,
   headers: {
     "Content-Type": "application/json",
