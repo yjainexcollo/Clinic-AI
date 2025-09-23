@@ -189,6 +189,8 @@ class Visit:
     # Step 3: Audio Transcription & SOAP Generation
     transcription_session: Optional[TranscriptionSession] = None
     soap_note: Optional[SoapNote] = None
+    # Objective Vitals (optional)
+    vitals: Optional[Dict[str, Any]] = None
 
     def __post_init__(self) -> None:
         """Initialize intake session."""
@@ -351,6 +353,15 @@ class Visit:
         # Move to prescription analysis status
         self.status = "prescription_analysis"
         self.updated_at = datetime.utcnow()
+
+    def store_vitals(self, vitals: Dict[str, Any]) -> None:
+        """Store objective vitals for the visit."""
+        self.vitals = vitals or {}
+        self.updated_at = datetime.utcnow()
+
+    def get_vitals(self) -> Optional[Dict[str, Any]]:
+        """Get stored objective vitals, if any."""
+        return self.vitals
 
     def get_transcript(self) -> Optional[str]:
         """Get the transcript if available."""

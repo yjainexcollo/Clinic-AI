@@ -2,21 +2,24 @@ const API_ENDPOINT =
   (import.meta as any).env?.VITE_N8N_WEBHOOK_URL ||
   "https://n8n-excollo.azurewebsites.net/webhook";
 
-// Backend API base URL (FastAPI)
-let BACKEND_BASE_URL: string =
-  ((import.meta as any).env?.VITE_BACKEND_BASE_URL as string) ||
-  "http://localhost:8000";
+// Backend API base URL (FastAPI) with normalization
+function normalizeBaseUrl(input?: string): string {
+  let url = (input || "").trim();
+  if (!url) return "http://localhost:8000";
+  // Add protocol if missing
+  if (!/^https?:\/\//i.test(url)) {
+    url = `http://${url}`;
+  }
+  // Map 0.0.0.0 to localhost for browser requests
+  url = url.replace(/\b0\.0\.0\.0\b/g, "localhost");
+  // Drop trailing slashes
+  url = url.replace(/\/+$/g, "");
+  return url;
+}
 
-// Normalize common dev misconfigurations for browser access
-try {
-  const raw = BACKEND_BASE_URL?.trim();
-  if (raw && /(^|\/)0\.0\.0\.0(?=[:/]|$)/.test(raw)) {
-    BACKEND_BASE_URL = raw.replace(/0\.0\.0\.0/g, "localhost");
-  }
-  if (BACKEND_BASE_URL && !/^https?:\/\//i.test(BACKEND_BASE_URL)) {
-    BACKEND_BASE_URL = `http://${BACKEND_BASE_URL}`;
-  }
-} catch {}
+const BACKEND_BASE_URL: string = normalizeBaseUrl(
+  (import.meta as any).env?.VITE_BACKEND_BASE_URL as string
+) || "http://localhost:8000";
 
 export { BACKEND_BASE_URL };
 
@@ -120,27 +123,6 @@ export async function answerIntakeBackend(
       body: JSON.stringify(payload),
     });
   }
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Backend error ${resp.status}: ${text}`);
-  }
-  return resp.json();
-}
-
-// Upload multiple medication images via webhook route
-export async function uploadMedicationImages(
-  patientId: string,
-  visitId: string,
-  files: File[]
-): Promise<{ uploaded_images: Array<{ id: string; filename: string; content_type?: string }>; status: string }>{
-  const form = new FormData();
-  files.forEach((f) => form.append("images", f));
-  form.append("patient_id", patientId);
-  form.append("visit_id", visitId);
-  const resp = await fetch(`${BACKEND_BASE_URL}/patients/webhook/images`, {
-    method: "POST",
-    body: form,
-  });
   if (!resp.ok) {
     const text = await resp.text();
     throw new Error(`Backend error ${resp.status}: ${text}`);
@@ -311,7 +293,7 @@ export async function getPatient(
 export async function getPreVisitSummary(
   patientId: string,
   visitId: string
-): Promise<{ patient_id: string; visit_id: string; summary: string; generated_at: string; medication_images?: Array<{ id: string; filename: string; content_type?: string }> }> {
+): Promise<{ patient_id: string; visit_id: string; summary: string; generated_at: string }> {
   try {
     const response = await fetch(`${BACKEND_BASE_URL}/patients/${patientId}/visits/${visitId}/summary`, {
       method: "GET",
@@ -330,4 +312,131 @@ export async function getPreVisitSummary(
     console.error("Error getting pre-visit summary:", error);
     throw new Error("Failed to get pre-visit summary. Please try again.");
   }
+}
+
+// ------------------------
+// Medication Images API
+// ------------------------
+export async function uploadMedicationImages(
+  patientId: string,
+  visitId: string,
+  files: File[]
+): Promise<{ uploaded_images: Array<{ id: string; filename: string; content_type?: string }>; status: string }>{
+  const form = new FormData();
+  files.forEach((f) => form.append("images", f));
+  form.append("patient_id", patientId);
+  form.append("visit_id", visitId);
+  const resp = await fetch(`${BACKEND_BASE_URL}/patients/webhook/images`, {
+    method: "POST",
+    body: form,
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Backend error ${resp.status}: ${text}`);
+  }
+  return resp.json();
+}
+
+// ------------------------
+// SOAP note API
+// ------------------------
+export interface SoapNoteResponse {
+  subjective: string;
+  objective: string;
+  assessment: string;
+  plan: string;
+  highlights?: string[];
+  red_flags?: string[];
+  generated_at?: string;
+  model_info?: Record<string, any> | null;
+  confidence_score?: number | null;
+}
+
+export async function generateSoapNote(patientId: string, visitId: string): Promise<{ message: string } | any> {
+  const res = await fetch(`${BACKEND_BASE_URL}/notes/soap/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ patient_id: patientId, visit_id: visitId }),
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`Backend error ${res.status}: ${t}`);
+  }
+  return res.json();
+}
+
+export async function getSoapNote(patientId: string, visitId: string): Promise<SoapNoteResponse> {
+  const res = await fetch(
+    `${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/soap`,
+    { headers: { Accept: "application/json" } }
+  );
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`Backend error ${res.status}: ${t}`);
+  }
+  return res.json();
+}
+
+// ------------------------
+// Vitals API
+// ------------------------
+export interface VitalsData {
+  systolic: string;
+  diastolic: string;
+  bpArm: string;
+  bpPosition: string;
+  heartRate: string;
+  rhythm: string;
+  respiratoryRate: string;
+  temperature: string;
+  tempUnit: string;
+  tempMethod: string;
+  oxygenSaturation: string;
+  height: string;
+  heightUnit: string;
+  weight: string;
+  weightUnit: string;
+  painScore: string;
+  notes: string;
+}
+
+export interface VitalsRequest {
+  patient_id: string;
+  visit_id: string;
+  vitals: VitalsData;
+}
+
+export interface VitalsResponse {
+  success: boolean;
+  message: string;
+  vitals_id: string;
+}
+
+export async function storeVitals(patientId: string, visitId: string, vitals: VitalsData): Promise<VitalsResponse> {
+  const res = await fetch(`${BACKEND_BASE_URL}/notes/vitals`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      patient_id: patientId,
+      visit_id: visitId,
+      vitals: vitals,
+    }),
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`Backend error ${res.status}: ${t}`);
+  }
+  return res.json();
+}
+
+export async function getVitals(patientId: string, visitId: string): Promise<VitalsData> {
+  const res = await fetch(
+    `${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/vitals`,
+    { headers: { Accept: "application/json" } }
+  );
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`Backend error ${res.status}: ${t}`);
+  }
+  return res.json();
 }

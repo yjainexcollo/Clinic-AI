@@ -45,6 +45,43 @@ const Index = () => {
   const [uploadAudioError, setUploadAudioError] = useState<string>("");
   const [showTranscript, setShowTranscript] = useState<boolean>(false);
   const [transcriptText, setTranscriptText] = useState<string>("");
+  const [showTranscriptProcessing, setShowTranscriptProcessing] = useState<boolean>(false);
+
+  // Recording state
+  const [recording, setRecording] = useState<boolean>(false);
+  const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [recordSeconds, setRecordSeconds] = useState<number>(0);
+  const recordTimerRef = useRef<number | null>(null);
+
+  const startRecording = async () => {
+    try {
+      setRecordedBlob(null);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      const chunks: BlobPart[] = [];
+      mr.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+      mr.onstop = () => {
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        setRecordedBlob(blob);
+        stream.getTracks().forEach(t => t.stop());
+      };
+      mr.start();
+      setMediaRecorder(mr);
+      setRecording(true);
+      setRecordSeconds(0);
+      if (recordTimerRef.current) window.clearInterval(recordTimerRef.current);
+      recordTimerRef.current = window.setInterval(() => setRecordSeconds(s => s + 1), 1000);
+    } catch (e) {
+      alert('Microphone permission denied or unavailable.');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+    setRecording(false);
+    if (recordTimerRef.current) { window.clearInterval(recordTimerRef.current); recordTimerRef.current = null; }
+  };
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -53,6 +90,7 @@ const Index = () => {
     const params = new URLSearchParams(location.search);
     const q = params.get("q");
     const v = params.get("v");
+    const done = params.get("done");
     if (q && q.trim()) {
       setCurrentQuestion(q);
       setShowStartScreen(false);
@@ -61,6 +99,10 @@ const Index = () => {
     if (patientId && v) {
       localStorage.setItem(`visit_${patientId}`, v);
       setVisitId(v);
+    }
+    if (done === "1" || done === "true") {
+      setIsComplete(true);
+      setShowStartScreen(false);
     }
     if (patientId && !v) {
       const storedV = localStorage.getItem(`visit_${patientId}`);
@@ -769,10 +811,45 @@ const Index = () => {
                   View Pre-Visit Summary
                 </button>
                 <button
-                  onClick={() => setShowUploadAudio(true)}
+                  onClick={() => {
+                    setShowTranscript(false);
+                    setTranscriptText("");
+                    setShowUploadAudio(true);
+                  }}
                   className="w-full bg-indigo-600 text-white py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors font-medium"
                 >
                   Upload Transcript
+                </button>
+                
+                <button
+                  onClick={async () => {
+                    try {
+                      if (!patientId || !visitId) return;
+                      // Attempt to generate SOAP (idempotent if already exists)
+                      await fetch(`${BACKEND_BASE_URL}/notes/soap/generate`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        body: JSON.stringify({ patient_id: patientId, visit_id: visitId })
+                      });
+                      // Navigate to SOAP viewer route if available
+                      window.location.href = `/soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`;
+                    } catch (e) {
+                      alert('Failed to generate SOAP note. Please try again after transcript is ready.');
+                    }
+                  }}
+                  className="w-full bg-indigo-600 text-white py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors font-medium"
+                >
+                  View SOAP Summary
+                </button>
+                
+                <button
+                  onClick={() => {
+                    if (!patientId || !visitId) return;
+                    window.location.href = `/vitals/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`;
+                  }}
+                  className="w-full bg-green-600 text-white py-3 px-4 rounded-md hover:bg-green-700 transition-colors font-medium"
+                >
+                  Fill Vitals Form
                 </button>
                 
                 <button
@@ -835,24 +912,31 @@ const Index = () => {
                 e.preventDefault();
                 setUploadAudioError("");
                 try {
+                  // Reset any previous transcript view while re-uploading
+                  setShowTranscript(false);
+                  setTranscriptText("");
                   setIsTranscribingAudio(true);
                   const input = document.getElementById('upload-audio-input') as HTMLInputElement | null;
-                  const file = input?.files && input.files[0] ? input.files[0] : null;
-                  if (!file) {
-                    setUploadAudioError('Please choose an audio file.');
+                  const selected = input?.files && input.files[0] ? input.files[0] : null;
+                  const useBlob = recordedBlob ? new File([recordedBlob], 'recorded.webm', { type: 'audio/webm' }) : null;
+                  if (!useBlob && !selected) {
+                    setUploadAudioError('Please record audio or choose a file.');
                     setIsTranscribingAudio(false);
                     return;
                   }
                   const form = new FormData();
                   form.append('patient_id', patientId);
                   form.append('visit_id', visitId);
-                  form.append('audio_file', file);
-                  console.log('Uploading audio file:', file.name, file.type, file.size);
-                  console.log('Form data:', {
-                    patient_id: patientId,
-                    visit_id: visitId,
-                    audio_file: file.name
-                  });
+                  const chosen = (useBlob || selected) as File;
+                  form.append('audio_file', chosen);
+                  try {
+                    console.log('Uploading audio file:', chosen?.name, chosen?.type, chosen?.size);
+                    console.log('Form data:', {
+                      patient_id: patientId,
+                      visit_id: visitId,
+                      audio_file: chosen?.name
+                    });
+                  } catch {}
                   
                   const controller = new AbortController();
                   const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout
@@ -869,27 +953,41 @@ const Index = () => {
                   
                   clearTimeout(timeoutId);
                   
-                  // State machine: uploading done -> processing with backoff polling
+                  // State machine: uploading done -> processing with backoff polling honoring Retry-After
                   if (resp.status === 202) {
                     setShowUploadAudio(false);
+                    setShowTranscriptProcessing(true);
                     const start = Date.now();
                     let attempt = 0;
                     const maxMs = 300000; // 5 minutes
                     const poll = async () => {
                       attempt += 1;
-                      const delay = Math.min(6000, 2000 + attempt * 500);
                       try {
                         const t = await fetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/transcript`);
                         if (t.ok) {
                           const data = await t.json();
                           setTranscriptText(data.transcript || '');
+                          setShowTranscriptProcessing(false);
                           setShowTranscript(true);
                           return;
                         }
+                        // If still processing, backend returns 202 with optional Retry-After
+                        if (t.status === 202) {
+                          const ra = t.headers.get('Retry-After');
+                          const retryAfterMs = ra ? Math.max(0, Number(ra) * 1000) : 0;
+                          const backoffMs = Math.min(15000, Math.round(1500 * Math.pow(1.6, attempt)));
+                          const delay = retryAfterMs || backoffMs;
+                          if (Date.now() - start < maxMs) {
+                            setTimeout(poll, delay);
+                            return;
+                          }
+                        }
                       } catch {}
                       if (Date.now() - start < maxMs) {
+                        const delay = Math.min(15000, Math.round(1500 * Math.pow(1.6, attempt)));
                         setTimeout(poll, delay);
                       } else {
+                        setShowTranscriptProcessing(false);
                         setUploadAudioError('Processing timed out. Please re-upload your audio.');
                         setShowUploadAudio(true);
                       }
@@ -901,7 +999,7 @@ const Index = () => {
                     throw new Error(`Upload failed ${resp.status}: ${txt}`);
                   } else {
                     setShowUploadAudio(false);
-                    alert('Audio uploaded. Transcription started.');
+                    setShowTranscriptProcessing(true);
                   }
                 } catch (err: any) {
                   console.error('Audio upload error:', err);
@@ -918,12 +1016,31 @@ const Index = () => {
               }}
               className="space-y-4"
             >
-              <input
-                id="upload-audio-input"
-                type="file"
-                accept="audio/*,video/mpeg,.mp3,.m4a,.aac,.wav,.ogg,.flac,.amr,.mpeg"
-                className="block w-full text-sm text-gray-700"
-              />
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-800">Choose audio file</label>
+                <input
+                  id="upload-audio-input"
+                  type="file"
+                  accept="audio/*,video/mpeg,.mp3,.m4a,.aac,.wav,.ogg,.flac,.amr,.mpeg,.webm"
+                  className="block w-full text-sm text-gray-700"
+                  onChange={() => setRecordedBlob(null)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-800">Or record live</label>
+                <div className="flex items-center gap-2">
+                  {!recording ? (
+                    <button type="button" onClick={startRecording} className="px-3 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700">Start Recording</button>
+                  ) : (
+                    <button type="button" onClick={stopRecording} className="px-3 py-2 rounded bg-red-600 text-white hover:bg-red-700">Stop ({recordSeconds}s)</button>
+                  )}
+                  {recordedBlob && (
+                    <audio controls src={URL.createObjectURL(recordedBlob)} className="h-9" />
+                  )}
+                </div>
+                <p className="text-xs text-gray-500">Recorded audio (if present) will be uploaded; otherwise the selected file.</p>
+              </div>
               {uploadAudioError && (
                 <div className="text-sm text-red-600">{uploadAudioError}</div>
               )}
@@ -949,6 +1066,17 @@ const Index = () => {
         </div>
       )}
 
+      {/* Transcript Processing Modal */}
+      {showTranscriptProcessing && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 text-center">
+            <div className="w-10 h-10 border-2 border-medical-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Processing transcript…</h3>
+            <p className="text-sm text-gray-600">This may take up to a few minutes. The transcript will open automatically when ready.</p>
+          </div>
+        </div>
+      )}
+
       {/* Transcript Modal */}
       {showTranscript && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -957,10 +1085,26 @@ const Index = () => {
               <h3 className="text-xl font-semibold text-gray-900">Transcript</h3>
               <button
                 type="button"
-                onClick={() => setShowTranscript(false)}
-                className="px-4 py-2 rounded bg-gray-200 text-gray-800 hover:bg-gray-300 transition-colors"
+                onClick={() => {
+                  setShowTranscript(false);
+                  setShowUploadAudio(true);
+                  setRecordedBlob(null);
+                  setUploadAudioError("");
+                }}
+                className="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
               >
-                Close
+                Re-upload / Transcribe again
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowTranscript(false)}
+                aria-label="Close"
+                className="ml-2 h-8 w-8 flex items-center justify-center rounded-full bg-gray-200 text-gray-700 hover:bg-gray-300"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
               </button>
             </div>
             <div className="max-h-[70vh] overflow-y-auto">
