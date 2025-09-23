@@ -351,3 +351,67 @@ export async function getSoapNote(patientId: string, visitId: string): Promise<S
   }
   return res.json();
 }
+
+// ------------------------
+// Vitals API
+// ------------------------
+export interface VitalsData {
+  systolic: string;
+  diastolic: string;
+  bpArm: string;
+  bpPosition: string;
+  heartRate: string;
+  rhythm: string;
+  respiratoryRate: string;
+  temperature: string;
+  tempUnit: string;
+  tempMethod: string;
+  oxygenSaturation: string;
+  height: string;
+  heightUnit: string;
+  weight: string;
+  weightUnit: string;
+  painScore: string;
+  notes: string;
+}
+
+export interface VitalsRequest {
+  patient_id: string;
+  visit_id: string;
+  vitals: VitalsData;
+}
+
+export interface VitalsResponse {
+  success: boolean;
+  message: string;
+  vitals_id: string;
+}
+
+export async function storeVitals(patientId: string, visitId: string, vitals: VitalsData): Promise<VitalsResponse> {
+  const res = await fetch(`${BACKEND_BASE_URL}/notes/vitals`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({
+      patient_id: patientId,
+      visit_id: visitId,
+      vitals: vitals,
+    }),
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`Backend error ${res.status}: ${t}`);
+  }
+  return res.json();
+}
+
+export async function getVitals(patientId: string, visitId: string): Promise<VitalsData> {
+  const res = await fetch(
+    `${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/vitals`,
+    { headers: { Accept: "application/json" } }
+  );
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`Backend error ${res.status}: ${t}`);
+  }
+  return res.json();
+}
