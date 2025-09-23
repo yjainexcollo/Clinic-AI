@@ -49,8 +49,13 @@ class IntakeSession:
         if self.symptom:
             self.symptom = self.symptom.strip()
 
-<<<<<<< HEAD
-    def add_question_answer(self, question: str, answer: str) -> None:
+    def add_question_answer(
+        self,
+        question: str,
+        answer: str,
+        attachment_image_paths: Optional[List[str]] = None,
+        ocr_texts: Optional[List[str]] = None,
+    ) -> None:
         """Add a question and answer to the intake."""
         # Check if intake is already completed
         if self.status == "completed":
@@ -59,16 +64,6 @@ class IntakeSession:
             )
 
         # Check question limit
-=======
-    def add_question_answer(
-        self,
-        question: str,
-        answer: str,
-        attachment_image_paths: Optional[List[str]] = None,
-        ocr_texts: Optional[List[str]] = None,
-    ) -> None:
-        # Check limit
->>>>>>> codehimanshu
         if self.current_question_count >= self.max_questions:
             raise QuestionLimitExceededError(
                 self.current_question_count, self.max_questions
