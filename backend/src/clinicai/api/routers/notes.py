@@ -334,7 +334,6 @@ async def get_transcript(
     """Get transcript for a visit."""
     try:
         from ...domain.value_objects.patient_id import PatientId
-        from ...core.utils.crypto import decode_patient_id
         import urllib.parse
         
         # Find patient (decode opaque id from client)

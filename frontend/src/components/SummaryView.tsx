@@ -4,7 +4,7 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
 import { FileText, Calendar, User, Clock, X } from 'lucide-react';
-import { getPreVisitSummary } from '../services/patientService';
+import { getPreVisitSummary, BACKEND_BASE_URL } from '../services/patientService';
 
 interface SummaryViewProps {
   patientId: string;
@@ -17,6 +17,7 @@ interface SummaryData {
   visit_id: string;
   summary: string;
   generated_at: string;
+  medication_images?: Array<{ id: string; filename: string; content_type?: string }>;
 }
 
 export const SummaryView: React.FC<SummaryViewProps> = ({
@@ -203,6 +204,23 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
               <div className="text-gray-700 whitespace-pre-wrap leading-relaxed">
                 {renderSummary(summaryData.summary)}
               </div>
+              {Array.isArray(summaryData.medication_images) && summaryData.medication_images.length > 0 && (
+                <div className="mt-6">
+                  <h4 className="text-sm font-semibold text-gray-800 mb-2">Uploaded prescription images</h4>
+                  <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
+                    {summaryData.medication_images.map((img) => (
+                      <div key={img.id} className="border rounded p-1 bg-gray-50">
+                        <img
+                          src={`${BACKEND_BASE_URL}/patients/images/${img.id}/content`}
+                          alt={img.filename}
+                          className="w-full h-24 object-cover rounded"
+                        />
+                        <div className="text-[11px] text-gray-600 mt-1 truncate" title={img.filename}>{img.filename}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

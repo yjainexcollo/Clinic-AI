@@ -29,8 +29,6 @@ class QuestionAnswer:
     answer: str
     timestamp: datetime
     question_number: int
-    attachment_image_paths: Optional[List[str]] = None
-    ocr_texts: Optional[List[str]] = None
 
 
 @dataclass
@@ -77,8 +75,6 @@ class IntakeSession:
             answer=answer,
             timestamp=datetime.utcnow(),
             question_number=self.current_question_count + 1,
-            attachment_image_paths=attachment_image_paths,
-            ocr_texts=ocr_texts,
         )
         self.questions_asked.append(qa)
         self.current_question_count += 1
@@ -196,14 +192,10 @@ class Visit:
         self,
         question: str,
         answer: str,
-        attachment_image_paths: Optional[List[str]] = None,
-        ocr_texts: Optional[List[str]] = None,
     ) -> None:
         self.intake_session.add_question_answer(
             question,
             answer,
-            attachment_image_paths=attachment_image_paths,
-            ocr_texts=ocr_texts,
         )
         self.updated_at = datetime.utcnow()
 
@@ -256,7 +248,6 @@ class Visit:
                     "answer": qa.answer,
                     "timestamp": qa.timestamp.isoformat(),
                     "question_number": qa.question_number,
-                    "attachment_image_paths": qa.attachment_image_paths,
                 }
                 for qa in self.intake_session.questions_asked
             ],
