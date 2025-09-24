@@ -197,6 +197,15 @@ class PreVisitSummaryResponse:
     generated_at: str
 
 
+# Step-04: Post-Visit Summary DTOs
+@dataclass
+class PostVisitSummaryRequest:
+    """Request DTO for generating post-visit summary."""
+
+    patient_id: str
+    visit_id: str
+
+
 # Step-03: Audio Transcription & SOAP Generation DTOs
 @dataclass
 class AudioTranscriptionRequest:

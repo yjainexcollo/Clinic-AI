@@ -11,11 +11,14 @@ from typing import Union, Optional, List
 from clinicai.application.dto.patient_dto import (
     AnswerIntakeRequest,
     PreVisitSummaryRequest,
+    PostVisitSummaryRequest,
     RegisterPatientRequest,
 )
 from clinicai.application.dto.patient_dto import EditAnswerRequest
 from clinicai.application.use_cases.answer_intake import AnswerIntakeUseCase
 from clinicai.application.use_cases.generate_pre_visit_summary import GeneratePreVisitSummaryUseCase
+from clinicai.application.use_cases.generate_post_visit_summary import GeneratePostVisitSummaryUseCase
+from clinicai.core.utils.crypto import decode_patient_id
 from clinicai.application.use_cases.register_patient import RegisterPatientUseCase
 from clinicai.domain.errors import (
     DuplicatePatientError,
@@ -27,13 +30,14 @@ from clinicai.domain.errors import (
     VisitNotFoundError,
 )
 
-from ..deps import PatientRepositoryDep, QuestionServiceDep
+from ..deps import PatientRepositoryDep, QuestionServiceDep, SoapServiceDep
 from ...core.utils.crypto import encode_patient_id, decode_patient_id
 from ..schemas.patient import AnswerIntakeResponse, ErrorResponse
 from ..schemas.patient import AnswerIntakeRequest as AnswerIntakeRequestSchema
 from ..schemas.patient import (
     PatientSummarySchema,
     PreVisitSummaryResponse,
+    PostVisitSummaryResponse,
     RegisterPatientResponse,
     EditAnswerRequest as EditAnswerRequestSchema,
     EditAnswerResponse as EditAnswerResponseSchema,
@@ -796,5 +800,100 @@ async def get_pre_visit_summary(
             },
         )
 
+
+@router.post(
+    "/summary/postvisit",
+    response_model=PostVisitSummaryResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {"model": ErrorResponse, "description": "Validation error"},
+        404: {"model": ErrorResponse, "description": "Patient or visit not found"},
+        422: {"model": ErrorResponse, "description": "Visit not completed or SOAP note not available"},
+        500: {"model": ErrorResponse, "description": "Internal server error"},
+    },
+)
+async def generate_post_visit_summary(
+    request: PostVisitSummaryRequest,
+    patient_repo: PatientRepositoryDep,
+    soap_service: SoapServiceDep,
+):
+    """
+    Generate post-visit summary for patient sharing.
+    
+    This endpoint:
+    1. Validates patient and visit exist
+    2. Checks if visit is completed with SOAP note
+    3. Generates patient-friendly post-visit summary
+    4. Returns structured summary for WhatsApp sharing
+    """
+    try:
+        # Decode the opaque patient_id to get the internal patient_id
+        try:
+            internal_patient_id = decode_patient_id(request.patient_id)
+            logger.info(f"Decoded patient_id: {internal_patient_id}")
+        except Exception as decode_error:
+            logger.error(f"Failed to decode patient_id: {request.patient_id}, error: {decode_error}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "INVALID_PATIENT_ID",
+                    "message": "Invalid patient ID format",
+                    "details": {"patient_id": request.patient_id}
+                }
+            )
+        
+        logger.info(f"Generating post-visit summary for internal_patient_id: {internal_patient_id}, visit_id: {request.visit_id}")
+        
+        # Create request with decoded patient_id
+        decoded_request = PostVisitSummaryRequest(
+            patient_id=internal_patient_id,
+            visit_id=request.visit_id
+        )
+        
+        # Create use case instance
+        use_case = GeneratePostVisitSummaryUseCase(patient_repo, soap_service)
+        
+        # Execute use case
+        result = await use_case.execute(decoded_request)
+        
+        return result
+        
+    except PatientNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": "PATIENT_NOT_FOUND",
+                "message": f"Patient {request.patient_id} not found",
+                "details": {"patient_id": request.patient_id},
+            },
+        )
+    except VisitNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": "VISIT_NOT_FOUND",
+                "message": f"Visit {request.visit_id} not found",
+                "details": {"visit_id": request.visit_id},
+            },
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error": "INVALID_VISIT_STATE",
+                "message": str(e),
+                "details": {"patient_id": request.patient_id, "visit_id": request.visit_id},
+            },
+        )
+    except Exception as e:
+        logger.error("Unhandled error in generate_post_visit_summary", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "INTERNAL_ERROR",
+                "message": "An unexpected error occurred",
+                "details": {"exception": str(e) or repr(e), "type": e.__class__.__name__},
+            },
+        )
 
  

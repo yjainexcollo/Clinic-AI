@@ -304,3 +304,165 @@ Generate the SOAP note now:
             
         except Exception:
             return False
+
+    async def generate_post_visit_summary(
+        self,
+        patient_data: Dict[str, Any],
+        soap_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Generate post-visit summary for patient sharing."""
+        
+        # Create the prompt for post-visit summary
+        prompt = f"""
+You are generating a post-visit summary for a patient to share via WhatsApp. This should be clear, comprehensive, and patient-friendly.
+
+PATIENT INFORMATION:
+- Name: {patient_data.get('name', 'Patient')}
+- Age: {patient_data.get('age', 'N/A')}
+- Visit Date: {patient_data.get('visit_date', 'N/A')}
+- Chief Complaint: {patient_data.get('symptom', 'N/A')}
+
+SOAP NOTE DATA:
+- Subjective: {soap_data.get('subjective', '')}
+- Objective: {soap_data.get('objective', '')}
+- Assessment: {soap_data.get('assessment', '')}
+- Plan: {soap_data.get('plan', '')}
+- Highlights: {soap_data.get('highlights', [])}
+- Red Flags: {soap_data.get('red_flags', [])}
+
+INSTRUCTIONS:
+Generate a comprehensive post-visit summary following this exact structure in JSON format:
+
+{{
+    "key_findings": [
+        "Key finding 1 from consultation",
+        "Key finding 2 from consultation",
+        "Key finding 3 from consultation"
+    ],
+    "diagnosis": "Diagnosis in simple, patient-friendly language",
+    "medications": [
+        {{
+            "name": "Medication name (generic preferred)",
+            "dosage": "Dosage amount",
+            "frequency": "How often to take",
+            "duration": "How long to take",
+            "purpose": "What it's for"
+        }}
+    ],
+    "other_recommendations": [
+        "Lifestyle recommendation 1",
+        "Dietary advice 2",
+        "Physical therapy or exercise recommendations"
+    ],
+    "tests_ordered": [
+        {{
+            "test_name": "Test name",
+            "purpose": "Why this test is needed",
+            "instructions": "When and where to get it done"
+        }}
+    ],
+    "next_appointment": "Next appointment details if scheduled",
+    "red_flag_symptoms": [
+        "Warning sign 1 - when to return immediately",
+        "Warning sign 2 - when to go to ER",
+        "Warning sign 3 - symptoms to watch for"
+    ],
+    "patient_instructions": [
+        "Clear instruction 1 (do's)",
+        "Clear instruction 2 (don'ts)",
+        "Clear instruction 3 (home care)"
+    ],
+    "reassurance_note": "Encouraging and reassuring message for the patient"
+}}
+
+Make sure all content is:
+- Written in simple, clear language
+- Patient-friendly and easy to understand
+- Comprehensive but concise
+- Actionable with specific instructions
+- Reassuring and supportive
+
+Generate the post-visit summary now:
+"""
+
+        try:
+            # Run OpenAI completion in thread pool
+            result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                self._generate_post_visit_summary_sync,
+                prompt
+            )
+            # Normalize and return the result
+            return self._normalize_post_visit_summary(result)
+            
+        except Exception as e:
+            raise ValueError(f"Post-visit summary generation failed: {str(e)}")
+
+    def _generate_post_visit_summary_sync(self, prompt: str) -> Dict[str, Any]:
+        """Synchronous post-visit summary generation method."""
+        response = self._client.chat.completions.create(
+            model=self._settings.soap.model,
+            messages=[
+                {
+                    "role": "system", 
+                    "content": "You are a medical assistant generating patient-friendly post-visit summaries. Always respond with valid JSON only, no extra text."
+                },
+                {"role": "user", "content": prompt}
+            ],
+            temperature=self._settings.soap.temperature,
+            max_tokens=self._settings.soap.max_tokens
+        )
+        
+        # Parse JSON response
+        try:
+            summary_data = json.loads(response.choices[0].message.content)
+            return summary_data
+        except Exception:
+            # If the model included code fences or extra text, fall back to extraction below
+            try:
+                content = response.choices[0].message.content
+                if "```json" in content:
+                    json_start = content.find("```json") + 7
+                    json_end = content.find("```", json_start)
+                    json_str = content[json_start:json_end].strip()
+                    return json.loads(json_str)
+            except Exception:
+                pass
+            # As a final fallback, return a minimal structure
+            return {
+                "key_findings": ["Consultation completed successfully"],
+                "diagnosis": "Please follow up with your doctor for detailed diagnosis",
+                "medications": [],
+                "other_recommendations": ["Follow doctor's instructions carefully"],
+                "tests_ordered": [],
+                "next_appointment": None,
+                "red_flag_symptoms": ["Seek immediate medical attention if symptoms worsen"],
+                "patient_instructions": ["Take medications as prescribed", "Rest and monitor symptoms"],
+                "reassurance_note": "Please contact us if symptoms worsen or if you have questions."
+            }
+
+    def _normalize_post_visit_summary(self, summary_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize post-visit summary data structure."""
+        normalized: Dict[str, Any] = dict(summary_data or {})
+        
+        # Ensure required list fields exist and are properly formatted
+        list_fields = ["key_findings", "medications", "other_recommendations", "tests_ordered", "red_flag_symptoms", "patient_instructions"]
+        for field in list_fields:
+            val = normalized.get(field, [])
+            if not isinstance(val, list):
+                val = [str(val)] if val not in (None, "") else []
+            normalized[field] = val
+        
+        # Ensure required string fields exist
+        string_fields = ["diagnosis", "reassurance_note"]
+        for field in string_fields:
+            val = normalized.get(field, "")
+            if not isinstance(val, str):
+                val = str(val) if val is not None else ""
+            normalized[field] = val.strip()
+        
+        # Ensure optional fields exist
+        if not normalized.get("next_appointment"):
+            normalized["next_appointment"] = None
+        
+        return normalized

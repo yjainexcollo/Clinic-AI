@@ -69,9 +69,16 @@ class Patient:
 
     def get_visit_by_id(self, visit_id: str) -> Optional["Visit"]:
         """Get visit by visit ID."""
-        for visit in self.visits:
+        print(f"DEBUG: Patient.get_visit_by_id looking for visit_id: {visit_id}")
+        print(f"DEBUG: Patient has {len(self.visits)} visits")
+        
+        for i, visit in enumerate(self.visits):
+            print(f"DEBUG: Visit {i}: {visit.visit_id.value}")
             if visit.visit_id.value == visit_id:
+                print(f"DEBUG: Found matching visit: {visit.visit_id.value}")
                 return visit
+        
+        print(f"DEBUG: No visit found with ID: {visit_id}")
         return None
 
     def has_active_intake(self) -> bool:

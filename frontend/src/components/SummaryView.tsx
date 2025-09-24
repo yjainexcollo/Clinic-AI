@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
-import { FileText, Calendar, User, Clock, X } from 'lucide-react';
+import { FileText, User, Clock, X } from 'lucide-react';
 import { getPreVisitSummary, BACKEND_BASE_URL } from '../services/patientService';
 
 interface SummaryViewProps {
@@ -43,6 +43,8 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
       setLoading(false);
     }
   };
+
+
 
   useEffect(() => {
     loadSummary();
@@ -153,6 +155,7 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
       </div>
     );
   };
+
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">

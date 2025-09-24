@@ -798,13 +798,44 @@ const Index = () => {
                       d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
                     />
                   </svg>
-                  View Pre-Visit Summary
+                  1. View Pre-Visit Summary
                 </button>
                 <button
                   onClick={() => setShowUploadAudio(true)}
                   className="w-full bg-indigo-600 text-white py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors font-medium"
                 >
-                  Upload Transcript
+                  2. Upload Transcript
+                </button>
+                
+                <button
+                  onClick={async () => {
+                    try {
+                      if (!patientId || !visitId) return;
+                      const resp = await fetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/transcript`);
+                      if (!resp.ok) {
+                        const txt = await resp.text();
+                        throw new Error(`Failed to fetch transcript ${resp.status}: ${txt}`);
+                      }
+                      const data = await resp.json();
+                      setTranscriptText(data.transcript || '');
+                      setShowTranscript(true);
+                    } catch (e) {
+                      alert('Transcript not available yet.');
+                    }
+                  }}
+                  className="w-full bg-purple-600 text-white py-3 px-4 rounded-md hover:bg-purple-700 transition-colors font-medium"
+                >
+                  3. View Transcript
+                </button>
+                
+                <button
+                  onClick={() => {
+                    if (!patientId || !visitId) return;
+                    window.location.href = `/vitals/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`;
+                  }}
+                  className="w-full bg-orange-600 text-white py-3 px-4 rounded-md hover:bg-orange-700 transition-colors font-medium"
+                >
+                  4. Fill Vitals
                 </button>
                 
                 <button
@@ -823,46 +854,100 @@ const Index = () => {
                       alert('Failed to generate SOAP note. Please try again after transcript is ready.');
                     }
                   }}
-                  className="w-full bg-indigo-600 text-white py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors font-medium"
+                  className="w-full bg-teal-600 text-white py-3 px-4 rounded-md hover:bg-teal-700 transition-colors font-medium"
                 >
-                  View SOAP Summary
+                  5. Generate SOAP Summary
                 </button>
+                {/* Step 6: View Post Visit Summary */}
                 <button
                   onClick={() => {
-                    if (!patientId || !visitId) return;
-                    window.location.href = `/vitals/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`;
+                    console.log('Index: patientId from URL:', patientId);
+                    console.log('Index: visitId from state:', visitId);
+                    
+                    // Try to get visitId from localStorage if not in state
+                    const storedVisitId = patientId ? localStorage.getItem(`visit_${patientId}`) : null;
+                    console.log('Index: visitId from localStorage:', storedVisitId);
+                    
+                    const effectiveVisitId = visitId || storedVisitId;
+                    console.log('Index: effective visitId:', effectiveVisitId);
+                    
+                    if (patientId && effectiveVisitId) {
+                      console.log('Index: Navigating to post-visit summary');
+                      window.location.href = `/post-visit/${patientId}/${effectiveVisitId}`;
+                    } else {
+                      console.error('Index: Missing patientId or visitId:', { 
+                        patientId, 
+                        visitId, 
+                        storedVisitId, 
+                        effectiveVisitId 
+                      });
+                      alert(`Missing information: patientId=${patientId}, visitId=${effectiveVisitId}. Please refresh the page or go back to registration.`);
+                    }
                   }}
                   className="w-full bg-green-600 text-white py-3 px-4 rounded-md hover:bg-green-700 transition-colors font-medium"
                 >
-                  Fill Vitals Form
+                  <svg
+                    className="w-5 h-5 inline mr-2"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                    />
+                  </svg>
+                  6. View Post Visit Summary
                 </button>
+
+                {/* Step 7: Start New Intake */}
                 <button
-                  onClick={async () => {
-                    try {
-                      if (!patientId || !visitId) return;
-                      const resp = await fetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/transcript`);
-                      if (!resp.ok) {
-                        const txt = await resp.text();
-                        throw new Error(`Failed to fetch transcript ${resp.status}: ${txt}`);
-                      }
-                      const data = await resp.json();
-                      setTranscriptText(data.transcript || '');
-                      setShowTranscript(true);
-                    } catch (e) {
-                      alert('Transcript not available yet.');
+                  onClick={() => {
+                    if (patientId && visitId) {
+                      window.location.href = `/intake/${patientId}`;
                     }
                   }}
-                  className="w-full bg-gray-700 text-white py-3 px-4 rounded-md hover:bg-gray-800 transition-colors font-medium"
+                  className="w-full bg-yellow-600 text-white py-3 px-4 rounded-md hover:bg-yellow-700 transition-colors font-medium"
                 >
-                  View Transcript
+                  <svg
+                    className="w-5 h-5 inline mr-2"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+                    />
+                  </svg>
+                  7. Start New Intake
                 </button>
+
+                {/* Step 8: Register New Patient */}
                 <button
                   onClick={() =>
                     (window.location.href = "/patient-registration")
                   }
                   className="w-full bg-gray-600 text-white py-3 px-4 rounded-md hover:bg-gray-700 transition-colors font-medium"
                 >
-                  Register New Patient
+                  <svg
+                    className="w-5 h-5 inline mr-2"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
+                    />
+                  </svg>
+                  8. Register New Patient
                 </button>
               </div>
             </div>

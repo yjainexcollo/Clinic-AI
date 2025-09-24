@@ -53,13 +53,17 @@ class MongoPatientRepository(PatientRepository):
 
     async def find_by_id(self, patient_id: PatientId) -> Optional[Patient]:
         """Find a patient by ID."""
+        print(f"DEBUG: Repository looking for patient_id: {patient_id.value}")
+        
         patient_mongo = await PatientMongo.find_one(
             PatientMongo.patient_id == patient_id.value
         )
 
         if not patient_mongo:
+            print(f"DEBUG: Patient not found in database for ID: {patient_id.value}")
             return None
 
+        print(f"DEBUG: Patient found in database: {patient_mongo.patient_id}")
         return await self._mongo_to_domain(patient_mongo)
 
     async def find_by_name_and_mobile(

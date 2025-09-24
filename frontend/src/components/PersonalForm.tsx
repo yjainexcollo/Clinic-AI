@@ -95,8 +95,8 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
         gender: form.gender,
         age: ageNumber,
         recently_travelled: form.travelHistory,
-        country: form.country,
         consent: true,
+        country: form.country,
       });
 
       if (backendResp.patient_id) {

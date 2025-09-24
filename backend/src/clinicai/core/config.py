@@ -179,7 +179,7 @@ class SoapSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="SOAP_")
 
-    model: str = Field(default="gpt-4", description="Model for SOAP generation")
+    model: str = Field(default="gpt-4o-mini", description="Model for SOAP generation")
     max_tokens: int = Field(default=2000, description="Maximum tokens for SOAP generation")
     temperature: float = Field(default=0.3, description="Temperature for SOAP generation")
     include_highlights: bool = Field(default=True, description="Include highlights in SOAP")

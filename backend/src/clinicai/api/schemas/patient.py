@@ -215,3 +215,49 @@ class PreVisitSummaryResponse(BaseModel):
     medication_images: Optional[List[Dict[str, Any]]] = Field(
         None, description="Uploaded medication images metadata for the visit, if any"
     )
+
+
+# Step-04: Post-Visit Summary Schemas
+class PostVisitSummaryRequest(BaseModel):
+    """Request schema for generating post-visit summary."""
+
+    patient_id: str = Field(..., description="Opaque Patient ID")
+    visit_id: str = Field(..., description="Visit ID")
+
+
+class PostVisitSummaryResponse(BaseModel):
+    """Response schema for post-visit summary following recommended format."""
+
+    # Header Section
+    patient_id: str = Field(..., description="Patient ID")
+    visit_id: str = Field(..., description="Visit ID")
+    patient_name: str = Field(..., description="Patient full name")
+    visit_date: str = Field(..., description="Visit date in ISO format")
+    clinic_name: str = Field(default="AI Medical Clinic", description="Clinic name")
+    doctor_name: str = Field(default="Dr. AI Assistant", description="Attending doctor name")
+    
+    # Summary of Visit
+    chief_complaint: str = Field(..., description="Reason for visit in plain language")
+    key_findings: List[str] = Field(..., description="Key findings from exam/consultation")
+    diagnosis: str = Field(..., description="Diagnosis in layman-friendly terms")
+    
+    # Treatment Plan
+    medications: List[Dict[str, str]] = Field(default_factory=list, description="Prescribed medications with details")
+    other_recommendations: List[str] = Field(default_factory=list, description="Lifestyle, dietary, physical therapy recommendations")
+    
+    # Investigations/Tests
+    tests_ordered: List[Dict[str, str]] = Field(default_factory=list, description="Tests ordered with purpose and instructions")
+    
+    # Follow-Up
+    next_appointment: Optional[str] = Field(None, description="Next appointment details")
+    red_flag_symptoms: List[str] = Field(default_factory=list, description="Warning signs to watch for")
+    
+    # Patient Instructions
+    patient_instructions: List[str] = Field(..., description="Clear do's and don'ts in plain language")
+    
+    # Closing Note
+    reassurance_note: str = Field(..., description="Reassurance and encouragement message")
+    clinic_contact: str = Field(default="WhatsApp: +1 (555) 123-4567", description="Clinic contact information")
+    
+    # Metadata
+    generated_at: str = Field(..., description="Summary generation timestamp")

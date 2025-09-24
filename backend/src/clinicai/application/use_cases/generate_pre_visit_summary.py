@@ -2,7 +2,8 @@
 
 from ...domain.errors import PatientNotFoundError, VisitNotFoundError
 from ...domain.value_objects.patient_id import PatientId
-from ..dto.patient_dto import PreVisitSummaryRequest, PreVisitSummaryResponse
+from ..dto.patient_dto import PreVisitSummaryRequest
+from ...api.schemas.patient import PreVisitSummaryResponse
 from ..ports.repositories.patient_repo import PatientRepository
 from ..ports.services.question_service import QuestionService
 

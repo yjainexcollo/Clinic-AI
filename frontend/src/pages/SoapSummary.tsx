@@ -74,9 +74,13 @@ const SoapSummary: React.FC = () => {
       <Block title="Assessment">{render(assess)}</Block>
       <Block title="Plan">{render(plan)}</Block>
 
+
       <div className="flex gap-2 flex-wrap">
-        <button onClick={() => navigate(-1)} className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">
-          Back
+        <button 
+          onClick={() => navigate(`/intake/${patientId}`)} 
+          className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+        >
+          Back to Intake Complete
         </button>
         <button
           onClick={() => navigate(`/vitals/${patientId}/${visitId}`)}
