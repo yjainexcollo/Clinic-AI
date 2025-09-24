@@ -179,9 +179,15 @@ async def generate_soap_note(
     try:
         # Decode opaque patient id from client before passing to use case
         try:
-            internal_patient_id = decode_patient_id(request.patient_id)
+            # Some environments may URL-encode the token inadvertently
+            import urllib.parse as _up
+            decoded_input = _up.unquote(request.patient_id)
         except Exception:
-            internal_patient_id = request.patient_id
+            decoded_input = request.patient_id
+        try:
+            internal_patient_id = decode_patient_id(decoded_input)
+        except Exception:
+            internal_patient_id = decoded_input
         decoded_request = SoapGenerationRequest(
             patient_id=internal_patient_id,
             visit_id=request.visit_id,
@@ -407,7 +413,7 @@ async def get_transcript(
             headers = {"Retry-After": "5"}
             return FastAPIResponse(content=b"", status_code=status.HTTP_202_ACCEPTED, headers=headers)
 
-        # Return transcript data
+        # Return transcript data including structured dialogue if cached
         session = visit.transcription_session
         return TranscriptionSessionDTO(
             audio_file_path=session.audio_file_path,
@@ -595,19 +601,22 @@ async def structure_dialogue(
         raw_transcript = visit.transcription_session.transcript
 
         # Build prompt
+        # Cap transcript length to avoid model context errors in production
+        MAX_TRANSCRIPT_CHARS = 6000
+        safe_transcript = (raw_transcript or "")[:MAX_TRANSCRIPT_CHARS]
+
         system_prompt = (
-            "You are an AI assistant processing raw transcripts generated from audio recordings.\n"
-            "Your tasks are:\n"
-            "1) Understand and clean the transcript: remove any names, phone numbers, or personal identifiers;\n"
-            "   correct obvious transcription errors (spelling, spacing); keep only conversational content.\n"
-            "2) Format the dialogue clearly into structured JSON with alternating keys \"Doctor\" and \"Patient\".\n"
-            "   Preserve the natural flow and output valid JSON only, no extra commentary."
+            "You are an AI assistant that structures a medical visit transcript.\n"
+            "Return ONLY valid JSON. Do not include text outside JSON.\n"
+            "Rules:\n"
+            "- Remove PII (names, phones).\n"
+            "- Fix obvious typos.\n"
+            "- Output as a JSON array of ordered turns: [{\"Doctor\": \"...\"}, {\"Patient\": \"...\"}, ...].\n"
+            "- Alternate speakers where possible; do not merge long paragraphs; split into concise turns.\n"
         )
         user_prompt = (
-            "Example:\n"
-            "{\n  \"Doctor\": \"How are you feeling today?\",\n  \"Patient\": \"I have been coughing for three days.\",\n"
-            "  \"Doctor\": \"Do you have a fever?\",\n  \"Patient\": \"Yes, since yesterday.\"\n}\n\n"
-            "Transcript to process (clean PII and structure):\n" + (raw_transcript or "")
+            "Transcript:\n" + safe_transcript + "\n\n"
+            "Return JSON ONLY, no markdown, no comments."
         )
 
         settings = get_settings()
@@ -622,7 +631,7 @@ async def structure_dialogue(
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
                     ],
-                    max_tokens=min(2000, settings.openai.max_tokens),
+                    max_tokens=min(1200, settings.openai.max_tokens or 1200),
                     temperature=0.1,
                 )
                 content = (resp.choices[0].message.content or "").strip()
@@ -635,21 +644,59 @@ async def structure_dialogue(
 
         try:
             content = await asyncio.to_thread(_call_openai)
+            # Cache parsed structured dialogue to DB for fast retrieval
+            import json as _json
+            try:
+                parsed = _json.loads(content)
+                if isinstance(parsed, list):
+                    if not visit.transcription_session:
+                        raise RuntimeError("No transcription session to cache dialogue")
+                    visit.transcription_session.structured_dialogue = parsed
+                    await patient_repo.save(patient)
+            except Exception:
+                pass
         except Exception as e:
             logger.error(f"Failed to structure dialogue: {str(e)}")
-            return {"dialogue": {"text": raw_transcript}}
+            # Heuristic fallback: split into sentences and alternate speakers
+            import re
+            sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", safe_transcript) if s.strip()]
+            turns: list[dict[str, str]] = []
+            next_role = "Doctor"
+            for s in sentences:
+                # Detect explicit speaker labels if present
+                lower = s.lower()
+                if lower.startswith("doctor:"):
+                    turns.append({"Doctor": s.split(":", 1)[1].strip()})
+                    next_role = "Patient"
+                elif lower.startswith("patient:"):
+                    turns.append({"Patient": s.split(":", 1)[1].strip()})
+                    next_role = "Doctor"
+                else:
+                    turns.append({next_role: s})
+                    next_role = "Patient" if next_role == "Doctor" else "Doctor"
+            try:
+                if not visit.transcription_session:
+                    raise RuntimeError("No transcription session to cache dialogue")
+                visit.transcription_session.structured_dialogue = turns
+                await patient_repo.save(patient)
+            except Exception:
+                pass
+            return {"dialogue": turns if turns else {"text": safe_transcript}}
 
         # Try to parse JSON; if not valid JSON object, return as text under 'dialogue'
         import json
         try:
             data = json.loads(content)
             if isinstance(data, dict):
-                # Validate that it contains Doctor/Patient keys
-                if any(key in data for key in ["Doctor", "Patient"]):
-                    return {"dialogue": data}
-                else:
-                    logger.warning("Structured content doesn't contain Doctor/Patient keys")
-                    return {"dialogue": {"text": content}}
+                # If dict, coerce to ordered list preserving keys order where possible
+                ordered: list[dict[str, str]] = []
+                for k, v in data.items():
+                    if k in ("Doctor", "Patient") and isinstance(v, str):
+                        ordered.append({k: v})
+                if ordered:
+                    return {"dialogue": ordered}
+                logger.warning("Structured content doesn't contain Doctor/Patient keys")
+                return {"dialogue": {"text": content}}
             # If it's a list of pairs, convert to dict-like sequence
             if isinstance(data, list):
                 merged: Dict[str, Any] = {}
@@ -657,9 +704,9 @@ async def structure_dialogue(
                     if isinstance(item, dict):
                         merged.update(item)
                 if any(key in merged for key in ["Doctor", "Patient"]):
-                    return {"dialogue": merged}
-                else:
-                    return {"dialogue": {"text": content}}
+                    # Prefer returning the original list to preserve order
+                    return {"dialogue": data}
+                return {"dialogue": {"text": content}}
         except json.JSONDecodeError as e:
             logger.warning(f"Failed to parse structured content as JSON: {e}")
             return {"dialogue": {"text": content}}

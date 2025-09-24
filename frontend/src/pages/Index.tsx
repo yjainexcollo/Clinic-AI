@@ -600,6 +600,7 @@ const Index = () => {
                           <MedicationImageUploader
                             patientId={patientId}
                             visitId={(visitId || localStorage.getItem(`visit_${patientId}`)) as string}
+                            title="What medications do you take? (upload images, optional)"
                           />
                         )}
                       </div>
@@ -648,7 +649,7 @@ const Index = () => {
                             <MedicationImageUploader
                               patientId={patientId}
                               visitId={(visitId || localStorage.getItem(`visit_${patientId}`)) as string}
-                              title="Update prescription images (optional)"
+                              title="What medications do you take? (upload images, optional)"
                               onChange={() => {/* optional refresh hooks */}}
                             />
                           </div>
@@ -862,7 +863,27 @@ const Index = () => {
                         throw new Error(`Failed to fetch transcript ${resp.status}: ${txt}`);
                       }
                       const data = await resp.json();
-                      setTranscriptText(data.transcript || '');
+                      let transcriptContent = data.transcript || '';
+                      const isRaw = transcriptContent && !transcriptContent.includes('"Doctor"') && !transcriptContent.includes('"Patient"');
+                      if (isRaw) {
+                        try {
+                          const structureResponse = await fetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/dialogue/structure`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+                          if (structureResponse.ok) {
+                            const structureData = await structureResponse.json();
+                            const dlg = structureData?.dialogue;
+                            if (Array.isArray(dlg)) {
+                              transcriptContent = JSON.stringify(dlg);
+                            } else if (dlg && typeof dlg === 'object') {
+                              if (typeof dlg.text === 'string') {
+                                transcriptContent = dlg.text;
+                              } else {
+                                transcriptContent = JSON.stringify(dlg);
+                              }
+                            }
+                          }
+                        } catch {}
+                      }
+                      setTranscriptText(transcriptContent);
                       setShowTranscript(true);
                     } catch (e) {
                       alert('Transcript not available yet.');
@@ -980,8 +1001,17 @@ const Index = () => {
                               });
                               if (structureResponse.ok) {
                                 const structureData = await structureResponse.json();
-                                if (structureData.dialogue && typeof structureData.dialogue === 'object') {
-                                  transcriptContent = JSON.stringify(structureData.dialogue);
+                                const dlg = structureData?.dialogue;
+                                if (Array.isArray(dlg)) {
+                                  // Proper ordered turns
+                                  transcriptContent = JSON.stringify(dlg);
+                                } else if (dlg && typeof dlg === 'object') {
+                                  // Fallback shape { text: "..." } or { Doctor: "...", Patient: "..." }
+                                  if (typeof dlg.text === 'string') {
+                                    transcriptContent = dlg.text;
+                                  } else {
+                                    transcriptContent = JSON.stringify(dlg);
+                                  }
                                 }
                               }
                             } catch (e) {

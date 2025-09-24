@@ -150,6 +150,8 @@ class TranscriptionSession:
     error_message: Optional[str] = None
     audio_duration_seconds: Optional[float] = None
     word_count: Optional[int] = None
+    # Cached structured dialogue turns (ordered Doctor/Patient), to avoid re-structuring on the fly
+    structured_dialogue: Optional[List[Dict[str, Any]]] = None
 
 
 @dataclass

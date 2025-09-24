@@ -9,6 +9,7 @@ const VitalsForm: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [generatingSoap, setGeneratingSoap] = useState(false);
   const [bmi, setBmi] = useState<number | null>(null);
   const [alreadySubmitted, setAlreadySubmitted] = useState(false);
 
@@ -155,11 +156,40 @@ const VitalsForm: React.FC = () => {
         tempUnit: vitals.tempUnit === "°F" ? "F" : vitals.tempUnit === "°C" ? "C" : vitals.tempUnit,
       };
 
-      // Store vitals data to backend
+      // Store vitals first
       await storeVitals(patientId, visitId, sendVitals);
 
-      // Redirect to Intake Complete page (force completion view)
-      navigate(`/intake/${patientId}?done=1`);
+      // Show SOAP generation progress and trigger generation idempotently
+      setGeneratingSoap(true);
+      try {
+        // Ensure we pass the internal id expected by backend: use current patientId as-is
+        await generateSoapNote(patientId, visitId);
+      } catch (e) {
+        // Ignore; we'll still poll for readiness
+      }
+
+      // Poll for SOAP availability, then navigate to SOAP view
+      const start = Date.now();
+      const maxMs = 180000; // 3 minutes
+      const poll = async (attempt = 0): Promise<void> => {
+        try {
+          const s = await getSoapNote(patientId, visitId);
+          if (s && (s as any).subjective !== undefined) {
+            setGeneratingSoap(false);
+            navigate(`/soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
+            return;
+          }
+        } catch {}
+        if (Date.now() - start < maxMs) {
+          const delay = Math.min(10000, 1000 * Math.pow(1.5, attempt));
+          setTimeout(() => poll(attempt + 1), delay);
+        } else {
+          setGeneratingSoap(false);
+          // Fall back to intake complete if SOAP not ready
+          navigate(`/intake/${patientId}?done=1`);
+        }
+      };
+      poll();
     } catch (err: any) {
       setError(err.message || "Failed to save vitals");
     } finally {
@@ -178,6 +208,11 @@ const VitalsForm: React.FC = () => {
         <p className="text-sm text-gray-600 mt-2">
           Patient: {patientId} • Visit: {visitId}
         </p>
+        {generatingSoap && (
+          <p className="mt-2 text-sm text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-3 py-2 inline-block">
+            Generating SOAP summary… it will open automatically when ready.
+          </p>
+        )}
         {alreadySubmitted && (
           <p className="mt-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2 inline-block">
             Vitals already submitted for this visit. You can review them below.

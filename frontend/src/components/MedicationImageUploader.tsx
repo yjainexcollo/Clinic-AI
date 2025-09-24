@@ -12,7 +12,7 @@ type ServerImage = { id: string; filename: string; content_type?: string };
 
 type QueuedImage = { id: string; file: File; previewUrl: string };
 
-const MedicationImageUploader: React.FC<Props> = ({ patientId, visitId, title = "Add prescription images (optional)", onChange }) => {
+const MedicationImageUploader: React.FC<Props> = ({ patientId, visitId, title = "What medications do you take? (upload images, optional)", onChange }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string>("");
   const [successMsg, setSuccessMsg] = useState<string>("");

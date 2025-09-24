@@ -49,6 +49,7 @@ class TranscriptionSessionMongo(BaseModel):
     error_message: Optional[str] = Field(None, description="Error message if failed")
     audio_duration_seconds: Optional[float] = Field(None, description="Audio duration in seconds")
     word_count: Optional[int] = Field(None, description="Word count of transcript")
+    structured_dialogue: Optional[list[dict]] = Field(None, description="Ordered Doctor/Patient turns")
 
 
 class SoapNoteMongo(BaseModel):

@@ -84,24 +84,6 @@ const SoapSummary: React.FC = () => {
         >
           Fill Vitals Form
         </button>
-        <button
-          onClick={async () => {
-            try {
-              setLoading(true);
-              await generateSoapNote(patientId, visitId);
-              const s = await getSoapNote(patientId, visitId);
-              setSoap(s);
-              setError("");
-            } catch (e: any) {
-              setError(e?.message || "Failed to regenerate SOAP");
-            } finally {
-              setLoading(false);
-            }
-          }}
-          className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
-        >
-          Regenerate
-        </button>
       </div>
     </div>
   );
