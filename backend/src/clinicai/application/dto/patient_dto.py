@@ -19,6 +19,7 @@ class RegisterPatientRequest:
     gender: str
     recently_travelled: bool = False
     consent: bool = True
+    language: str = "en"
 
 
 @dataclass

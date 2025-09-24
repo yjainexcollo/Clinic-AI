@@ -36,12 +36,19 @@ class RegisterPatientRequest(BaseModel):
     recently_travelled: bool = Field(False, description="Has the patient travelled recently")
     consent: bool = Field(..., description="Patient consent for data processing (must be true)")
     country: str = Field("US", description="ISO 3166-1 alpha-2 country code (default US)")
+    language: str = Field("en", description="Preferred language (en for English, es for Spanish)")
 
     @validator("first_name", "last_name")
     def validate_names(cls, v):
         if not v or not v.strip():
             raise ValueError("Name fields cannot be empty")
         return v.strip()
+
+    @validator("language")
+    def validate_language(cls, v):
+        if v not in ["en", "sp"]:
+            raise ValueError("Language must be 'en' (English) or 'sp' (Spanish)")
+        return v
 
     @validator("mobile")
     def validate_mobile(cls, v):

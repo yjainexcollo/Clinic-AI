@@ -16,10 +16,12 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { getPostVisitSummary, sharePostVisitSummaryViaWhatsApp, PostVisitSummaryResponse } from '../services/patientService';
+import { useLanguage } from '../contexts/LanguageContext';
 
 const PostVisitSummary: React.FC = () => {
   const { patientId, visitId } = useParams<{ patientId: string; visitId: string }>();
   const navigate = useNavigate();
+  const { language, setLanguage, t } = useLanguage();
   const [summary, setSummary] = useState<PostVisitSummaryResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -157,13 +159,17 @@ const PostVisitSummary: React.FC = () => {
             className="mb-4"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to SOAP Summary
+            {language === 'sp' ? 'Volver al Resumen SOAP' : 'Back to SOAP Summary'}
           </Button>
           
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Post-Visit Summary</h1>
-              <p className="text-gray-600 mt-2">Patient-friendly summary for sharing</p>
+              <h1 className="text-3xl font-bold text-gray-900">
+                {language === 'sp' ? 'Resumen Post-Consulta' : 'Post-Visit Summary'}
+              </h1>
+              <p className="text-gray-600 mt-2">
+                {language === 'sp' ? 'Resumen amigable para el paciente para compartir' : 'Patient-friendly summary for sharing'}
+              </p>
             </div>
             <div className="flex space-x-2">
               <Button
@@ -171,11 +177,11 @@ const PostVisitSummary: React.FC = () => {
                 className="bg-green-600 hover:bg-green-700"
               >
                 <Share2 className="h-4 w-4 mr-2" />
-                Share via WhatsApp
+                {t('summary.share_whatsapp')}
               </Button>
               <Button onClick={() => window.print()} variant="outline">
                 <FileText className="h-4 w-4 mr-2" />
-                Print
+                {t('summary.print')}
               </Button>
             </div>
           </div>
@@ -188,7 +194,7 @@ const PostVisitSummary: React.FC = () => {
             <CardDescription className="flex flex-wrap gap-4 text-sm">
               <span className="flex items-center">
                 <Calendar className="h-4 w-4 mr-1" />
-                Visit Date: {new Date(summary.visit_date).toLocaleDateString()}
+                {t('postvisit.visit_date')}: {new Date(summary.visit_date).toLocaleDateString()}
               </span>
               <span className="flex items-center">
                 <User className="h-4 w-4 mr-1" />
@@ -205,7 +211,7 @@ const PostVisitSummary: React.FC = () => {
         {/* Chief Complaint */}
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle className="text-lg">Chief Complaint</CardTitle>
+            <CardTitle className="text-lg">{t('postvisit.chief_complaint')}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-gray-700">{summary.chief_complaint || 'No chief complaint recorded'}</p>
@@ -216,7 +222,7 @@ const PostVisitSummary: React.FC = () => {
         {summary.key_findings.length > 0 && (
           <Card className="mb-6">
             <CardHeader>
-              <CardTitle className="text-lg">Key Findings</CardTitle>
+              <CardTitle className="text-lg">{t('postvisit.key_findings')}</CardTitle>
             </CardHeader>
             <CardContent>
               <ul className="space-y-2">
@@ -234,7 +240,7 @@ const PostVisitSummary: React.FC = () => {
         {/* Diagnosis */}
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle className="text-lg">Diagnosis</CardTitle>
+            <CardTitle className="text-lg">{t('postvisit.diagnosis')}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-gray-700">{summary.diagnosis}</p>
@@ -245,7 +251,7 @@ const PostVisitSummary: React.FC = () => {
         {summary.medications.length > 0 && (
           <Card className="mb-6">
             <CardHeader>
-              <CardTitle className="text-lg">Medications</CardTitle>
+              <CardTitle className="text-lg">{t('postvisit.medications_prescribed')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -253,10 +259,10 @@ const PostVisitSummary: React.FC = () => {
                   <div key={index} className="border rounded-lg p-4">
                     <h4 className="font-semibold text-gray-900 mb-2">{med.name}</h4>
                     <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div><span className="font-medium">Dosage:</span> {med.dosage}</div>
-                      <div><span className="font-medium">Frequency:</span> {med.frequency}</div>
-                      <div><span className="font-medium">Duration:</span> {med.duration}</div>
-                      {med.purpose && <div><span className="font-medium">Purpose:</span> {med.purpose}</div>}
+                      <div><span className="font-medium">{t('postvisit.dosage')}:</span> {med.dosage}</div>
+                      <div><span className="font-medium">{t('postvisit.frequency')}:</span> {med.frequency}</div>
+                      <div><span className="font-medium">{t('postvisit.duration')}:</span> {med.duration}</div>
+                      {med.purpose && <div><span className="font-medium">{t('postvisit.purpose')}:</span> {med.purpose}</div>}
                     </div>
                   </div>
                 ))}
@@ -269,7 +275,7 @@ const PostVisitSummary: React.FC = () => {
         {summary.other_recommendations.length > 0 && (
           <Card className="mb-6">
             <CardHeader>
-              <CardTitle className="text-lg">Recommendations</CardTitle>
+              <CardTitle className="text-lg">{t('postvisit.other_recommendations')}</CardTitle>
             </CardHeader>
             <CardContent>
               <ul className="space-y-2">
@@ -288,7 +294,7 @@ const PostVisitSummary: React.FC = () => {
         {summary.tests_ordered.length > 0 && (
           <Card className="mb-6">
             <CardHeader>
-              <CardTitle className="text-lg">Tests Ordered</CardTitle>
+              <CardTitle className="text-lg">{t('postvisit.tests_ordered')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -296,8 +302,8 @@ const PostVisitSummary: React.FC = () => {
                   <div key={index} className="border rounded-lg p-4">
                     <h4 className="font-semibold text-gray-900 mb-2">{test.test_name}</h4>
                     <div className="text-sm space-y-1">
-                      <div><span className="font-medium">Purpose:</span> {test.purpose}</div>
-                      <div><span className="font-medium">Instructions:</span> {test.instructions}</div>
+                      <div><span className="font-medium">{t('postvisit.purpose_simple')}:</span> {test.purpose}</div>
+                      <div><span className="font-medium">{t('postvisit.instructions')}:</span> {test.instructions}</div>
                     </div>
                   </div>
                 ))}
@@ -310,7 +316,7 @@ const PostVisitSummary: React.FC = () => {
         {summary.next_appointment && (
           <Card className="mb-6">
             <CardHeader>
-              <CardTitle className="text-lg">Next Appointment</CardTitle>
+              <CardTitle className="text-lg">{t('postvisit.next_appointment')}</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-gray-700">{summary.next_appointment}</p>
@@ -324,14 +330,14 @@ const PostVisitSummary: React.FC = () => {
             <CardHeader className="bg-red-50">
               <CardTitle className="text-lg text-red-800 flex items-center">
                 <AlertCircle className="h-5 w-5 mr-2" />
-                Warning Signs
+                {t('postvisit.warning_signs')}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <Alert className="border-red-200 bg-red-50">
                 <AlertCircle className="h-4 w-4 text-red-600" />
                 <AlertDescription className="text-red-800">
-                  <p className="font-medium mb-2">Seek immediate medical attention if you experience:</p>
+                  <p className="font-medium mb-2">{t('postvisit.seek_immediate_attention')}</p>
                   <ul className="space-y-1">
                     {summary.red_flag_symptoms.map((symptom, index) => (
                       <li key={index} className="flex items-start">
@@ -349,7 +355,7 @@ const PostVisitSummary: React.FC = () => {
         {/* Patient Instructions */}
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle className="text-lg">Patient Instructions</CardTitle>
+            <CardTitle className="text-lg">{t('postvisit.patient_instructions')}</CardTitle>
           </CardHeader>
           <CardContent>
             <ul className="space-y-2">
@@ -366,11 +372,11 @@ const PostVisitSummary: React.FC = () => {
         {/* Reassurance Note */}
         <Card className="mb-6 border-blue-200">
           <CardHeader className="bg-blue-50">
-            <CardTitle className="text-lg text-blue-800">Closing Note</CardTitle>
+            <CardTitle className="text-lg text-blue-800">{t('postvisit.closing_note')}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-blue-800 font-medium mb-2">{summary.reassurance_note}</p>
-            <p className="text-blue-700 text-sm">📞 Contact: {summary.clinic_contact}</p>
+            <p className="text-blue-700 text-sm">📞 {t('postvisit.contact')}: {summary.clinic_contact}</p>
           </CardContent>
         </Card>
 

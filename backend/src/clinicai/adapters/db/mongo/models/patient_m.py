@@ -99,6 +99,7 @@ class PatientMongo(Document):
     age: int = Field(..., description="Patient age")
     gender: Optional[str] = Field(None, description="Patient gender")
     recently_travelled: bool = Field(default=False, description="Has the patient travelled recently")
+    language: str = Field(default="en", description="Patient preferred language (en for English, sp for Spanish)")
     visits: List[VisitMongo] = Field(default_factory=list, description="List of visits")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

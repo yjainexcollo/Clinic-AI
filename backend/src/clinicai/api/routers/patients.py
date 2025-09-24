@@ -90,6 +90,7 @@ async def register_patient(
             gender=request.gender,
             recently_travelled=request.recently_travelled,
             consent=request.consent,
+            language=request.language,
         )
 
         # Execute use case

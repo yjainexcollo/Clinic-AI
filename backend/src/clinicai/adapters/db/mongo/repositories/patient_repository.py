@@ -212,6 +212,7 @@ class MongoPatientRepository(PatientRepository):
             existing_patient.age = patient.age
             existing_patient.gender = patient.gender
             existing_patient.recently_travelled = patient.recently_travelled
+            existing_patient.language = patient.language
             existing_patient.visits = visits_mongo
             existing_patient.updated_at = datetime.utcnow()
             return existing_patient
@@ -224,6 +225,7 @@ class MongoPatientRepository(PatientRepository):
                 age=patient.age,
                 gender=patient.gender,
                 recently_travelled=patient.recently_travelled,
+                language=patient.language,
                 visits=visits_mongo,
                 created_at=patient.created_at,
                 updated_at=patient.updated_at,
@@ -310,6 +312,7 @@ class MongoPatientRepository(PatientRepository):
             age=patient_mongo.age,
             gender=getattr(patient_mongo, "gender", None),
             recently_travelled=getattr(patient_mongo, "recently_travelled", False),
+            language=getattr(patient_mongo, "language", "en"),
             visits=visits,
             created_at=patient_mongo.created_at,
             updated_at=patient_mongo.updated_at,

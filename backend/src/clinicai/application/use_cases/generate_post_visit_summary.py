@@ -100,7 +100,7 @@ class GeneratePostVisitSummaryUseCase:
 
         # Generate post-visit summary using AI service
         summary_result = await self._soap_service.generate_post_visit_summary(
-            patient_data, soap_data
+            patient_data, soap_data, language=patient.language
         )
 
         # Parse the AI response and structure it according to recommended format

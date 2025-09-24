@@ -40,6 +40,9 @@ class AnswerIntakeUseCase:
         visit = patient.get_visit_by_id(request.visit_id)
         if not visit:
             raise VisitNotFoundError(request.visit_id)
+        
+        print(f"DEBUG: AnswerIntake - Patient language: {patient.language}")
+        print(f"DEBUG: AnswerIntake - Request answer: {request.answer}")
 
         # Build prior context from latest completed visit (excluding current)
         prior_summary: str | None = None
@@ -68,7 +71,8 @@ class AnswerIntakeUseCase:
         if not current_question:
             if visit.intake_session.current_question_count == 0:
                 current_question = await self._question_service.generate_first_question(
-                    disease=visit.symptom or "general consultation"
+                    disease=visit.symptom or "general consultation",
+                    language=patient.language
                 )
             else:
                 previous_answers = [qa.answer for qa in visit.intake_session.questions_asked]
@@ -79,6 +83,7 @@ class AnswerIntakeUseCase:
                     asked_questions=asked_questions,
                     current_count=visit.intake_session.current_question_count,
                     max_count=visit.intake_session.max_questions,
+                    language=patient.language,
                     recently_travelled=patient.recently_travelled,
                     prior_summary=prior_summary,
                     prior_qas=prior_qas,
@@ -130,6 +135,7 @@ class AnswerIntakeUseCase:
                 asked_questions=asked_questions,
                 current_count=visit.intake_session.current_question_count,
                 max_count=visit.intake_session.max_questions,
+                language=patient.language,
                 recently_travelled=patient.recently_travelled,
                 prior_summary=prior_summary,
                 prior_qas=prior_qas,
@@ -228,6 +234,7 @@ class AnswerIntakeUseCase:
             asked_questions=asked_questions,
             current_count=current_count,
             max_count=max_count,
+            language=patient.language,
             recently_travelled=patient.recently_travelled,
         )
         visit.set_pending_question(next_question)

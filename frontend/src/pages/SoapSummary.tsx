@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { generateSoapNote, getSoapNote } from "../services/patientService";
+import { useLanguage } from "../contexts/LanguageContext";
 
 const Block: React.FC<{ title: string; children?: React.ReactNode }> = ({ title, children }) => (
   <div className="mb-6">
@@ -16,6 +17,7 @@ const render = (v: any) => (v == null ? "Not discussed" : String(v));
 const SoapSummary: React.FC = () => {
   const { patientId = "", visitId = "" } = useParams();
   const navigate = useNavigate();
+  const { language, setLanguage, t } = useLanguage();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [soap, setSoap] = useState<any>(null);
@@ -62,10 +64,16 @@ const SoapSummary: React.FC = () => {
   return (
     <div className="max-w-4xl mx-auto p-4">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold">SOAP Summary</h1>
-        <p className="text-xs opacity-60">Patient: {patientId} · Visit: {visitId}</p>
+        <h1 className="text-2xl font-bold">
+          SOAP Summary
+        </h1>
+        <p className="text-xs opacity-60">
+          {language === 'sp' ? 'Paciente' : 'Patient'}: {patientId} · {language === 'sp' ? 'Visita' : 'Visit'}: {visitId}
+        </p>
         {soap.generated_at && (
-          <p className="text-xs opacity-60">Generated: {new Date(soap.generated_at).toLocaleString()}</p>
+          <p className="text-xs opacity-60">
+            {language === 'sp' ? 'Generado' : 'Generated'}: {new Date(soap.generated_at).toLocaleString()}
+          </p>
         )}
       </div>
 

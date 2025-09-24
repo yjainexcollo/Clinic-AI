@@ -50,7 +50,7 @@ class GeneratePreVisitSummaryUseCase:
 
         # Generate summary using AI service
         summary_result = await self._question_service.generate_pre_visit_summary(
-            patient_data, intake_answers
+            patient_data, intake_answers, language=patient.language
         )
 
         # Attach references to any uploaded medication images for this visit

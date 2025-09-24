@@ -10,25 +10,28 @@ import Index from "./pages/Index";
 import SoapSummary from "./pages/SoapSummary";
 import VitalsForm from "./pages/VitalsForm";
 import PostVisitSummary from "./pages/PostVisitSummary";
+import { LanguageProvider } from "./contexts/LanguageContext";
 
 const App: React.FC = () => {
   return (
-    <Router>
-      <Routes>
-        <Route
-          path="/"
-          element={<Navigate to="/patient-registration" replace />}
-        />
-        <Route
-          path="/patient-registration"
-          element={<PatientRegistrationPage />}
-        />
-        <Route path="/intake/:patientId" element={<IntakePage />} />
-        <Route path="/soap/:patientId/:visitId" element={<SoapSummary />} />
-        <Route path="/vitals/:patientId/:visitId" element={<VitalsForm />} />
-        <Route path="/post-visit/:patientId/:visitId" element={<PostVisitSummary />} />
-      </Routes>
-    </Router>
+    <LanguageProvider>
+      <Router>
+        <Routes>
+          <Route
+            path="/"
+            element={<Navigate to="/patient-registration" replace />}
+          />
+          <Route
+            path="/patient-registration"
+            element={<PatientRegistrationPage />}
+          />
+          <Route path="/intake/:patientId" element={<IntakePage />} />
+          <Route path="/soap/:patientId/:visitId" element={<SoapSummary />} />
+          <Route path="/vitals/:patientId/:visitId" element={<VitalsForm />} />
+          <Route path="/post-visit/:patientId/:visitId" element={<PostVisitSummary />} />
+        </Routes>
+      </Router>
+    </LanguageProvider>
   );
 };
 

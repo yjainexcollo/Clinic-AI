@@ -10,7 +10,7 @@ class QuestionService(ABC):
     """Abstract service for generating adaptive questions."""
 
     @abstractmethod
-    async def generate_first_question(self, disease: str) -> str:
+    async def generate_first_question(self, disease: str, language: str = "en") -> str:
         """Generate the first question based on primary symptom (backward param name)."""
         pass
 

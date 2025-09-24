@@ -209,6 +209,7 @@ export async function registerPatientBackend(
     recently_travelled?: boolean;
     consent: boolean;
     country?: string;
+    language?: string;
   }
 ): Promise<BackendRegisterResponse> {
   try {

@@ -308,12 +308,86 @@ Generate the SOAP note now:
     async def generate_post_visit_summary(
         self,
         patient_data: Dict[str, Any],
-        soap_data: Dict[str, Any]
+        soap_data: Dict[str, Any],
+        language: str = "en"
     ) -> Dict[str, Any]:
         """Generate post-visit summary for patient sharing."""
         
         # Create the prompt for post-visit summary
-        prompt = f"""
+        if language == "sp":
+            prompt = f"""
+Estás generando un resumen post-consulta para un paciente para compartir por WhatsApp. Debe ser claro, completo y amigable para el paciente.
+
+INFORMACIÓN DEL PACIENTE:
+- Nombre: {patient_data.get('name', 'Paciente')}
+- Edad: {patient_data.get('age', 'N/A')}
+- Fecha de Visita: {patient_data.get('visit_date', 'N/A')}
+- Motivo de Consulta: {patient_data.get('symptom', 'N/A')}
+
+DATOS DE NOTA SOAP:
+- Subjetivo: {soap_data.get('subjective', '')}
+- Objetivo: {soap_data.get('objective', '')}
+- Evaluación: {soap_data.get('assessment', '')}
+- Plan: {soap_data.get('plan', '')}
+- Aspectos Destacados: {soap_data.get('highlights', [])}
+- Señales de Alerta: {soap_data.get('red_flags', [])}
+
+INSTRUCCIONES:
+Genera un resumen post-consulta completo siguiendo esta estructura exacta en formato JSON:
+
+{{
+    "key_findings": [
+        "Hallazgo clave 1 de la consulta",
+        "Hallazgo clave 2 de la consulta",
+        "Hallazgo clave 3 de la consulta"
+    ],
+    "diagnosis": "Diagnóstico en lenguaje simple y amigable para el paciente",
+    "medications": [
+        {{
+            "name": "Nombre del medicamento (genérico preferido)",
+            "dosage": "Cantidad de dosis",
+            "frequency": "Con qué frecuencia tomarlo",
+            "duration": "Por cuánto tiempo tomarlo",
+            "purpose": "Para qué sirve"
+        }}
+    ],
+    "other_recommendations": [
+        "Recomendación de estilo de vida 1",
+        "Consejo dietético 2",
+        "Recomendaciones de fisioterapia o ejercicio"
+    ],
+    "tests_ordered": [
+        {{
+            "test_name": "Nombre de la prueba",
+            "purpose": "Por qué se necesita esta prueba",
+            "instructions": "Cuándo y dónde realizarla"
+        }}
+    ],
+    "next_appointment": "Detalles de la próxima cita si está programada",
+    "red_flag_symptoms": [
+        "Señal de advertencia 1 - cuándo regresar inmediatamente",
+        "Señal de advertencia 2 - cuándo ir a emergencias",
+        "Señal de advertencia 3 - síntomas a vigilar"
+    ],
+    "patient_instructions": [
+        "Instrucción clara 1 (qué hacer)",
+        "Instrucción clara 2 (qué no hacer)",
+        "Instrucción clara 3 (cuidado en casa)"
+    ],
+    "reassurance_note": "Mensaje alentador y tranquilizador para el paciente"
+}}
+
+Asegúrate de que todo el contenido esté:
+- Escrito en lenguaje simple y claro
+- Amigable para el paciente y fácil de entender
+- Completo pero conciso
+- Accionable con instrucciones específicas
+- Alentador y de apoyo
+
+Genera el resumen post-consulta ahora:
+"""
+        else:
+            prompt = f"""
 You are generating a post-visit summary for a patient to share via WhatsApp. This should be clear, comprehensive, and patient-friendly.
 
 PATIENT INFORMATION:
