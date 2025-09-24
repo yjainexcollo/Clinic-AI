@@ -45,6 +45,8 @@ const Index = () => {
   const [uploadAudioError, setUploadAudioError] = useState<string>("");
   const [showTranscript, setShowTranscript] = useState<boolean>(false);
   const [transcriptText, setTranscriptText] = useState<string>("");
+  const [showTranscriptProcessing, setShowTranscriptProcessing] = useState<boolean>(false);
+
   // Recording state
   const [recording, setRecording] = useState<boolean>(false);
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
@@ -83,7 +85,7 @@ const Index = () => {
 
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // On mount, handle deep-link params (q for question preview, v for visit, done to show completion)
+  // On mount, if q is present in URL, show it immediately and cache visit id
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const q = params.get("q");
@@ -99,7 +101,6 @@ const Index = () => {
       setVisitId(v);
     }
     if (done === "1" || done === "true") {
-      // Force show the Intake Complete actions panel
       setIsComplete(true);
       setShowStartScreen(false);
     }
@@ -810,7 +811,11 @@ const Index = () => {
                   View Pre-Visit Summary
                 </button>
                 <button
-                  onClick={() => setShowUploadAudio(true)}
+                  onClick={() => {
+                    setShowTranscript(false);
+                    setTranscriptText("");
+                    setShowUploadAudio(true);
+                  }}
                   className="w-full bg-indigo-600 text-white py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors font-medium"
                 >
                   Upload Transcript
@@ -826,7 +831,7 @@ const Index = () => {
                         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                         body: JSON.stringify({ patient_id: patientId, visit_id: visitId })
                       });
-                      // Navigate to SOAP viewer route if available, else fetch and inline show
+                      // Navigate to SOAP viewer route if available
                       window.location.href = `/soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`;
                     } catch (e) {
                       alert('Failed to generate SOAP note. Please try again after transcript is ready.');
@@ -836,6 +841,7 @@ const Index = () => {
                 >
                   View SOAP Summary
                 </button>
+                
                 <button
                   onClick={() => {
                     if (!patientId || !visitId) return;
@@ -845,6 +851,7 @@ const Index = () => {
                 >
                   Fill Vitals Form
                 </button>
+                
                 <button
                   onClick={async () => {
                     try {
@@ -905,6 +912,9 @@ const Index = () => {
                 e.preventDefault();
                 setUploadAudioError("");
                 try {
+                  // Reset any previous transcript view while re-uploading
+                  setShowTranscript(false);
+                  setTranscriptText("");
                   setIsTranscribingAudio(true);
                   const input = document.getElementById('upload-audio-input') as HTMLInputElement | null;
                   const selected = input?.files && input.files[0] ? input.files[0] : null;
@@ -921,7 +931,11 @@ const Index = () => {
                   form.append('audio_file', chosen);
                   try {
                     console.log('Uploading audio file:', chosen?.name, chosen?.type, chosen?.size);
-                    console.log('Form data:', { patient_id: patientId, visit_id: visitId, audio_file: chosen?.name });
+                    console.log('Form data:', {
+                      patient_id: patientId,
+                      visit_id: visitId,
+                      audio_file: chosen?.name
+                    });
                   } catch {}
                   
                   const controller = new AbortController();
@@ -939,27 +953,64 @@ const Index = () => {
                   
                   clearTimeout(timeoutId);
                   
-                  // State machine: uploading done -> processing with backoff polling
+                  // State machine: uploading done -> processing with backoff polling honoring Retry-After
                   if (resp.status === 202) {
                     setShowUploadAudio(false);
+                    setShowTranscriptProcessing(true);
                     const start = Date.now();
                     let attempt = 0;
                     const maxMs = 300000; // 5 minutes
                     const poll = async () => {
                       attempt += 1;
-                      const delay = Math.min(6000, 2000 + attempt * 500);
                       try {
                         const t = await fetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/transcript`);
                         if (t.ok) {
                           const data = await t.json();
-                          setTranscriptText(data.transcript || '');
+                          let transcriptContent = data.transcript || '';
+                          
+                          // Check if transcript appears to be raw (not structured JSON)
+                          const isRawTranscript = !transcriptContent.includes('"Doctor"') && !transcriptContent.includes('"Patient"');
+                          
+                          if (isRawTranscript && transcriptContent.trim()) {
+                            // Try to structure the dialogue using the backend endpoint
+                            try {
+                              const structureResponse = await fetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/dialogue/structure`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' }
+                              });
+                              if (structureResponse.ok) {
+                                const structureData = await structureResponse.json();
+                                if (structureData.dialogue && typeof structureData.dialogue === 'object') {
+                                  transcriptContent = JSON.stringify(structureData.dialogue);
+                                }
+                              }
+                            } catch (e) {
+                              console.warn('Failed to structure dialogue:', e);
+                            }
+                          }
+                          
+                          setTranscriptText(transcriptContent);
+                          setShowTranscriptProcessing(false);
                           setShowTranscript(true);
                           return;
                         }
+                        // If still processing, backend returns 202 with optional Retry-After
+                        if (t.status === 202) {
+                          const ra = t.headers.get('Retry-After');
+                          const retryAfterMs = ra ? Math.max(0, Number(ra) * 1000) : 0;
+                          const backoffMs = Math.min(15000, Math.round(1500 * Math.pow(1.6, attempt)));
+                          const delay = retryAfterMs || backoffMs;
+                          if (Date.now() - start < maxMs) {
+                            setTimeout(poll, delay);
+                            return;
+                          }
+                        }
                       } catch {}
                       if (Date.now() - start < maxMs) {
+                        const delay = Math.min(15000, Math.round(1500 * Math.pow(1.6, attempt)));
                         setTimeout(poll, delay);
                       } else {
+                        setShowTranscriptProcessing(false);
                         setUploadAudioError('Processing timed out. Please re-upload your audio.');
                         setShowUploadAudio(true);
                       }
@@ -971,7 +1022,7 @@ const Index = () => {
                     throw new Error(`Upload failed ${resp.status}: ${txt}`);
                   } else {
                     setShowUploadAudio(false);
-                    alert('Audio uploaded. Transcription started.');
+                    setShowTranscriptProcessing(true);
                   }
                 } catch (err: any) {
                   console.error('Audio upload error:', err);
@@ -1038,6 +1089,17 @@ const Index = () => {
         </div>
       )}
 
+      {/* Transcript Processing Modal */}
+      {showTranscriptProcessing && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 text-center">
+            <div className="w-10 h-10 border-2 border-medical-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Processing transcript…</h3>
+            <p className="text-sm text-gray-600">This may take up to a few minutes. The transcript will open automatically when ready.</p>
+          </div>
+        </div>
+      )}
+
       {/* Transcript Modal */}
       {showTranscript && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -1046,10 +1108,26 @@ const Index = () => {
               <h3 className="text-xl font-semibold text-gray-900">Transcript</h3>
               <button
                 type="button"
-                onClick={() => setShowTranscript(false)}
-                className="px-4 py-2 rounded bg-gray-200 text-gray-800 hover:bg-gray-300 transition-colors"
+                onClick={() => {
+                  setShowTranscript(false);
+                  setShowUploadAudio(true);
+                  setRecordedBlob(null);
+                  setUploadAudioError("");
+                }}
+                className="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
               >
-                Close
+                Re-upload / Transcribe again
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowTranscript(false)}
+                aria-label="Close"
+                className="ml-2 h-8 w-8 flex items-center justify-center rounded-full bg-gray-200 text-gray-700 hover:bg-gray-300"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
               </button>
             </div>
             <div className="max-h-[70vh] overflow-y-auto">

@@ -25,6 +25,7 @@ const App: React.FC = () => {
         <Route path="/intake/:patientId" element={<IntakePage />} />
         <Route path="/soap/:patientId/:visitId" element={<SoapSummary />} />
         <Route path="/vitals/:patientId/:visitId" element={<VitalsForm />} />
+        <Route path="*" element={<Navigate to="/patient-registration" replace />} />
       </Routes>
     </Router>
   );

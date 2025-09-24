@@ -83,6 +83,7 @@ class VisitMongo(Document):
     # Step 3: Audio Transcription & SOAP Generation
     transcription_session: Optional[TranscriptionSessionMongo] = None
     soap_note: Optional[SoapNoteMongo] = None
+    vitals: Optional[dict] = None
 
     class Config:
         # Exclude revision_id and other MongoDB-specific fields when serializing

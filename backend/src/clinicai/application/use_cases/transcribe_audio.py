@@ -104,6 +104,7 @@ class TranscribeAudioUseCase:
 
             def _call_openai() -> str:
                 try:
+                    logger.info(f"Calling OpenAI API with model: {settings.openai.model}, max_tokens: {min(8000, settings.openai.max_tokens)}")
                     resp = client.chat.completions.create(
                         model=settings.openai.model,
                         messages=[
@@ -116,18 +117,39 @@ class TranscribeAudioUseCase:
                         presence_penalty=0.0,
                         frequency_penalty=0.0,
                     )
-                    return (resp.choices[0].message.content or "").strip()
+                    content = (resp.choices[0].message.content or "").strip()
+                    logger.info(f"OpenAI LLM processing succeeded. Response length: {len(content)} characters")
+                    return content
                 except Exception as e:
                     logger = logging.getLogger("clinicai")
-                    logger.error(f"OpenAI LLM processing failed: {str(e)}")
+                    logger.error(f"OpenAI LLM processing failed: {str(e)}", exc_info=True)
+                    logger.error(f"Raw transcript length: {len(raw_transcript)} characters")
+                    logger.error(f"API Key present: {bool(settings.openai.api_key)}")
+                    logger.error(f"Model: {settings.openai.model}")
                     # Return the raw transcript if LLM processing fails
                     return raw_transcript
 
             structured_content = await asyncio.to_thread(_call_openai)
             logger.info(f"LLM processing completed. Structured content length: {len(structured_content)} characters")
 
-            # Prefer storing the structured JSON text in place of raw transcript
-            cleaned_transcript_text = structured_content or raw_transcript
+            # Validate that the structured content is valid JSON
+            cleaned_transcript_text = raw_transcript  # Default to raw transcript
+            if structured_content and structured_content != raw_transcript:
+                try:
+                    import json
+                    # Try to parse as JSON to validate structure
+                    parsed = json.loads(structured_content)
+                    if isinstance(parsed, dict) and any(key in parsed for key in ["Doctor", "Patient"]):
+                        cleaned_transcript_text = structured_content
+                        logger.info("Successfully validated structured transcript JSON")
+                    else:
+                        logger.warning("Structured content is not valid Doctor/Patient JSON format")
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Structured content is not valid JSON: {e}")
+                except Exception as e:
+                    logger.warning(f"Error validating structured content: {e}")
+
+            logger.info(f"Final transcript length: {len(cleaned_transcript_text)} characters")
 
             # Complete transcription
             visit.complete_transcription(

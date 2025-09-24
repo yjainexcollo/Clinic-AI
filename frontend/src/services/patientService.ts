@@ -2,23 +2,6 @@ const API_ENDPOINT =
   (import.meta as any).env?.VITE_N8N_WEBHOOK_URL ||
   "https://n8n-excollo.azurewebsites.net/webhook";
 
-<<<<<<< HEAD
-// Backend API base URL (FastAPI)
-let BACKEND_BASE_URL: string =
-  ((import.meta as any).env?.VITE_BACKEND_BASE_URL as string) ||
-  "http://localhost:8000";
-
-// Normalize common dev misconfigurations for browser access
-try {
-  const raw = BACKEND_BASE_URL?.trim();
-  if (raw && /(^|\/)0\.0\.0\.0(?=[:/]|$)/.test(raw)) {
-    BACKEND_BASE_URL = raw.replace(/0\.0\.0\.0/g, "localhost");
-  }
-  if (BACKEND_BASE_URL && !/^https?:\/\//i.test(BACKEND_BASE_URL)) {
-    BACKEND_BASE_URL = `http://${BACKEND_BASE_URL}`;
-  }
-} catch {}
-=======
 // Backend API base URL (FastAPI) with normalization
 function normalizeBaseUrl(input?: string): string {
   let url = (input || "").trim();
@@ -37,7 +20,6 @@ function normalizeBaseUrl(input?: string): string {
 const BACKEND_BASE_URL: string = normalizeBaseUrl(
   (import.meta as any).env?.VITE_BACKEND_BASE_URL as string
 ) || "http://localhost:8000";
->>>>>>> codehimanshu
 
 export { BACKEND_BASE_URL };
 
@@ -141,27 +123,6 @@ export async function answerIntakeBackend(
       body: JSON.stringify(payload),
     });
   }
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Backend error ${resp.status}: ${text}`);
-  }
-  return resp.json();
-}
-
-// Upload multiple medication images via webhook route
-export async function uploadMedicationImages(
-  patientId: string,
-  visitId: string,
-  files: File[]
-): Promise<{ uploaded_images: Array<{ id: string; filename: string; content_type?: string }>; status: string }>{
-  const form = new FormData();
-  files.forEach((f) => form.append("images", f));
-  form.append("patient_id", patientId);
-  form.append("visit_id", visitId);
-  const resp = await fetch(`${BACKEND_BASE_URL}/patients/webhook/images`, {
-    method: "POST",
-    body: form,
-  });
   if (!resp.ok) {
     const text = await resp.text();
     throw new Error(`Backend error ${resp.status}: ${text}`);
@@ -332,7 +293,7 @@ export async function getPatient(
 export async function getPreVisitSummary(
   patientId: string,
   visitId: string
-): Promise<{ patient_id: string; visit_id: string; summary: string; generated_at: string; medication_images?: Array<{ id: string; filename: string; content_type?: string }> }> {
+): Promise<{ patient_id: string; visit_id: string; summary: string; generated_at: string }> {
   try {
     const response = await fetch(`${BACKEND_BASE_URL}/patients/${patientId}/visits/${visitId}/summary`, {
       method: "GET",
@@ -351,6 +312,29 @@ export async function getPreVisitSummary(
     console.error("Error getting pre-visit summary:", error);
     throw new Error("Failed to get pre-visit summary. Please try again.");
   }
+}
+
+// ------------------------
+// Medication Images API
+// ------------------------
+export async function uploadMedicationImages(
+  patientId: string,
+  visitId: string,
+  files: File[]
+): Promise<{ uploaded_images: Array<{ id: string; filename: string; content_type?: string }>; status: string }>{
+  const form = new FormData();
+  files.forEach((f) => form.append("images", f));
+  form.append("patient_id", patientId);
+  form.append("visit_id", visitId);
+  const resp = await fetch(`${BACKEND_BASE_URL}/patients/webhook/images`, {
+    method: "POST",
+    body: form,
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Backend error ${resp.status}: ${text}`);
+  }
+  return resp.json();
 }
 
 // ------------------------

@@ -193,6 +193,7 @@ class MongoPatientRepository(PatientRepository):
                 pre_visit_summary=visit.pre_visit_summary,
                 transcription_session=transcription_session_mongo,
                 soap_note=soap_note_mongo,
+                vitals=visit.vitals,
             )
             visits_mongo.append(visit_mongo)
 
@@ -297,6 +298,8 @@ class MongoPatientRepository(PatientRepository):
                 transcription_session=transcription_session,
                 soap_note=soap_note,
             )
+            # Attach vitals if present
+            visit.vitals = getattr(visit_mongo, "vitals", None)
             visits.append(visit)
 
         return Patient(

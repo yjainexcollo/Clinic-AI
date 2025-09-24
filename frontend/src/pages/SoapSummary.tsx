@@ -109,4 +109,3 @@ const SoapSummary: React.FC = () => {
 
 export default SoapSummary;
 
-
