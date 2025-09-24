@@ -205,6 +205,9 @@ async def root():
             "generate_soap": "POST /notes/soap/generate",
             "get_transcript": "GET /notes/{patient_id}/visits/{visit_id}/transcript",
             "get_soap": "GET /notes/{patient_id}/visits/{visit_id}/soap",
+            # Vitals endpoints
+            "store_vitals": "POST /notes/vitals",
+            "get_vitals": "GET /notes/{patient_id}/visits/{visit_id}/vitals",
             # Prescription endpoints
             "upload_prescriptions": "POST /prescriptions/upload",
         },
