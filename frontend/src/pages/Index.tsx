@@ -966,7 +966,30 @@ const Index = () => {
                         const t = await fetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/transcript`);
                         if (t.ok) {
                           const data = await t.json();
-                          setTranscriptText(data.transcript || '');
+                          let transcriptContent = data.transcript || '';
+                          
+                          // Check if transcript appears to be raw (not structured JSON)
+                          const isRawTranscript = !transcriptContent.includes('"Doctor"') && !transcriptContent.includes('"Patient"');
+                          
+                          if (isRawTranscript && transcriptContent.trim()) {
+                            // Try to structure the dialogue using the backend endpoint
+                            try {
+                              const structureResponse = await fetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/dialogue/structure`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' }
+                              });
+                              if (structureResponse.ok) {
+                                const structureData = await structureResponse.json();
+                                if (structureData.dialogue && typeof structureData.dialogue === 'object') {
+                                  transcriptContent = JSON.stringify(structureData.dialogue);
+                                }
+                              }
+                            } catch (e) {
+                              console.warn('Failed to structure dialogue:', e);
+                            }
+                          }
+                          
+                          setTranscriptText(transcriptContent);
                           setShowTranscriptProcessing(false);
                           setShowTranscript(true);
                           return;

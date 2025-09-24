@@ -614,34 +614,58 @@ async def structure_dialogue(
         client = OpenAI(api_key=settings.openai.api_key)
 
         def _call_openai() -> str:
-            resp = client.chat.completions.create(
-                model=settings.openai.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                max_tokens=min(2000, settings.openai.max_tokens),
-                temperature=0.1,
-            )
-            return (resp.choices[0].message.content or "").strip()
+            try:
+                logger.info(f"Structure dialogue: Calling OpenAI API with model: {settings.openai.model}, max_tokens: {min(2000, settings.openai.max_tokens)}")
+                resp = client.chat.completions.create(
+                    model=settings.openai.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    max_tokens=min(2000, settings.openai.max_tokens),
+                    temperature=0.1,
+                )
+                content = (resp.choices[0].message.content or "").strip()
+                logger.info(f"Structure dialogue: OpenAI API succeeded. Response length: {len(content)} characters")
+                return content
+            except Exception as e:
+                logger.error(f"Structure dialogue: OpenAI API failed: {str(e)}", exc_info=True)
+                logger.error(f"Structure dialogue: Raw transcript length: {len(raw_transcript)} characters")
+                raise
 
-        content = await asyncio.to_thread(_call_openai)
+        try:
+            content = await asyncio.to_thread(_call_openai)
+        except Exception as e:
+            logger.error(f"Failed to structure dialogue: {str(e)}")
+            return {"dialogue": {"text": raw_transcript}}
 
         # Try to parse JSON; if not valid JSON object, return as text under 'dialogue'
         import json
         try:
             data = json.loads(content)
             if isinstance(data, dict):
-                return {"dialogue": data}
+                # Validate that it contains Doctor/Patient keys
+                if any(key in data for key in ["Doctor", "Patient"]):
+                    return {"dialogue": data}
+                else:
+                    logger.warning("Structured content doesn't contain Doctor/Patient keys")
+                    return {"dialogue": {"text": content}}
             # If it's a list of pairs, convert to dict-like sequence
             if isinstance(data, list):
                 merged: Dict[str, Any] = {}
                 for item in data:
                     if isinstance(item, dict):
                         merged.update(item)
-                return {"dialogue": merged or {"text": content}}
-        except Exception:
-            pass
+                if any(key in merged for key in ["Doctor", "Patient"]):
+                    return {"dialogue": merged}
+                else:
+                    return {"dialogue": {"text": content}}
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse structured content as JSON: {e}")
+            return {"dialogue": {"text": content}}
+        except Exception as e:
+            logger.warning(f"Error processing structured content: {e}")
+            return {"dialogue": {"text": content}}
 
         return {"dialogue": {"text": content}}
 
