@@ -43,11 +43,12 @@ class RegisterPatientUseCase:
             visit = Visit(
                 visit_id=visit_id, patient_id=existing_patient.patient_id.value, symptom=""
             )
-            # First consultation question should ask for primary symptom
-            print(f"DEBUG: RegisterPatient - Existing patient language: {existing_patient.language}")
+            # Update patient's language preference for this visit
+            existing_patient.language = request.language
+            print(f"DEBUG: RegisterPatient - Updated existing patient language from {existing_patient.language} to {request.language}")
             first_question = await self._question_service.generate_first_question(
                 disease=visit.symptom or "general consultation",
-                language=existing_patient.language
+                language=request.language
             )
             print(f"DEBUG: RegisterPatient - Generated first question for existing patient: {first_question}")
             existing_patient.add_visit(visit)

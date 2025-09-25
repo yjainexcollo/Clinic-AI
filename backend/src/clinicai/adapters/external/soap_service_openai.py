@@ -43,12 +43,50 @@ class OpenAISoapService(SoapService):
         except Exception:
             pass
 
+    def _translate_vitals_to_spanish(self, vitals_text: str) -> str:
+        """Translate vitals text from English to Spanish."""
+        if not vitals_text:
+            return vitals_text
+            
+        # Translation mappings
+        translations = {
+            "Blood pressure": "Presión arterial",
+            "Heart rate": "Frecuencia cardíaca", 
+            "Respiratory rate": "Frecuencia respiratoria",
+            "Temperature": "Temperatura",
+            "SpO₂": "SpO₂",  # Keep same
+            "Height": "Altura",
+            "Weight": "Peso",
+            "Pain score": "Escala de dolor",
+            "Left arm": "Brazo izquierdo",
+            "Right arm": "Brazo derecho",
+            "Left": "Izquierdo",
+            "Right": "Derecho",
+            "Sitting": "Sentado",
+            "Standing": "De pie", 
+            "Lying": "Acostado",
+            "Regular": "Regular",
+            "Irregular": "Irregular",
+            "Oral": "Oral",
+            "Axillary": "Axilar",
+            "Tympanic": "Timpánico",
+            "Rectal": "Rectal",
+            "on room air": "en aire ambiente"
+        }
+        
+        translated_text = vitals_text
+        for english, spanish in translations.items():
+            translated_text = translated_text.replace(english, spanish)
+            
+        return translated_text
+
     async def generate_soap_note(
         self,
         transcript: str,
         patient_context: Optional[Dict[str, Any]] = None,
         intake_data: Optional[Dict[str, Any]] = None,
-        pre_visit_summary: Optional[Dict[str, Any]] = None
+        pre_visit_summary: Optional[Dict[str, Any]] = None,
+        language: str = "en"
     ) -> Dict[str, Any]:
         """Generate SOAP note using OpenAI GPT-4."""
         
@@ -66,6 +104,9 @@ class OpenAISoapService(SoapService):
             if 'vitals' in pre_visit_summary:
                 vitals_data = pre_visit_summary['vitals']['data']
                 vitals_text = self._format_vitals_for_soap(vitals_data)
+                # Translate vitals to Spanish if needed
+                if language == "sp":
+                    vitals_text = self._translate_vitals_to_spanish(vitals_text)
                 context_parts.append(f"Vitals Data: {vitals_text}")
         
         if intake_data and intake_data.get('questions_asked'):
@@ -76,8 +117,45 @@ class OpenAISoapService(SoapService):
         
         context = "\n\n".join(context_parts) if context_parts else "No additional context available"
         
-        # Create the prompt
-        prompt = f"""
+        # Create language-aware prompt
+        if language == "sp":
+            prompt = f"""
+Eres un escribano clínico que genera notas SOAP a partir de consultas médico-paciente.
+
+CONTEXTO:
+{context}
+
+TRANSCRIPCIÓN DE CONSULTA:
+{transcript}
+
+INSTRUCCIONES:
+1. Genera una nota SOAP completa basada en la transcripción y contexto
+2. NO hagas diagnósticos o recomendaciones de tratamiento a menos que sean explícitamente declarados por el médico
+3. Usa terminología médica apropiadamente
+4. Sé objetivo y factual
+5. Si la información no está clara o falta, marca como "No claro" o "No discutido"
+6. Enfócate en lo que realmente se dijo durante la consulta
+
+FORMATO REQUERIDO (JSON):
+{{
+    "subjective": "Síntomas reportados por el paciente, preocupaciones e historial discutido",
+    "objective": "Hallazgos observables, signos vitales, hallazgos del examen físico mencionados",
+    "assessment": "Impresiones clínicas y razonamiento discutido por el médico",
+    "plan": "Plan de tratamiento, instrucciones de seguimiento y próximos pasos discutidos",
+    "highlights": ["Punto clínico clave 1", "Punto clínico clave 2", "Punto clínico clave 3"],
+    "red_flags": ["Cualquier síntoma o hallazgo preocupante mencionado"],
+    "model_info": {{
+        "model": "{self._settings.soap.model}",
+        "temperature": {self._settings.soap.temperature},
+        "max_tokens": {self._settings.soap.max_tokens}
+    }},
+    "confidence_score": 0.95
+}}
+
+Genera la nota SOAP ahora:
+"""
+        else:
+            prompt = f"""
 You are a clinical scribe generating SOAP notes from doctor-patient consultations. 
 
 CONTEXT:
