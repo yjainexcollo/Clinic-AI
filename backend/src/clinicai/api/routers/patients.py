@@ -29,7 +29,7 @@ from clinicai.domain.errors import (
     VisitNotFoundError,
 )
 
-from ..deps import PatientRepositoryDep, QuestionServiceDep
+from ..deps import PatientRepositoryDep, QuestionServiceDep, SoapServiceDep
 from ...core.utils.crypto import encode_patient_id, decode_patient_id
 from ..schemas.patient import AnswerIntakeResponse, ErrorResponse
 from ..schemas.patient import AnswerIntakeRequest as AnswerIntakeRequestSchema
@@ -816,6 +816,7 @@ async def get_pre_visit_summary(
 async def generate_post_visit_summary(
     request: PostVisitSummaryRequest,
     patient_repo: PatientRepositoryDep,
+    soap_service: SoapServiceDep,
 ):
     """
     Generate post-visit recap for the patient visit.
@@ -825,7 +826,7 @@ async def generate_post_visit_summary(
             patient_id=decode_patient_id(request.patient_id),
             visit_id=request.visit_id,
         )
-        use_case = GeneratePostVisitSummaryUseCase(patient_repo)
+        use_case = GeneratePostVisitSummaryUseCase(patient_repo, soap_service)
         result = await use_case.execute(dto)
         return PostVisitSummaryResponse(
             patient_id=encode_patient_id(result.patient_id),

@@ -52,7 +52,7 @@ class IntakeSession:
         attachment_image_paths: Optional[List[str]] = None,
         ocr_texts: Optional[List[str]] = None,
     ) -> None:
-<<<<<<< HEAD
+
         """Add a question and answer to the intake."""
         # Check if intake is already completed
         if self.status == "completed":
@@ -61,9 +61,9 @@ class IntakeSession:
             )
 
         # Check question limit
-=======
+
         # Check limit
->>>>>>> b5bb9db029976112b5b5040d9c549dff33c512c5
+
         if self.current_question_count >= self.max_questions:
             raise QuestionLimitExceededError(
                 self.current_question_count, self.max_questions
@@ -398,9 +398,9 @@ class Visit:
         return self.status == "transcription"
 
     def can_generate_soap(self) -> bool:
-<<<<<<< HEAD
+
         return self.status == "soap_generation" and self.is_transcription_complete()
-=======
+
         """Check if SOAP can be generated."""
         return self.status == "soap_generation" and self.is_transcription_complete()
->>>>>>> b5bb9db029976112b5b5040d9c549dff33c512c5
+

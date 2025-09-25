@@ -87,11 +87,12 @@ INSTRUCTIONS:
 4. Be objective and factual
 5. If information is unclear or missing, mark as "Unclear" or "Not discussed"
 6. Focus on what was actually said during the consultation
+7. For OBJECTIVE section: Include BOTH physical exam findings/observations from the transcript AND vital signs/measurements from the vitals form
 
 REQUIRED FORMAT (JSON):
 {{
     "subjective": "Patient's reported symptoms, concerns, and history as discussed",
-    "objective": "Observable findings, vital signs, physical exam findings mentioned",
+    "objective": "Observable findings from transcript (physical exam findings, observations) AND vital signs/measurements from vitals form (blood pressure, heart rate, temperature, weight, height, BMI, oxygen saturation, etc.)",
     "assessment": "Clinical impressions and reasoning discussed by the physician",
     "plan": "Treatment plan, follow-up instructions, and next steps discussed",
     "highlights": ["Key clinical points 1", "Key clinical points 2", "Key clinical points 3"],
