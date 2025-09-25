@@ -13,6 +13,52 @@ const Block: React.FC<{ title: string; children?: React.ReactNode }> = ({ title,
 
 const render = (v: any) => (v == null ? "Not discussed" : String(v));
 
+function renderObjective(obj: any): React.ReactNode {
+  if (obj == null) return <span className="opacity-60">Not discussed</span>;
+  let data: any = obj;
+  if (typeof obj === "string") {
+    const t = obj.trim();
+    if ((t.startsWith("{") && t.endsWith("}")) || (t.startsWith("[") && t.endsWith("]"))) {
+      try {
+        data = JSON.parse(t);
+      } catch {
+        // fall through to raw string
+      }
+    }
+  }
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    const vital = data.vital_signs || data.vitals || data.vitalSigns;
+    const physical = data.physical_exam || data.exam || data.physicalExam;
+    return (
+      <div className="space-y-3">
+        {vital && typeof vital === "object" && (
+          <div>
+            <div className="text-sm font-semibold mb-1">Vital Signs</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {Object.entries(vital).map(([k, v]) => (
+                <div key={k} className="flex items-start gap-2 text-sm">
+                  <span className="min-w-28 capitalize text-gray-600">{k.replace(/_/g, " ")}</span>
+                  <span className="flex-1">{String(v)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {physical && (
+          <div>
+            <div className="text-sm font-semibold mb-1">Physical Exam</div>
+            <div className="text-sm whitespace-pre-wrap">{String(physical)}</div>
+          </div>
+        )}
+        {!vital && !physical && (
+          <div className="text-sm whitespace-pre-wrap">{JSON.stringify(data, null, 2)}</div>
+        )}
+      </div>
+    );
+  }
+  return <span className="whitespace-pre-wrap">{typeof data === "string" ? data : String(data)}</span>;
+}
+
 const SoapSummary: React.FC = () => {
   const { patientId = "", visitId = "" } = useParams();
   const navigate = useNavigate();
@@ -70,7 +116,7 @@ const SoapSummary: React.FC = () => {
       </div>
 
       <Block title="Subjective">{render(subj)}</Block>
-      <Block title="Objective">{render(obj)}</Block>
+      <Block title="Objective">{renderObjective(obj)}</Block>
       <Block title="Assessment">{render(assess)}</Block>
       <Block title="Plan">{render(plan)}</Block>
 

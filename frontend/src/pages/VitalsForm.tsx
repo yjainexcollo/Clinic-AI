@@ -147,7 +147,7 @@ const VitalsForm: React.FC = () => {
         systolic: Number(vitals.systolic),
         diastolic: Number(vitals.diastolic),
         heartRate: Number(vitals.heartRate),
-        respiratoryRate: Number(vitals.respiratoryRate),
+        respiratoryRate: vitals.respiratoryRate !== "" && vitals.respiratoryRate != null ? Number(vitals.respiratoryRate) : undefined,
         temperature: Number(vitals.temperature),
         oxygenSaturation: Number(vitals.oxygenSaturation),
         weight: Number(vitals.weight),
@@ -322,7 +322,7 @@ const VitalsForm: React.FC = () => {
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Respiratory Rate</h2>
           <div className="w-full md:w-1/2">
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Breaths per minute *
+              Breaths per minute (optional)
             </label>
             <input
               type="number"
@@ -330,7 +330,6 @@ const VitalsForm: React.FC = () => {
               onChange={(e) => handleInputChange("respiratoryRate", e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="16"
-              required
             />
           </div>
         </div>

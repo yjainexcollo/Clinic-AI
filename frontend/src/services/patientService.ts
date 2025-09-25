@@ -387,7 +387,7 @@ export interface VitalsData {
   bpPosition: string;
   heartRate: string;
   rhythm: string;
-  respiratoryRate: string;
+  respiratoryRate?: string; // optional
   temperature: string;
   tempUnit: string;
   tempMethod: string;
