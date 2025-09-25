@@ -215,6 +215,7 @@ class AudioTranscriptionRequest:
     patient_id: str
     visit_id: str
     audio_file_path: str
+    language: str = "en"
     audio_duration: Optional[float] = None
 
 

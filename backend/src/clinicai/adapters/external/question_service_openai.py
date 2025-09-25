@@ -134,12 +134,21 @@ class OpenAIQuestionService(QuestionService):
                 "cyclical",
                 "timing",
                 "what time",
+                "varían",
+                "patrones",
+                "tiempo",
+                "mañana",
+                "noche",
+                "día",
+                "estacional",
+                "cíclico",
+                "patrón temporal"
             ]
         ):
             return "temporal"
         if "pain" in t or any(
             k in t
-            for k in ["scale", "intensity", "sharp", "dull", "burning", "throbbing", "radiat", "spreads", "0-10"]
+            for k in ["scale", "intensity", "sharp", "dull", "burning", "throbbing", "radiat", "spreads", "0-10", "dolor", "escala", "intensidad", "agudo", "sordo", "ardiente", "pulsante", "irradia", "se extiende", "ubicación", "duración", "carácter", "radiación", "alivian", "agravan"]
         ):
             return "pain"
         if any(k in t for k in ["travel", "traveled", "trip", "abroad", "sick contact", "visited", "viajado", "viaje", "extranjero", "contacto enfermo"]):
@@ -161,6 +170,15 @@ class OpenAIQuestionService(QuestionService):
                 "chest pain",
                 "stomach pain",
                 "abdominal pain",
+                "síntomas agudos",
+                "fiebre",
+                "tos",
+                "dolor en el pecho",
+                "dolor de estómago",
+                "infección",
+                "diabetes",
+                "hipertensión",
+                "dolor abdominal",
             ]
         ):
             return "hpi"
@@ -193,11 +211,11 @@ class OpenAIQuestionService(QuestionService):
             ]
         ):
             return "family"
-        if any(k in t for k in ["smoke", "alcohol", "diet", "exercise", "occupation", "work", "exposure", "routine"]):
+        if any(k in t for k in ["smoke", "alcohol", "diet", "exercise", "occupation", "work", "exposure", "routine", "fumar", "alcohol", "dieta", "ejercicio", "ocupación", "trabajo", "exposición", "rutina", "hábitos", "estilo de vida"]):
             return "lifestyle"
-        if any(k in t for k in ["pregnan", "gyneco", "obstet", "menstru", "period", "lmp", "vaginal"]):
+        if any(k in t for k in ["pregnan", "gyneco", "obstet", "menstru", "period", "lmp", "vaginal", "embaraz", "ginecol", "obstétric", "menstru", "período", "vaginal", "ciclos", "regulares"]):
             return "gyn"
-        if any(k in t for k in ["functional", "mobility", "walk", "daily activity", "impair", "adl"]):
+        if any(k in t for k in ["functional", "mobility", "walk", "daily activity", "impair", "adl", "funcional", "movilidad", "caminar", "actividad diaria", "limitación", "actividades diarias", "movimiento"]):
             return "functional"
 
         return "other"

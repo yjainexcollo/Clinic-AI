@@ -97,10 +97,11 @@ async def transcribe_audio(
     background: BackgroundTasks,
     patient_id: str = Form(...),
     visit_id: str = Form(...),
+    language: str = Form("en"),
     audio_file: UploadFile = File(...),
 ):
     """Queue audio transcription and return immediately (202)."""
-    logger.info(f"Transcribe audio request received for patient_id: {patient_id}, visit_id: {visit_id}")
+    logger.info(f"Transcribe audio request received for patient_id: {patient_id}, visit_id: {visit_id}, language: {language}")
 
     if not audio_file.filename:
         raise HTTPException(
@@ -155,6 +156,7 @@ async def transcribe_audio(
                     patient_id=internal_patient_id,
                     visit_id=visit_id,
                     audio_file_path=temp_file_path,
+                    language=language,
                 )
                 use_case = TranscribeAudioUseCase(patient_repo, transcription_service)
                 await use_case.execute(req)

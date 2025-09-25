@@ -57,50 +57,89 @@ class TranscribeAudioUseCase:
             # Transcribe audio
             logger = logging.getLogger("clinicai")
             logger.info(f"Starting Whisper transcription for file: {request.audio_file_path}")
+            logger.info(f"TranscribeAudioUseCase: Using language='{request.language}' for transcription")
             
             transcription_result = await self._transcription_service.transcribe_audio(
                 request.audio_file_path,
+                language=request.language,
                 medical_context=True
             )
 
             raw_transcript = transcription_result.get("transcript", "") or ""
             logger.info(f"Whisper transcription completed. Transcript length: {len(raw_transcript)} characters")
+            logger.info(f"Raw transcript (first 200 chars): {raw_transcript[:200]}")
 
             # Post-process with LLM to clean PII and structure Doctor/Patient dialogue
             logger.info("Starting LLM processing for transcript cleaning and structuring")
             settings = get_settings()
             client = OpenAI(api_key=settings.openai.api_key)
 
-            system_prompt = (
-                "You are an AI assistant processing clinical consultation transcripts.\n"
-                "Goal: produce highly accurate speaker-attributed dialogue.\n"
-                "STRICT RULES:\n"
-                "- Remove personal identifiers (names, phone numbers, addresses).\n"
-                "- Correct obvious transcription errors (spelling, spacing, casing) without changing meaning.\n"
-                "- Attribute each utterance to the correct speaker: Doctor vs Patient.\n"
-                "- Use medical context cues to determine speaker.\n"
-                "- Output valid JSON ONLY, with alternating keys 'Doctor' and 'Patient' where possible.\n"
-                "- If the same speaker talks twice in a row, still output two consecutive keys (do not invent turns).\n"
-                "- Do not include any commentary or Markdown. JSON only."
-            )
-            user_prompt = (
-                "Use these diarization heuristics in order of priority:\n"
-                "1) The Doctor typically greets, asks questions, gives instructions, summarizes, or explains plans.\n"
-                "2) The Patient typically reports symptoms, answers, describes history, denies symptoms, or asks for help.\n"
-                "3) Question-like sentences (who/what/when/where/why/how, or ending with '?') are usually Doctor unless clearly the Patient asking.\n"
-                "4) Phrases like 'I prescribe', 'Let's order', 'We will do', 'Follow up', 'Take this', 'I'll examine' => Doctor.\n"
-                "5) Phrases like 'I feel', 'I have', 'It started', 'My pain', 'Since yesterday', 'I took' => Patient.\n"
-                "6) If ambiguous, prefer continuity with previous speaker unless a question/answer pattern indicates a switch.\n"
-                "7) Keep the original order of utterances.\n\n"
-                "Few-shot examples (not part of output):\n"
-                "RAW: 'Hi, I'm Dr. Smith. How can I help you today?' → {\"Doctor\": \"Hello, how can I help you today?\"}\n"
-                "RAW: 'I've had a cough for three days.' → {\"Patient\": \"I have had a cough for three days.\"}\n"
-                "RAW: 'Do you have fever or shortness of breath?' → {\"Doctor\": \"Do you have a fever or shortness of breath?\"}\n"
-                "RAW: 'Yes, fever since yesterday.' → {\"Patient\": \"Yes, fever since yesterday.\"}\n\n"
-                "OUTPUT FORMAT (single JSON object; keys repeat as turns):\n"
-                "{\n  \"Doctor\": \"...\",\n  \"Patient\": \"...\",\n  \"Doctor\": \"...\",\n  \"Patient\": \"...\"\n}\n\n"
-                "Transcript to process (clean PII and structure; JSON only):\n" + raw_transcript
-            )
+            # Language-aware system prompt
+            if request.language == "sp":
+                system_prompt = (
+                    "Eres un asistente de IA que procesa transcripciones de consultas clínicas.\n"
+                    "Objetivo: producir diálogo altamente preciso atribuido por hablante.\n"
+                    "REGLAS ESTRICTAS:\n"
+                    "- Elimina identificadores personales (nombres, números de teléfono, direcciones).\n"
+                    "- Corrige errores obvios de transcripción (ortografía, espaciado, mayúsculas) sin cambiar el significado.\n"
+                    "- Atribuye cada declaración al hablante correcto: Doctor vs Paciente.\n"
+                    "- Usa pistas de contexto médico para determinar el hablante.\n"
+                    "- Produce SOLO JSON válido, con claves alternadas 'Doctor' y 'Paciente' cuando sea posible.\n"
+                    "- Si el mismo hablante habla dos veces seguidas, aún produce dos claves consecutivas (no inventes turnos).\n"
+                    "- No incluyas comentarios ni Markdown. Solo JSON."
+                )
+            else:
+                system_prompt = (
+                    "You are an AI assistant processing clinical consultation transcripts.\n"
+                    "Goal: produce highly accurate speaker-attributed dialogue.\n"
+                    "STRICT RULES:\n"
+                    "- Remove personal identifiers (names, phone numbers, addresses).\n"
+                    "- Correct obvious transcription errors (spelling, spacing, casing) without changing meaning.\n"
+                    "- Attribute each utterance to the correct speaker: Doctor vs Patient.\n"
+                    "- Use medical context cues to determine speaker.\n"
+                    "- Output valid JSON ONLY, with alternating keys 'Doctor' and 'Patient' where possible.\n"
+                    "- If the same speaker talks twice in a row, still output two consecutive keys (do not invent turns).\n"
+                    "- Do not include any commentary or Markdown. JSON only."
+                )
+            # Language-aware user prompt
+            if request.language == "sp":
+                user_prompt = (
+                    "Usa estas heurísticas de diarización en orden de prioridad:\n"
+                    "1) El Doctor típicamente saluda, hace preguntas, da instrucciones, resume o explica planes.\n"
+                    "2) El Paciente típicamente reporta síntomas, responde, describe historial, niega síntomas o pide ayuda.\n"
+                    "3) Las oraciones tipo pregunta (¿qué/cuándo/dónde/por qué/cómo?, o que terminan con '?') son usualmente del Doctor a menos que claramente sea el Paciente preguntando.\n"
+                    "4) Frases como 'Receto', 'Vamos a ordenar', 'Haremos', 'Seguimiento', 'Tome esto', 'Voy a examinar' => Doctor.\n"
+                    "5) Frases como 'Me siento', 'Tengo', 'Empezó', 'Mi dolor', 'Desde ayer', 'Tomé' => Paciente.\n"
+                    "6) Si es ambiguo, prefiere continuidad con el hablante anterior a menos que un patrón pregunta/respuesta indique un cambio.\n"
+                    "7) Mantén el orden original de las declaraciones.\n\n"
+                    "Ejemplos (no parte de la salida):\n"
+                    "RAW: 'Hola, soy el Dr. García. ¿Cómo puedo ayudarle hoy?' → {\"Doctor\": \"Hola, ¿cómo puedo ayudarle hoy?\"}\n"
+                    "RAW: 'He tenido tos por tres días.' → {\"Paciente\": \"He tenido tos por tres días.\"}\n"
+                    "RAW: '¿Tiene fiebre o falta de aire?' → {\"Doctor\": \"¿Tiene fiebre o falta de aire?\"}\n"
+                    "RAW: 'Sí, fiebre desde ayer.' → {\"Paciente\": \"Sí, fiebre desde ayer.\"}\n\n"
+                    "FORMATO DE SALIDA (objeto JSON único; las claves se repiten como turnos):\n"
+                    "{\n  \"Doctor\": \"...\",\n  \"Paciente\": \"...\",\n  \"Doctor\": \"...\",\n  \"Paciente\": \"...\"\n}\n\n"
+                    "Transcripción a procesar (limpiar PII y estructurar; solo JSON):\n" + raw_transcript
+                )
+            else:
+                user_prompt = (
+                    "Use these diarization heuristics in order of priority:\n"
+                    "1) The Doctor typically greets, asks questions, gives instructions, summarizes, or explains plans.\n"
+                    "2) The Patient typically reports symptoms, answers, describes history, denies symptoms, or asks for help.\n"
+                    "3) Question-like sentences (who/what/when/where/why/how, or ending with '?') are usually Doctor unless clearly the Patient asking.\n"
+                    "4) Phrases like 'I prescribe', 'Let's order', 'We will do', 'Follow up', 'Take this', 'I'll examine' => Doctor.\n"
+                    "5) Phrases like 'I feel', 'I have', 'It started', 'My pain', 'Since yesterday', 'I took' => Patient.\n"
+                    "6) If ambiguous, prefer continuity with previous speaker unless a question/answer pattern indicates a switch.\n"
+                    "7) Keep the original order of utterances.\n\n"
+                    "Few-shot examples (not part of output):\n"
+                    "RAW: 'Hi, I'm Dr. Smith. How can I help you today?' → {\"Doctor\": \"Hello, how can I help you today?\"}\n"
+                    "RAW: 'I've had a cough for three days.' → {\"Patient\": \"I have had a cough for three days.\"}\n"
+                    "RAW: 'Do you have fever or shortness of breath?' → {\"Doctor\": \"Do you have a fever or shortness of breath?\"}\n"
+                    "RAW: 'Yes, fever since yesterday.' → {\"Patient\": \"Yes, fever since yesterday.\"}\n\n"
+                    "OUTPUT FORMAT (single JSON object; keys repeat as turns):\n"
+                    "{\n  \"Doctor\": \"...\",\n  \"Patient\": \"...\",\n  \"Doctor\": \"...\",\n  \"Patient\": \"...\"\n}\n\n"
+                    "Transcript to process (clean PII and structure; JSON only):\n" + raw_transcript
+                )
 
             def _call_openai() -> str:
                 try:
@@ -125,6 +164,7 @@ class TranscribeAudioUseCase:
 
             structured_content = await asyncio.to_thread(_call_openai)
             logger.info(f"LLM processing completed. Structured content length: {len(structured_content)} characters")
+            logger.info(f"Structured transcript (first 300 chars): {structured_content[:300]}")
 
             # Prefer storing the structured JSON text in place of raw transcript
             cleaned_transcript_text = structured_content or raw_transcript
