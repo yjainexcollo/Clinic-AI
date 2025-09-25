@@ -14,6 +14,9 @@ import re
 
 from openai import OpenAI  # type: ignore
 
+# Module-level logger to avoid UnboundLocalError from function-level assignments
+LOGGER = logging.getLogger("clinicai")
+
 
 class TranscribeAudioUseCase:
     """Use case for transcribing audio files."""
@@ -28,7 +31,7 @@ class TranscribeAudioUseCase:
 
     async def execute(self, request: AudioTranscriptionRequest) -> AudioTranscriptionResponse:
         """Execute the audio transcription use case."""
-        logger.info(f"TranscribeAudioUseCase.execute called for patient {request.patient_id}, visit {request.visit_id}")
+        LOGGER.info(f"TranscribeAudioUseCase.execute called for patient {request.patient_id}, visit {request.visit_id}")
         
         # Find patient
         patient_id = PatientId(request.patient_id)
@@ -59,8 +62,7 @@ class TranscribeAudioUseCase:
             await self._patient_repository.save(patient)
 
             # Transcribe audio
-            logger = logging.getLogger("clinicai")
-            logger.info(f"Starting Whisper transcription for file: {request.audio_file_path}")
+            LOGGER.info(f"Starting Whisper transcription for file: {request.audio_file_path}")
             
             transcription_result = await self._transcription_service.transcribe_audio(
                 request.audio_file_path,
@@ -68,33 +70,33 @@ class TranscribeAudioUseCase:
             )
 
             raw_transcript = transcription_result.get("transcript", "") or ""
-            logger.info(f"Whisper transcription completed. Transcript length: {len(raw_transcript)} characters")
-            logger.info(f"Raw transcript preview: {raw_transcript[:300]}...")
+            LOGGER.info(f"Whisper transcription completed. Transcript length: {len(raw_transcript)} characters")
+            LOGGER.info(f"Raw transcript preview: {raw_transcript[:300]}...")
             
             if not raw_transcript or raw_transcript.strip() == "":
                 raise ValueError("Whisper transcription returned empty transcript")
 
             # Post-process with LLM to clean PII and structure Doctor/Patient dialogue
-            logger.info("Starting LLM processing for transcript cleaning and structuring")
+            LOGGER.info("Starting LLM processing for transcript cleaning and structuring")
             settings = get_settings()
             client = OpenAI(api_key=settings.openai.api_key)
 
             # Process transcript with improved chunking strategy
-            logger.info(f"Starting transcript processing for {len(raw_transcript)} characters")
-            logger.info(f"Raw transcript preview: {raw_transcript[:200]}...")
+            LOGGER.info(f"Starting transcript processing for {len(raw_transcript)} characters")
+            LOGGER.info(f"Raw transcript preview: {raw_transcript[:200]}...")
             
             structured_content = await self._process_transcript_with_chunking(
-                client, raw_transcript, settings, logger
+                client, raw_transcript, settings, LOGGER
             )
 
             # Process structured dialogue separately from raw transcript
             structured_dialogue = None
-            logger.info(f"LLM processing result length: {len(structured_content) if structured_content else 0}")
+            LOGGER.info(f"LLM processing result length: {len(structured_content) if structured_content else 0}")
             
             if structured_content and structured_content != raw_transcript:
                 try:
                     parsed = json.loads(structured_content)
-                    logger.info(f"Parsed JSON structure: {type(parsed)} with {len(parsed) if isinstance(parsed, list) else 'N/A'} items")
+                    LOGGER.info(f"Parsed JSON structure: {type(parsed)} with {len(parsed) if isinstance(parsed, list) else 'N/A'} items")
                     
                     if isinstance(parsed, list) and all(
                         isinstance(item, dict) and 
@@ -103,13 +105,13 @@ class TranscribeAudioUseCase:
                         for item in parsed
                     ):
                         structured_dialogue = parsed
-                        logger.info(f"Successfully validated structured dialogue with {len(parsed)} turns")
+                        LOGGER.info(f"Successfully validated structured dialogue with {len(parsed)} turns")
                     else:
-                        logger.warning(f"Structured content is not valid dialogue format. Type: {type(parsed)}, Content: {structured_content[:200]}...")
+                        LOGGER.warning(f"Structured content is not valid dialogue format. Type: {type(parsed)}, Content: {structured_content[:200]}...")
                 except json.JSONDecodeError as e:
-                    logger.warning(f"Structured content is not valid JSON: {e}. Content: {structured_content[:200]}...")
+                    LOGGER.warning(f"Structured content is not valid JSON: {e}. Content: {structured_content[:200]}...")
                 except Exception as e:
-                    logger.warning(f"Error validating structured content: {e}. Content: {structured_content[:200] if structured_content else 'None'}...")
+                    LOGGER.warning(f"Error validating structured content: {e}. Content: {structured_content[:200] if structured_content else 'None'}...")
             
             # Create intelligent fallback structured dialogue if LLM processing failed
             if not structured_dialogue and raw_transcript and raw_transcript.strip():
@@ -154,12 +156,12 @@ class TranscribeAudioUseCase:
                             current_speaker = "Patient" if current_speaker == "Doctor" else "Doctor"
                     
                     structured_dialogue = fallback_dialogue
-                    logger.info(f"Created intelligent fallback structured dialogue with {len(fallback_dialogue)} turns")
+                    LOGGER.info(f"Created intelligent fallback structured dialogue with {len(fallback_dialogue)} turns")
                 except Exception as e:
-                    logger.warning(f"Failed to create fallback structured dialogue: {e}")
+                    LOGGER.warning(f"Failed to create fallback structured dialogue: {e}")
 
-            logger.info(f"Raw transcript length: {len(raw_transcript)} characters")
-            logger.info(f"Structured dialogue turns: {len(structured_dialogue) if structured_dialogue else 0}")
+            LOGGER.info(f"Raw transcript length: {len(raw_transcript)} characters")
+            LOGGER.info(f"Structured dialogue turns: {len(structured_dialogue) if structured_dialogue else 0}")
 
             # Complete transcription with both raw transcript and structured dialogue
             visit.complete_transcription(
@@ -170,7 +172,7 @@ class TranscribeAudioUseCase:
 
             # Save updated visit
             await self._patient_repository.save(patient)
-            logger.info(f"Transcription completed successfully for patient {patient.patient_id.value}, visit {visit.visit_id.value}")
+            LOGGER.info(f"Transcription completed successfully for patient {patient.patient_id.value}, visit {visit.visit_id.value}")
 
             return AudioTranscriptionResponse(
                 patient_id=patient.patient_id.value,
@@ -184,8 +186,7 @@ class TranscribeAudioUseCase:
 
         except Exception as e:
             # Log the full error for debugging
-            logger = logging.getLogger("clinicai")
-            logger.error(f"Transcription failed for patient {patient.patient_id.value}, visit {visit.visit_id.value}: {str(e)}", exc_info=True)
+            LOGGER.error(f"Transcription failed for patient {patient.patient_id.value}, visit {visit.visit_id.value}: {str(e)}", exc_info=True)
             
             # Mark transcription as failed
             visit.fail_transcription(str(e))
