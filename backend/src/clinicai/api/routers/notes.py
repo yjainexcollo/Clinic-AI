@@ -114,25 +114,71 @@ async def transcribe_audio(
                 temp_file.write(chunk)
 
         # Mark visit as queued if possible (best-effort via use case during processing)
+        try:
+            # Check if patient and visit exist and are in correct status
+            patient = await patient_repo.get_by_id(internal_patient_id)
+            if not patient:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail={"error": "PATIENT_NOT_FOUND", "message": f"Patient {internal_patient_id} not found", "details": {}},
+                )
+            
+            visit = patient.get_visit_by_id(visit_id)
+            if not visit:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail={"error": "VISIT_NOT_FOUND", "message": f"Visit {visit_id} not found", "details": {}},
+                )
+            
+            logger.info(f"Patient {internal_patient_id} and visit {visit_id} found. Visit status: {visit.status}")
+            
+            # Start transcription session
+            visit.start_transcription(temp_file_path)
+            await patient_repo.save(patient)
+            logger.info(f"Started transcription session for patient {internal_patient_id}, visit {visit_id}")
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning(f"Failed to start transcription session: {e}. Continuing with background processing...")
 
         async def _run_background():
             try:
+                logger.info(f"Starting background transcription for patient {internal_patient_id}, visit {visit_id}")
+                logger.info(f"Audio file path: {temp_file_path}")
+                logger.info(f"File exists: {os.path.exists(temp_file_path) if temp_file_path else False}")
+                
                 req = AudioTranscriptionRequest(
                     patient_id=internal_patient_id,
                     visit_id=visit_id,
                     audio_file_path=temp_file_path,
                 )
                 use_case = TranscribeAudioUseCase(patient_repo, transcription_service)
-                await use_case.execute(req)
-                logger.info(f"Transcription completed for patient {internal_patient_id}")
+                
+                logger.info("Executing transcription use case...")
+                result = await use_case.execute(req)
+                logger.info(f"Transcription completed successfully for patient {internal_patient_id}: {result}")
+                
             except Exception as e:
-                logger.error(f"Background transcription failed: {e}", exc_info=True)
+                logger.error(f"Background transcription failed for patient {internal_patient_id}, visit {visit_id}: {e}", exc_info=True)
+                # Mark transcription as failed in the database
+                try:
+                    patient = await patient_repo.get_by_id(internal_patient_id)
+                    if patient:
+                        visit = patient.get_visit_by_id(visit_id)
+                        if visit and visit.transcription_session:
+                            visit.fail_transcription(str(e))
+                            await patient_repo.save(patient)
+                            logger.info(f"Marked transcription as failed for patient {internal_patient_id}")
+                except Exception as db_error:
+                    logger.error(f"Failed to mark transcription as failed in database: {db_error}")
             finally:
                 try:
                     if temp_file_path and os.path.exists(temp_file_path):
                         os.unlink(temp_file_path)
-                except Exception:
-                    pass
+                        logger.info(f"Cleaned up temp file: {temp_file_path}")
+                except Exception as cleanup_error:
+                    logger.error(f"Failed to clean up temp file {temp_file_path}: {cleanup_error}")
 
         # Schedule background processing
         asyncio.create_task(_run_background())
@@ -413,8 +459,71 @@ async def get_transcript(
             headers = {"Retry-After": "5"}
             return FastAPIResponse(content=b"", status_code=status.HTTP_202_ACCEPTED, headers=headers)
 
-        # Return transcript data including structured dialogue if cached
+        # If no structured dialogue cached yet, auto-structure and persist (server-side) for fast future loads
         session = visit.transcription_session
+        try:
+            if session and not getattr(session, "structured_dialogue", None) and session.transcript:
+                raw = session.transcript
+                # Chunk long transcripts
+                import re as _re, json as _json
+                sents = [_s.strip() for _s in _re.split(r"(?<=[.!?])\s+", raw) if _s.strip()]
+                chunks: list[str] = []
+                buf = ""
+                for s in sents:
+                    if len(buf) + len(s) + 1 > 6000 and buf:
+                        chunks.append(buf)
+                        buf = s
+                    else:
+                        buf = f"{buf} {s}".strip()
+                if buf:
+                    chunks.append(buf)
+
+                settings = get_settings()
+                client = OpenAI(api_key=settings.openai.api_key)
+                sys_prompt = (
+                    "You are an AI assistant that structures a medical visit transcript.\n"
+                    "Return ONLY valid JSON. Do not include text outside JSON.\n"
+                    "Rules:\n- Remove PII; fix typos; output as an array of ordered turns with keys Doctor/Patient."
+                )
+                def _call(text: str) -> list[dict]:
+                    user_prompt = "Transcript:\n" + text + "\n\nReturn JSON ONLY, no markdown, no comments."
+                    try:
+                        resp = client.chat.completions.create(
+                            model=settings.openai.model,
+                            messages=[{"role": "system", "content": sys_prompt}, {"role": "user", "content": user_prompt}],
+                            max_tokens=min(1200, settings.openai.max_tokens or 1200),
+                            temperature=0.1,
+                        )
+                        content = (resp.choices[0].message.content or "").strip()
+                        parsed = _json.loads(content)
+                        return parsed if isinstance(parsed, list) else []
+                    except Exception:
+                        # Heuristic split
+                        turns: list[dict] = []
+                        next_role = "Doctor"
+                        for s in [_s.strip() for _s in _re.split(r"(?<=[.!?])\s+", text) if _s.strip()]:
+                            lower = s.lower()
+                            if lower.startswith("doctor:"):
+                                turns.append({"Doctor": s.split(":",1)[1].strip()})
+                                next_role = "Patient"
+                            elif lower.startswith("patient:"):
+                                turns.append({"Patient": s.split(":",1)[1].strip()})
+                                next_role = "Doctor"
+                            else:
+                                turns.append({next_role: s})
+                                next_role = "Patient" if next_role == "Doctor" else "Doctor"
+                        return turns
+
+                parts: list[dict] = []
+                for ch in (chunks or [raw]):
+                    parts.extend(_call(ch))
+                if parts:
+                    session.structured_dialogue = parts
+                    await patient_repo.save(patient)
+        except Exception:
+            pass
+
+        # Return transcript data including structured dialogue if cached
         return TranscriptionSessionDTO(
             audio_file_path=session.audio_file_path,
             transcript=session.transcript,
@@ -423,7 +532,8 @@ async def get_transcript(
             completed_at=session.completed_at.isoformat() if session.completed_at else None,
             error_message=session.error_message,
             audio_duration_seconds=session.audio_duration_seconds,
-            word_count=session.word_count
+            word_count=session.word_count,
+            structured_dialogue=getattr(session, "structured_dialogue", None),
         )
 
     except PatientNotFoundError as e:
@@ -600,50 +710,152 @@ async def structure_dialogue(
 
         raw_transcript = visit.transcription_session.transcript
 
-        # Build prompt
-        # Cap transcript length to avoid model context errors in production
-        MAX_TRANSCRIPT_CHARS = 6000
-        safe_transcript = (raw_transcript or "")[:MAX_TRANSCRIPT_CHARS]
+        # Fast path: if structured dialogue was already cached during a prior request, return it
+        if getattr(visit.transcription_session, "structured_dialogue", None):
+            return {"dialogue": visit.transcription_session.structured_dialogue}
 
+        # Use improved chunking strategy for long transcripts
+        safe_transcript = raw_transcript or ""
+        
+        # Improved system prompt matching the transcribe_audio.py implementation
         system_prompt = (
-            "You are an AI assistant that structures a medical visit transcript.\n"
-            "Return ONLY valid JSON. Do not include text outside JSON.\n"
-            "Rules:\n"
-            "- Remove PII (names, phones).\n"
-            "- Fix obvious typos.\n"
-            "- Output as a JSON array of ordered turns: [{\"Doctor\": \"...\"}, {\"Patient\": \"...\"}, ...].\n"
-            "- Alternate speakers where possible; do not merge long paragraphs; split into concise turns.\n"
-        )
-        user_prompt = (
-            "Transcript:\n" + safe_transcript + "\n\n"
-            "Return JSON ONLY, no markdown, no comments."
+            "You are a medical transcript processing AI. Your task is to create a structured dialogue between a Doctor and Patient.\n\n"
+            "CRITICAL RULES:\n"
+            "1. Remove all personal identifiers (names, addresses, phone numbers, specific dates)\n"
+            "2. Fix obvious transcription errors while preserving medical meaning\n"
+            "3. Output ONLY a JSON array where each element is an object with one key: either \"Doctor\" or \"Patient\"\n"
+            "4. Use these speaker identification rules in priority order:\n"
+            "   DOCTOR indicators:\n"
+            "   - Questions about symptoms, history, medications\n"
+            "   - Medical instructions, prescriptions, recommendations\n"
+            "   - Examination procedures, test orders\n"
+            "   - Professional language, medical terminology\n"
+            "   - Phrases: \"Let me examine\", \"I'll prescribe\", \"We'll schedule\", \"Any allergies?\"\n"
+            "   PATIENT indicators:\n"
+            "   - Personal symptoms, feelings, experiences\n"
+            "   - Answers to doctor's questions\n"
+            "   - Personal history, family history\n"
+            "   - Questions about treatment, concerns\n"
+            "   - Phrases: \"I feel\", \"I have\", \"My pain\", \"It started\", \"I took\"\n"
+            "5. Maintain conversation flow - if uncertain, consider context from previous turns\n"
+            "6. DO NOT use markdown, explanations, or anything outside the JSON array\n"
+            "OUTPUT FORMAT (JSON array only):\n"
+            "[{\"Doctor\": \"...\"}, {\"Patient\": \"...\"}, {\"Doctor\": \"...\"}]"
         )
 
         settings = get_settings()
         client = OpenAI(api_key=settings.openai.api_key)
 
-        def _call_openai() -> str:
-            try:
-                logger.info(f"Structure dialogue: Calling OpenAI API with model: {settings.openai.model}, max_tokens: {min(2000, settings.openai.max_tokens)}")
-                resp = client.chat.completions.create(
-                    model=settings.openai.model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    max_tokens=min(1200, settings.openai.max_tokens or 1200),
-                    temperature=0.1,
-                )
-                content = (resp.choices[0].message.content or "").strip()
-                logger.info(f"Structure dialogue: OpenAI API succeeded. Response length: {len(content)} characters")
-                return content
-            except Exception as e:
-                logger.error(f"Structure dialogue: OpenAI API failed: {str(e)}", exc_info=True)
-                logger.error(f"Structure dialogue: Raw transcript length: {len(raw_transcript)} characters")
-                raise
-
-        try:
+        # Use improved chunking strategy for long transcripts
+        max_chars_per_chunk = 8000 if settings.openai.model.startswith('gpt-4') else 6000
+        overlap_chars = 500
+        
+        # Split into sentences for better chunking
+        import re as _re
+        sentences = [_s.strip() for _s in _re.split(r"(?<=[.!?])\s+", safe_transcript) if _s.strip()]
+        
+        if len(safe_transcript) <= max_chars_per_chunk:
+            # Single chunk processing
+            user_prompt = f"Process this medical consultation transcript into structured dialogue:\n\n{safe_transcript}\n\nReturn JSON array only."
+            
+            def _call_openai() -> str:
+                try:
+                    max_tokens = 4000 if settings.openai.model.startswith('gpt-4') else 2000
+                    logger.info(f"Structure dialogue: Calling OpenAI API with model: {settings.openai.model}, max_tokens: {max_tokens}")
+                    resp = client.chat.completions.create(
+                        model=settings.openai.model,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        max_tokens=max_tokens,
+                        temperature=0.0,
+                    )
+                    content = (resp.choices[0].message.content or "").strip()
+                    logger.info(f"Structure dialogue: OpenAI API succeeded. Response length: {len(content)} characters")
+                    return content
+                except Exception as e:
+                    logger.error(f"Structure dialogue: OpenAI API failed: {str(e)}", exc_info=True)
+                    logger.error(f"Structure dialogue: Raw transcript length: {len(raw_transcript)} characters")
+                    raise
+            
             content = await asyncio.to_thread(_call_openai)
+        else:
+            # Multi-chunk processing with overlap
+            chunks = []
+            current_chunk = ""
+            
+            for sentence in sentences:
+                if len(current_chunk) + len(sentence) + 1 > max_chars_per_chunk and current_chunk:
+                    chunks.append(current_chunk.strip())
+                    # Start new chunk with overlap from previous
+                    overlap_start = max(0, len(current_chunk) - overlap_chars)
+                    current_chunk = current_chunk[overlap_start:] + " " + sentence
+                else:
+                    current_chunk += (" " + sentence) if current_chunk else sentence
+            
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+            
+            logger.info(f"Processing transcript in {len(chunks)} chunks with {overlap_chars} char overlap")
+            
+            def _call_openai_chunk(text: str) -> str:
+                try:
+                    max_tokens = 4000 if settings.openai.model.startswith('gpt-4') else 2000
+                    user_prompt = f"Process this part of a medical consultation transcript:\n\n{text}\n\nReturn JSON array only."
+                    resp = client.chat.completions.create(
+                        model=settings.openai.model,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        max_tokens=max_tokens,
+                        temperature=0.0,
+                    )
+                    content = (resp.choices[0].message.content or "").strip()
+                    return content
+                except Exception as e:
+                    logger.error(f"Chunk processing failed: {str(e)}", exc_info=True)
+                    return ""
+            
+            # Process each chunk
+            chunk_results = []
+            for i, chunk in enumerate(chunks):
+                chunk_result = await asyncio.to_thread(_call_openai_chunk, chunk)
+                
+                if chunk_result:
+                    try:
+                        import json as _json
+                        parsed = _json.loads(chunk_result)
+                        if isinstance(parsed, list):
+                            chunk_results.extend(parsed)
+                        else:
+                            logger.warning(f"Chunk {i+1} returned invalid format")
+                            chunk_results.append({"Doctor": f"[Chunk {i+1} processing failed]"})
+                    except:
+                        logger.warning(f"Chunk {i+1} JSON parsing failed")
+                        chunk_results.append({"Doctor": f"[Chunk {i+1} processing failed]"})
+                else:
+                    logger.warning(f"Chunk {i+1} processing failed")
+                    chunk_results.append({"Doctor": f"[Chunk {i+1} processing failed]"})
+            
+            # Merge and clean up overlapping content
+            merged = [chunk_results[0]] if chunk_results else []
+            for i in range(1, len(chunk_results)):
+                current_chunk = chunk_results[i]
+                if (merged and current_chunk and 
+                    len(merged[-1]) == 1 and len(current_chunk[0]) == 1 and
+                    list(merged[-1].keys())[0] == list(current_chunk[0].keys())[0] and
+                    list(merged[-1].values())[0] == list(current_chunk[0].values())[0]):
+                    merged.extend(current_chunk[1:])
+                else:
+                    merged.extend(current_chunk)
+            
+            # Convert back to JSON string
+            import json as _json
+            content = _json.dumps(merged)
+        
+        try:
             # Cache parsed structured dialogue to DB for fast retrieval
             import json as _json
             try:

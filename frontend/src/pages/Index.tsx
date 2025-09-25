@@ -45,6 +45,7 @@ const Index = () => {
   const [uploadAudioError, setUploadAudioError] = useState<string>("");
   const [showTranscript, setShowTranscript] = useState<boolean>(false);
   const [transcriptText, setTranscriptText] = useState<string>("");
+  const [isTranscriptLoading, setIsTranscriptLoading] = useState<boolean>(false);
   const [showTranscriptProcessing, setShowTranscriptProcessing] = useState<boolean>(false);
 
   // Recording state
@@ -857,12 +858,21 @@ const Index = () => {
                   onClick={async () => {
                     try {
                       if (!patientId || !visitId) return;
+                      setIsTranscriptLoading(true);
+                      setTranscriptText("");
+                      setShowTranscript(true);
                       const resp = await fetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/transcript`);
                       if (!resp.ok) {
                         const txt = await resp.text();
                         throw new Error(`Failed to fetch transcript ${resp.status}: ${txt}`);
                       }
                       const data = await resp.json();
+                      // Prefer cached structured dialogue if available
+                      if (Array.isArray((data as any).structured_dialogue)) {
+                        setTranscriptText(JSON.stringify((data as any).structured_dialogue));
+                        setIsTranscriptLoading(false);
+                        return;
+                      }
                       let transcriptContent = data.transcript || '';
                       const isRaw = transcriptContent && !transcriptContent.includes('"Doctor"') && !transcriptContent.includes('"Patient"');
                       if (isRaw) {
@@ -884,8 +894,9 @@ const Index = () => {
                         } catch {}
                       }
                       setTranscriptText(transcriptContent);
-                      setShowTranscript(true);
+                      setIsTranscriptLoading(false);
                     } catch (e) {
+                      setIsTranscriptLoading(false);
                       alert('Transcript not available yet.');
                     }
                   }}
@@ -1136,18 +1147,7 @@ const Index = () => {
           <div className="bg-white rounded-lg shadow-lg w-full max-w-4xl max-h-[90vh] overflow-hidden">
             <div className="flex items-center justify-between p-6 border-b">
               <h3 className="text-xl font-semibold text-gray-900">Transcript</h3>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowTranscript(false);
-                  setShowUploadAudio(true);
-                  setRecordedBlob(null);
-                  setUploadAudioError("");
-                }}
-                className="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
-              >
-                Re-upload / Transcribe again
-              </button>
+              {/* Removed re-upload/transcribe button per requirement */}
               <button
                 type="button"
                 onClick={() => setShowTranscript(false)}
@@ -1161,7 +1161,14 @@ const Index = () => {
               </button>
             </div>
             <div className="max-h-[70vh] overflow-y-auto">
-              <TranscriptView content={transcriptText} />
+              {isTranscriptLoading ? (
+                <div className="p-8 text-center text-gray-600">
+                  <div className="w-10 h-10 border-2 border-medical-primary border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                  Fetching transcript…
+                </div>
+              ) : (
+                <TranscriptView content={transcriptText} />
+              )}
             </div>
           </div>
         </div>

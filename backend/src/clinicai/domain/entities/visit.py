@@ -311,7 +311,7 @@ class Visit:
         self.status = "transcription"
         self.updated_at = datetime.utcnow()
 
-    def complete_transcription(self, transcript: str, audio_duration: Optional[float] = None) -> None:
+    def complete_transcription(self, transcript: str, audio_duration: Optional[float] = None, structured_dialogue: Optional[List[Dict[str, Any]]] = None) -> None:
         """Complete the transcription process."""
         if not self.transcription_session:
             raise ValueError("No active transcription session")
@@ -321,6 +321,10 @@ class Visit:
         self.transcription_session.completed_at = datetime.utcnow()
         self.transcription_session.audio_duration_seconds = audio_duration
         self.transcription_session.word_count = len(transcript.split()) if transcript else 0
+        
+        # Store structured dialogue if provided
+        if structured_dialogue:
+            self.transcription_session.structured_dialogue = structured_dialogue
         
         # Move to SOAP generation status
         self.status = "soap_generation"

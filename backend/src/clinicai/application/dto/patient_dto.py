@@ -287,3 +287,5 @@ class TranscriptionSessionDTO:
     error_message: Optional[str]
     audio_duration_seconds: Optional[float]
     word_count: Optional[int]
+    # Optional: cached structured dialogue (ordered Doctor/Patient turns)
+    structured_dialogue: Optional[List[Dict[str, Any]]] = None
