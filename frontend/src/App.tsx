@@ -9,10 +9,11 @@ import PersonalForm from "./components/PersonalForm";
 import Index from "./pages/Index";
 import SoapSummary from "./pages/SoapSummary";
 import VitalsForm from "./pages/VitalsForm";
+import PostVisitSummary from "./pages/PostVisitSummary";
 
 const App: React.FC = () => {
   return (
-    <Router>
+    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Routes>
         <Route
           path="/"
@@ -25,6 +26,7 @@ const App: React.FC = () => {
         <Route path="/intake/:patientId" element={<IntakePage />} />
         <Route path="/soap/:patientId/:visitId" element={<SoapSummary />} />
         <Route path="/vitals/:patientId/:visitId" element={<VitalsForm />} />
+        <Route path="/post-visit/:patientId/:visitId" element={<PostVisitSummary />} />
         <Route path="*" element={<Navigate to="/patient-registration" replace />} />
       </Routes>
     </Router>

@@ -440,3 +440,69 @@ export async function getVitals(patientId: string, visitId: string): Promise<Vit
   }
   return res.json();
 }
+
+// ------------------------
+// Post-Visit Summary API
+// ------------------------
+export interface PostVisitSummaryResponse {
+  patient_name: string;
+  visit_date: string;
+  doctor_name: string;
+  clinic_name: string;
+  chief_complaint: string;
+  key_findings: string[];
+  diagnosis: string;
+  medications: Array<{
+    name: string;
+    dosage: string;
+    frequency: string;
+    duration: string;
+    purpose?: string;
+  }>;
+  other_recommendations: string[];
+  tests_ordered: Array<{
+    test_name: string;
+    purpose: string;
+    instructions: string;
+  }>;
+  next_appointment?: string;
+  red_flag_symptoms: string[];
+  patient_instructions: string[];
+  reassurance_note: string;
+  clinic_contact: string;
+}
+
+export async function getPostVisitSummary(patientId: string, visitId: string): Promise<PostVisitSummaryResponse> {
+  const res = await fetch(`${BACKEND_BASE_URL}/patients/summary/postvisit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ patient_id: patientId, visit_id: visitId }),
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`Backend error ${res.status}: ${t}`);
+  }
+  return res.json();
+}
+
+export function sharePostVisitSummaryViaWhatsApp(summary: PostVisitSummaryResponse): void {
+  const message = `*Post-Visit Summary for ${summary.patient_name}*
+
+*Chief Complaint:* ${summary.chief_complaint}
+
+*Diagnosis:* ${summary.diagnosis}
+
+${summary.medications.length > 0 ? `*Medications:*
+${summary.medications.map(med => `• ${med.name} - ${med.dosage}, ${med.frequency}`).join('\n')}
+
+` : ''}${summary.patient_instructions.length > 0 ? `*Instructions:*
+${summary.patient_instructions.map((instruction, i) => `${i + 1}. ${instruction}`).join('\n')}
+
+` : ''}${summary.reassurance_note ? `*Note:* ${summary.reassurance_note}
+
+` : ''}*Contact:* ${summary.clinic_contact}`;
+
+  const encodedMessage = encodeURIComponent(message);
+  const whatsappUrl = `https://wa.me/?text=${encodedMessage}`;
+  window.open(whatsappUrl, '_blank');
+}

@@ -853,6 +853,16 @@ const Index = () => {
                 </button>
                 
                 <button
+                  onClick={() => {
+                    if (!patientId || !visitId) return;
+                    window.location.href = `/post-visit/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`;
+                  }}
+                  className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 transition-colors font-medium"
+                >
+                  View Post Visit Summary
+                </button>
+                
+                <button
                   onClick={async () => {
                     try {
                       if (!patientId || !visitId) return;
