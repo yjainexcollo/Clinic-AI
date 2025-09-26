@@ -21,12 +21,29 @@ from ..models.patient_m import (
     SoapNoteMongo,
 )
 
+# Ensure Beanie is initialized (lazy) in case lifespan didn't run yet
+from beanie.exceptions import CollectionWasNotInitialized  # type: ignore
+
+async def _ensure_beanie_initialized() -> None:
+    try:
+        # Accessing settings will raise if not initialized
+        _ = PatientMongo.get_settings()  # type: ignore[attr-defined]
+    except CollectionWasNotInitialized:
+        from beanie import init_beanie  # type: ignore
+        from motor.motor_asyncio import AsyncIOMotorClient  # type: ignore
+        from clinicai.core.config import get_settings
+        settings = get_settings()
+        client = AsyncIOMotorClient(settings.database.uri, serverSelectionTimeoutMS=15000)
+        db = client[settings.database.db_name]
+        await init_beanie(database=db, document_models=[PatientMongo, VisitMongo])
+
 
 class MongoPatientRepository(PatientRepository):
     """MongoDB implementation of PatientRepository."""
 
     async def save(self, patient: Patient) -> Patient:
         """Save a patient to MongoDB."""
+        await _ensure_beanie_initialized()
         # Convert domain entity to MongoDB model
         patient_mongo = await self._domain_to_mongo(patient)
 
@@ -53,6 +70,7 @@ class MongoPatientRepository(PatientRepository):
 
     async def find_by_id(self, patient_id: PatientId) -> Optional[Patient]:
         """Find a patient by ID."""
+        await _ensure_beanie_initialized()
         patient_mongo = await PatientMongo.find_one(
             PatientMongo.patient_id == patient_id.value
         )
@@ -66,9 +84,12 @@ class MongoPatientRepository(PatientRepository):
         self, name: str, mobile: str
     ) -> Optional[Patient]:
         """Find a patient by name and mobile number."""
-        patient_mongo = await PatientMongo.find_one(
-            PatientMongo.name == name, PatientMongo.mobile == mobile
-        )
+        await _ensure_beanie_initialized()
+        # Use raw filter to avoid attribute resolution issues on class-level fields
+        patient_mongo = await PatientMongo.find_one({
+            "name": name,
+            "mobile": mobile,
+        })
 
         if not patient_mongo:
             return None
@@ -77,14 +98,14 @@ class MongoPatientRepository(PatientRepository):
 
     async def exists_by_id(self, patient_id: PatientId) -> bool:
         """Check if a patient exists by ID."""
-        count = await PatientMongo.find(
-            PatientMongo.patient_id == patient_id.value
-        ).count()
+        await _ensure_beanie_initialized()
+        count = await PatientMongo.find({"patient_id": patient_id.value}).count()
 
         return count > 0
 
     async def find_all(self, limit: int = 100, offset: int = 0) -> List[Patient]:
         """Find all patients with pagination."""
+        await _ensure_beanie_initialized()
         patients_mongo = await PatientMongo.find().skip(offset).limit(limit).to_list()
 
         return [
@@ -94,9 +115,8 @@ class MongoPatientRepository(PatientRepository):
 
     async def find_by_mobile(self, mobile: str) -> List[Patient]:
         """Find all patients with the same mobile number (family members)."""
-        patients_mongo = await PatientMongo.find(
-            PatientMongo.mobile == mobile
-        ).to_list()
+        await _ensure_beanie_initialized()
+        patients_mongo = await PatientMongo.find({"mobile": mobile}).to_list()
 
         return [
             await self._mongo_to_domain(patient_mongo)
@@ -105,14 +125,14 @@ class MongoPatientRepository(PatientRepository):
 
     async def delete(self, patient_id: PatientId) -> bool:
         """Delete a patient by ID."""
-        result = await PatientMongo.find_one(
-            PatientMongo.patient_id == patient_id.value
-        ).delete()
+        await _ensure_beanie_initialized()
+        result = await PatientMongo.find_one({"patient_id": patient_id.value}).delete()
 
         return result is not None
 
     async def cleanup_revision_ids(self) -> int:
         """Remove revision_id from all patient documents and nested visits."""
+        await _ensure_beanie_initialized()
         result = await PatientMongo.update_many(
             {},
             {
@@ -199,9 +219,7 @@ class MongoPatientRepository(PatientRepository):
             visits_mongo.append(visit_mongo)
 
         # Check if patient already exists
-        existing_patient = await PatientMongo.find_one(
-            PatientMongo.patient_id == patient.patient_id.value
-        )
+        existing_patient = await PatientMongo.find_one({"patient_id": patient.patient_id.value})
 
         if existing_patient:
             # Update existing patient

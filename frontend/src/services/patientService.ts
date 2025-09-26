@@ -86,16 +86,30 @@ export async function registerPatientBackend(payload: {
   consent: boolean;
   country?: string;
 }): Promise<BackendRegisterResponse> {
-  const resp = await fetch(`${BACKEND_BASE_URL}/patients/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Backend error ${resp.status}: ${text}`);
+  // Add a safety timeout so UI won't spin indefinitely
+  const controller = new AbortController();
+  const timeoutMs = 20000; // 20s
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(`${BACKEND_BASE_URL}/patients/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`Backend error ${resp.status}: ${text}`);
+    }
+    return resp.json();
+  } catch (e: any) {
+    if (e?.name === "AbortError") {
+      throw new Error("Request timed out while creating patient. Please try again.");
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
-  return resp.json();
 }
 
 // Answer intake question via backend
@@ -434,6 +448,46 @@ export async function getVitals(patientId: string, visitId: string): Promise<Vit
     `${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/vitals`,
     { headers: { Accept: "application/json" } }
   );
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`Backend error ${res.status}: ${t}`);
+  }
+  return res.json();
+}
+
+// ------------------------
+// Doctor Preferences API
+// ------------------------
+export interface DoctorPreferencesResponse {
+  doctor_id: string;
+  global_categories: string[];
+  selected_categories: string[];
+  max_questions: number;
+}
+
+export interface UpsertDoctorPreferencesRequest {
+  categories: string[];
+  max_questions: number;
+  global_categories?: string[];
+}
+
+export async function getDoctorPreferences(): Promise<DoctorPreferencesResponse> {
+  const res = await fetch(`${BACKEND_BASE_URL}/doctor/preferences`, {
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`Backend error ${res.status}: ${t}`);
+  }
+  return res.json();
+}
+
+export async function saveDoctorPreferences(payload: UpsertDoctorPreferencesRequest): Promise<{ success?: boolean } & Partial<DoctorPreferencesResponse>> {
+  const res = await fetch(`${BACKEND_BASE_URL}/doctor/preferences`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(payload),
+  });
   if (!res.ok) {
     const t = await res.text();
     throw new Error(`Backend error ${res.status}: ${t}`);

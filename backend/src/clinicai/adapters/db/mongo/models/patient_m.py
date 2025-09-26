@@ -132,3 +132,16 @@ class MedicationImageMongo(Document):
     class Settings:
         name = "medication_images"
         indexes = ["patient_id", "visit_id", "uploaded_at"]
+
+
+class DoctorPreferencesMongo(Document):
+    """MongoDB model for storing doctor preferences (standalone; independent of intake)."""
+    doctor_id: str = Field(..., description="Doctor ID", unique=True)
+    global_categories: list[str] = Field(default_factory=list)
+    selected_categories: list[str] = Field(default_factory=list)
+    max_questions: int = Field(default=5)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Settings:
+        name = "doctor_preferences"
+        indexes = ["doctor_id", "updated_at"]
