@@ -4,19 +4,19 @@ interface TranscriptViewProps {
   content: string;
 }
 
-function parseDialogue(content: string): Array<{ speaker: "Doctor" | "Patient"; text: string }>
+function parseDialogue(content: string): Array<{ speaker: "Doctor" | "Patient" | "Family Member"; text: string }>
 {
-  const items: Array<{ speaker: "Doctor" | "Patient"; text: string }> = [];
+  const items: Array<{ speaker: "Doctor" | "Patient" | "Family Member"; text: string }> = [];
   const raw = content || "";
 
   // 1) Try to extract ordered pairs via regex even if JSON has duplicate keys
   // This preserves order when LLM returns an object like { "Doctor": "..", "Patient": "..", "Doctor": ".." }
   // It also works on pretty-printed strings.
-  const pairRe = /"(Doctor|Patient)"\s*:\s*"([\s\S]*?)"\s*(?:,|\}|$)/g;
+  const pairRe = /"(Doctor|Patient|Family Member)"\s*:\s*"([\s\S]*?)"\s*(?:,|\}|$)/g;
   try {
     let m: RegExpExecArray | null;
     while ((m = pairRe.exec(raw)) !== null) {
-      const role = m[1] === "Doctor" ? "Doctor" : "Patient";
+      const role = (m[1] === "Doctor" || m[1] === "Family Member") ? (m[1] as any) : "Patient";
       // Unescape common JSON escapes
       const text = m[2]
         .replace(/\\n/g, "\n")
@@ -37,8 +37,8 @@ function parseDialogue(content: string): Array<{ speaker: "Doctor" | "Patient"; 
         if (item && typeof item === "object") {
           for (const [k, v] of Object.entries(item)) {
             const key = k.trim();
-            if ((key === "Doctor" || key === "Patient") && typeof v === "string") {
-              items.push({ speaker: key as "Doctor" | "Patient", text: v });
+            if ((key === "Doctor" || key === "Patient" || key === "Family Member") && typeof v === "string") {
+              items.push({ speaker: key as "Doctor" | "Patient" | "Family Member", text: v });
             }
           }
         }
@@ -48,8 +48,8 @@ function parseDialogue(content: string): Array<{ speaker: "Doctor" | "Patient"; 
     if (data && typeof data === "object") {
       for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
         const key = k.trim();
-        if ((key === "Doctor" || key === "Patient") && typeof v === "string") {
-          items.push({ speaker: key as "Doctor" | "Patient", text: v });
+        if ((key === "Doctor" || key === "Patient" || key === "Family Member") && typeof v === "string") {
+          items.push({ speaker: key as "Doctor" | "Patient" | "Family Member", text: v });
         }
       }
       if (items.length > 0) return items;
@@ -60,12 +60,13 @@ function parseDialogue(content: string): Array<{ speaker: "Doctor" | "Patient"; 
 
   // 3) Fallback: split plain text into lines, alternate speakers heuristically
   const lines = raw.split(/\n+/).map(l => l.trim()).filter(Boolean);
-  const out: Array<{ speaker: "Doctor" | "Patient"; text: string }> = [];
-  let next: "Doctor" | "Patient" = "Doctor";
+  const out: Array<{ speaker: "Doctor" | "Patient" | "Family Member"; text: string }> = [];
+  let next: "Doctor" | "Patient" | "Family Member" = "Doctor";
   for (const line of lines) {
-    const m = line.match(/^\s*(Doctor|Patient)\s*:\s*(.*)$/i);
+    const m = line.match(/^\s*(Doctor|Patient|Family Member)\s*:\s*(.*)$/i);
     if (m) {
-      const sp = m[1].toLowerCase() === "doctor" ? "Doctor" : "Patient";
+      const low = m[1].toLowerCase();
+      const sp = low === "doctor" ? "Doctor" : (low === "family member" ? "Family Member" : "Patient");
       out.push({ speaker: sp, text: m[2] });
       next = sp === "Doctor" ? "Patient" : "Doctor";
     } else {
@@ -88,11 +89,11 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({ content }) => {
         <div key={idx} className="mb-6">
           <div className="flex items-start space-x-3">
             <div className={`flex-shrink-0 w-2 h-2 rounded-full mt-3 ${
-              turn.speaker === "Patient" ? "bg-green-500" : "bg-blue-500"
+              turn.speaker === "Patient" ? "bg-green-500" : turn.speaker === "Family Member" ? "bg-amber-500" : "bg-blue-500"
             }`} />
             <div className="flex-1 min-w-0">
               <div className={`text-lg font-bold mb-2 ${
-                turn.speaker === "Patient" ? "text-green-700" : "text-blue-700"
+                turn.speaker === "Patient" ? "text-green-700" : turn.speaker === "Family Member" ? "text-amber-700" : "text-blue-700"
               }`}>
                 {turn.speaker}
               </div>

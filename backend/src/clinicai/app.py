@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 import logging
 
 from .api.routers import health, patients, notes, prescriptions
+from .api.routers import transcription as transcription_router
 from .core.config import get_settings
 from .domain.errors import DomainError
 import asyncio
@@ -34,6 +35,7 @@ async def lifespan(app: FastAPI):
             PatientMongo,
             VisitMongo,
             MedicationImageMongo,
+            AdhocTranscriptMongo,
         )
 
         # Use configured URI
@@ -60,7 +62,7 @@ async def lifespan(app: FastAPI):
         db = client[db_name]
         await init_beanie(
             database=db,
-            document_models=[PatientMongo, VisitMongo, MedicationImageMongo],
+            document_models=[PatientMongo, VisitMongo, MedicationImageMongo, AdhocTranscriptMongo],
         )
         print("✅ Database connection established")
     except Exception as e:
@@ -155,6 +157,7 @@ def create_app() -> FastAPI:
     app.include_router(patients.router)
     app.include_router(notes.router)
     app.include_router(prescriptions.router)
+    app.include_router(transcription_router.router)
 
     # Global exception handler for domain errors
     @app.exception_handler(DomainError)

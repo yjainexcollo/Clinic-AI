@@ -132,3 +132,20 @@ class MedicationImageMongo(Document):
     class Settings:
         name = "medication_images"
         indexes = ["patient_id", "visit_id", "uploaded_at"]
+
+
+class AdhocTranscriptMongo(Document):
+    """MongoDB model for ad-hoc (patientless) transcripts."""
+    transcript: str = Field(..., description="Raw transcribed text")
+    structured_dialogue: Optional[list[dict]] = Field(None, description="Ordered Doctor/Patient turns")
+    language: Optional[str] = Field(None)
+    confidence: Optional[float] = Field(None)
+    duration: Optional[float] = Field(None)
+    word_count: Optional[int] = Field(None)
+    model: Optional[str] = Field(None)
+    filename: Optional[str] = Field(None)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Settings:
+        name = "adhoc_transcripts"
+        indexes = ["created_at"]

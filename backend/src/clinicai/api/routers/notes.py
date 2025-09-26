@@ -4,7 +4,7 @@ import logging
 from fastapi import APIRouter, HTTPException, status, UploadFile, File, Form, BackgroundTasks
 from fastapi.responses import Response as FastAPIResponse
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import tempfile
 import os
 import asyncio
@@ -20,6 +20,7 @@ from clinicai.application.dto.patient_dto import (
     TranscriptionSessionDTO
 )
 from clinicai.application.use_cases.transcribe_audio import TranscribeAudioUseCase
+from ...application.utils.structure_dialogue import structure_dialogue_from_text
 from clinicai.application.use_cases.generate_soap_note import GenerateSoapNoteUseCase
 from clinicai.domain.errors import (
     PatientNotFoundError,
@@ -27,8 +28,10 @@ from clinicai.domain.errors import (
 )
 from ..deps import PatientRepositoryDep, TranscriptionServiceDep, SoapServiceDep
 from ...core.utils.crypto import decode_patient_id
+# removed adhoc structured dialogue generation for ad-hoc transcribe
 from ..schemas.patient import ErrorResponse
 from ...core.config import get_settings
+from ...adapters.db.mongo.models.patient_m import AdhocTranscriptMongo
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 logger = logging.getLogger("clinicai")
@@ -77,7 +80,7 @@ async def transcribe_audio(
     # Validate file type (allow common audio types and mpeg containers)
     content_type = audio_file.content_type or ""
     is_audio_like = content_type.startswith("audio/")
-    is_mpeg_container = content_type in ("video/mpeg",)
+    is_mpeg_container = content_type in ("video/mpeg", "video/mpg", "application/mpeg")
     is_generic_stream = content_type in ("application/octet-stream",)
     if not (is_audio_like or is_mpeg_container or is_generic_stream):
         raise HTTPException(
@@ -104,7 +107,11 @@ async def transcribe_audio(
     # Stream to temp file to avoid loading entire file in memory
     temp_file_path = None
     try:
-        suffix = f".{(audio_file.filename or 'audio').split('.')[-1]}"
+        ext = (audio_file.filename or 'audio').split('.')[-1]
+        # Normalize common MPEG container cases
+        if ext.lower() in {"mpeg", "mpg"}:
+            ext = "mpeg"
+        suffix = f".{ext}"
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
             temp_file_path = temp_file.name
             while True:
@@ -194,6 +201,11 @@ async def transcribe_audio(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"error": "INTERNAL_ERROR", "message": str(e), "details": {}},
         )
+
+
+# ------------------------
+# (adhoc transcription moved to /transcription router)
+# ------------------------
 
 
 @router.post(
