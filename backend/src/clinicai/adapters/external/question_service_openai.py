@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import re
 from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
@@ -9,42 +8,28 @@ from clinicai.core.config import get_settings
 
 
 # ----------------------
-# Question Templates (Fallbacks)
+# Canonical Categories
 # ----------------------
-QUESTION_TEMPLATES: Dict[str, Dict[str, str]] = {
-    "en": {
-    "duration": "How long have you been experiencing these symptoms?",
-    "triggers": "What makes your symptoms better or worse, such as activity, food, or stress?",
-    "pain": "If you have any pain, tell the location, duration, intensity (0–10), character, radiation, and relieving/aggravating factors.",
-    "temporal": "Do your symptoms vary by timing patterns (morning/evening, night/day, seasonal/cyclical)?",
-    "travel": "Have you travelled in the last 1–3 months? If yes, where did you go, and did you eat unsafe food or drink untreated water?",
-        "travel_gi": "Have you travelled in the last 1–3 months? If yes, where did you go, did you eat street food or raw/undercooked foods, drink untreated water, or did others with you have similar stomach symptoms?",
-    "allergies": "Do you have any allergies such as rash, hives, swelling, wheeze, sneezing, or runny nose?",
-    "medications": "What medications or remedies are you currently taking? Please include prescribed drugs, OTC, supplements, or home remedies.",
-    "hpi": "Have you had any recent acute symptoms like fever, cough, chest pain, stomach pain, or infection?",
-    "family": "Does anyone in your family have diabetes, hypertension, heart disease, cancer, or similar conditions?",
-    "lifestyle": "Can you describe your typical diet, exercise, or lifestyle habits?",
-    "gyn": "When was your last menstrual period and are your cycles regular?",
-    "functional": "Do your symptoms affect your daily activities or mobility?",
-        "closing": "Have we missed anything important about your condition or any concerns you want us to address?",
-    },
-    "sp": {
-        "duration": "¿Cuánto tiempo ha estado experimentando estos síntomas?",
-        "triggers": "¿Qué hace que sus síntomas mejoren o empeoren, como actividad, comida o estrés?",
-        "pain": "Si tiene algún dolor, mencione la ubicación, duración, intensidad (0-10), carácter, radiación y factores que lo alivian o agravan.",
-        "temporal": "¿Sus síntomas varían según patrones de tiempo (mañana/noche, día/noche, estacional/cíclico)?",
-        "travel": "¿Ha viajado en los últimos 1-3 meses? Si es así, ¿adónde fue y comió comida insegura o bebió agua no tratada?",
-        "travel_gi": "¿Ha viajado en los últimos 1-3 meses? Si es así, ¿adónde fue, comió comida callejera o alimentos crudos/mal cocidos, bebió agua no tratada, o otros con usted tuvieron síntomas estomacales similares?",
-        "allergies": "¿Tiene alguna alergia como sarpullido, urticaria, hinchazón, sibilancias, estornudos o secreción nasal?",
-        "medications": "¿Qué medicamentos o remedios está tomando actualmente? Incluya medicamentos recetados, de venta libre, suplementos o remedios caseros.",
-        "hpi": "¿Ha tenido síntomas agudos recientes como fiebre, tos, dolor en el pecho, dolor de estómago o infección?",
-        "family": "¿Alguien en su familia tiene diabetes, hipertensión, enfermedad cardíaca, cáncer o condiciones similares?",
-        "lifestyle": "¿Puede describir su dieta típica, ejercicio o hábitos de estilo de vida?",
-        "gyn": "¿Cuándo fue su último período menstrual y son regulares sus ciclos?",
-        "functional": "¿Sus síntomas afectan sus actividades diarias o movilidad?",
-        "closing": "¿Hemos pasado por alto algo importante sobre su condición o alguna preocupación que desee que abordemos?",
-    }
-}
+CATEGORIES: List[str] = [
+    "Chief Complaint",
+    "Symptom Details",
+    "Pain Assessment",
+    "Associated Symptoms",
+    "Self-care & Home Remedies",
+    "Current Medications",
+    "Allergies",
+    "Past Medical & Surgical History",
+    "Family History",
+    "Lifestyle & Social History",
+    "Travel & Exposure History",
+    "Women’s Health",
+    "Functional Status / Daily Living",
+    "Chronic Disease Monitoring",
+    "Immunization & Preventive Care",
+    "Mental Health / Psychological History",
+    "Advance Directives / Special Considerations",
+    "Closing / Open-Ended",
+]
 
 
 # ----------------------
@@ -54,15 +39,11 @@ class OpenAIQuestionService(QuestionService):
     def __init__(self) -> None:
         import os
         from pathlib import Path
-        from dotenv import load_dotenv
-
         try:
-            # dotenv is optional but helps in local development
             from dotenv import load_dotenv  # type: ignore
         except Exception:
             load_dotenv = None
 
-        # Load project settings (includes model name, tokens, temperature, etc.)
         self._settings = get_settings()
         self._debug_prompts = getattr(self._settings, "debug_prompts", False)
 
@@ -78,13 +59,14 @@ class OpenAIQuestionService(QuestionService):
                     api_key = os.getenv("OPENAI_API_KEY", "")
                     if api_key:
                         break
+
         if not api_key:
             raise ValueError("OPENAI_API_KEY is not set")
 
         self._client = OpenAI(api_key=api_key)
 
     async def _chat_completion(
-        self, messages: List[Dict[str, str]], max_tokens: int = 64, temperature: float = 0.3
+        self, messages: List[Dict[str, str]], max_tokens: int = 128, temperature: float = 0.3
     ) -> str:
         def _run() -> str:
             logger = logging.getLogger("clinicai")
@@ -111,128 +93,16 @@ class OpenAIQuestionService(QuestionService):
         return await asyncio.to_thread(_run)
 
     # ----------------------
-    # Shared classifier
-    # ----------------------
-    def _classify_question(self, text: str) -> str:
-        t = (text or "").lower().strip()
-        print(f"DEBUG: QuestionService - classifying question: '{text}' -> normalized: '{t}'")
-
-        if any(k in t for k in ["how long", "since when", "duration", "cuánto tiempo", "tiempo ha estado", "experimentando estos síntomas"]):
-            print(f"DEBUG: QuestionService - classified as 'duration'")
-            return "duration"
-        if any(k in t for k in ["trigger", "worse", "aggrav", "what makes", "factors", "relieving", "mejor", "peor", "hace que", "factores", "alivia"]):
-            return "triggers"
-        if any(
-            k in t
-            for k in [
-                "temporal",
-                "time of day",
-                "morning",
-                "evening",
-                "night",
-                "seasonal",
-                "cyclical",
-                "timing",
-                "what time",
-                "varían",
-                "patrones",
-                "tiempo",
-                "mañana",
-                "noche",
-                "día",
-                "estacional",
-                "cíclico",
-                "patrón temporal"
-            ]
-        ):
-            return "temporal"
-        if "pain" in t or any(
-            k in t
-            for k in ["scale", "intensity", "sharp", "dull", "burning", "throbbing", "radiat", "spreads", "0-10", "dolor", "escala", "intensidad", "agudo", "sordo", "ardiente", "pulsante", "irradia", "se extiende", "ubicación", "duración", "carácter", "radiación", "alivian", "agravan"]
-        ):
-            return "pain"
-        if any(k in t for k in ["travel", "traveled", "trip", "abroad", "sick contact", "visited", "viajado", "viaje", "extranjero", "contacto enfermo"]):
-            return "travel"
-        if any(k in t for k in ["allerg", "hives", "rash", "swelling", "wheeze", "sneeze", "runny nose", "alergia", "sarpullido", "hinchazón", "sibilancias", "estornudos", "secreción nasal"]):
-            return "allergies"
-        if any(k in t for k in ["medicat", "treatment", "drug", "dose", "frequency", "remedy", "otc", "supplement", "medicamento", "tratamiento", "dosis", "frecuencia", "remedio", "suplemento"]):
-            return "medications"
-        if any(
-            k in t
-            for k in [
-                "history of present illness",
-                "hpi",
-                "fever",
-                "cough",
-                "infection",
-                "diabetes",
-                "hypertension",
-                "chest pain",
-                "stomach pain",
-                "abdominal pain",
-                "síntomas agudos",
-                "fiebre",
-                "tos",
-                "dolor en el pecho",
-                "dolor de estómago",
-                "infección",
-                "diabetes",
-                "hipertensión",
-                "dolor abdominal",
-            ]
-        ):
-            return "hpi"
-        # Expanded family detection
-        if any(
-            k in t
-            for k in [
-                "family",
-                "family history",
-                "anyone in your family",
-                "relatives",
-                "parents",
-                "siblings",
-                "grandparents",
-                "hereditary",
-                "genetic",
-                "runs in your family",
-                "chronic conditions in family",
-                "familia",
-                "historial familiar",
-                "alguien en su familia",
-                "parientes",
-                "padres",
-                "hermanos",
-                "abuelos",
-                "hereditario",
-                "genético",
-                "corre en su familia",
-                "condiciones crónicas en la familia",
-            ]
-        ):
-            return "family"
-        if any(k in t for k in ["smoke", "alcohol", "diet", "exercise", "occupation", "work", "exposure", "routine", "fumar", "alcohol", "dieta", "ejercicio", "ocupación", "trabajo", "exposición", "rutina", "hábitos", "estilo de vida"]):
-            return "lifestyle"
-        if any(k in t for k in ["pregnan", "gyneco", "obstet", "menstru", "period", "lmp", "vaginal", "embaraz", "ginecol", "obstétric", "menstru", "período", "vaginal", "ciclos", "regulares"]):
-            return "gyn"
-        if any(k in t for k in ["functional", "mobility", "walk", "daily activity", "impair", "adl", "funcional", "movilidad", "caminar", "actividad diaria", "limitación", "actividades diarias", "movimiento"]):
-            return "functional"
-
-        return "other"
-
-    # ----------------------
-    # Question generation
+    # First question
     # ----------------------
     async def generate_first_question(self, disease: str, language: str = "en") -> str:
-        print(f"DEBUG: QuestionService - generate_first_question called with language: {language}")
         if language == "sp":
-            question = "¿Por qué ha venido hoy? ¿Cuál es la principal preocupación con la que necesita ayuda?"
-            print(f"DEBUG: QuestionService - returning Spanish question: {question}")
-            return question
-        question = "Why have you come in today? What is the main concern you want help with?"
-        print(f"DEBUG: QuestionService - returning English question: {question}")
-        return question
+            return "¿Por qué ha venido hoy? ¿Cuál es la principal preocupación con la que necesita ayuda?"
+        return "Why have you come in today? What is the main concern you want help with?"
 
+    # ----------------------
+    # Next question (LLM-driven)
+    # ----------------------
     async def generate_next_question(
         self,
         disease: str,
@@ -240,47 +110,13 @@ class OpenAIQuestionService(QuestionService):
         asked_questions: List[str],
         current_count: int,
         max_count: int,
-        asked_categories: Optional[List[str]] = None,
+        selected_categories: List[str],
         recently_travelled: bool = False,
         prior_summary: Optional[Any] = None,
         prior_qas: Optional[List[str]] = None,
         language: str = "en",
     ) -> str:
-        mandatory_closing = QUESTION_TEMPLATES[language].get("closing", 
-            "Have we missed anything important about your condition or any concerns you want us to address?")
 
-        covered_categories = sorted({self._classify_question(q) for q in (asked_questions or []) if q})
-        covered_categories_str = ", ".join(c for c in covered_categories if c and c != "other") or "none"
-
-        # Travel pre-check (symptoms + travel flag)
-        symptom_text = (f"{disease or ''} " + " ".join(previous_answers or [])).lower()
-        travel_keywords = [
-            "fever",
-            "cough",
-            "cold",
-            "sore throat",
-            "diarrhea",
-            "vomit",
-            "stomach",
-            "abdomen",
-            "rash",
-            "jaundice",
-            "infection",
-        ]
-        allow_travel = bool(recently_travelled) and any(k in symptom_text for k in travel_keywords)
-        travel_already_covered = "travel" in {self._classify_question(q) for q in (asked_questions or []) if q}
-
-        if allow_travel and not travel_already_covered:
-            gi_related = any(k in symptom_text for k in ["diarrhea", "vomit", "stomach", "abdomen"])
-            if gi_related:
-                return QUESTION_TEMPLATES[language].get("travel_gi", 
-                    "Have you travelled in the last 1–3 months? If yes, where did you go, did you eat street food or "
-                    "raw/undercooked foods, drink untreated water, or did others with you have similar stomach symptoms?")
-            return QUESTION_TEMPLATES[language].get("travel", 
-                "Have you travelled domestically or internationally in the last 1–3 months? If yes, where did you go, "
-                "was it a known infectious area, and did you have any sick contacts?")
-
-        # Build prior context block
         prior_block = ""
         if prior_summary:
             ps = str(prior_summary)
@@ -288,182 +124,361 @@ class OpenAIQuestionService(QuestionService):
         if prior_qas:
             prior_block += "Prior QAs: " + "; ".join(prior_qas[:6]) + "\n"
 
-        prompt = f"""
+        # ----------------------
+        # Force closing question at the end
+        # ----------------------
+        if current_count + 1 >= max_count:
+            if language == "sp":
+                return "¿Hemos pasado por alto algo importante sobre su salud o hay otras preocupaciones que desee que el médico sepa?"
+            return "Have we missed anything important about your health, or any other concerns you want the doctor to know?"
+
+        # ----------------------
+        # Build dynamic prompt
+        # ----------------------
+        if language == "sp":
+            system_prompt = f"""
+SISTEMA:
+Eres un Asistente de Admisión Clínica inteligente con conocimientos médicos avanzados. Tu rol es realizar una entrevista médica completa y enfocada haciendo UNA pregunta relevante a la vez.
+
+SISTEMA DE SELECCIÓN DEL MÉDICO:
+El médico ha seleccionado categorías específicas de preguntas y establecido límites máximos de preguntas. Debes trabajar dentro de estas restricciones mientras priorizas preguntas por importancia médica para la enfermedad específica. Cuando el número de preguntas es limitado, enfócate en la información más clínicamente relevante primero.
+
+CONTEXTO:
+- Motivo principal de consulta: {disease or "N/A"}
+- Respuestas recientes: {', '.join(previous_answers[-3:])}
+- Ya preguntado: {asked_questions}
+- Categorías disponibles: {selected_categories if selected_categories else "TODAS LAS CATEGORÍAS (priorizar por importancia médica)"}
+- Progreso: {current_count}/{max_count}
+- Viajó recientemente: {recently_travelled}
+- Contexto previo: {prior_block or "ninguno"}
+
+SELECCIÓN INTELIGENTE DE PREGUNTAS:
+Debes determinar inteligentemente qué preguntas hacer basándote en el contexto de la enfermedad/síntomas. Usa tu conocimiento médico para identificar:
+
+1. **CLASIFICACIÓN DE ENFERMEDAD**: 
+   - Condiciones AGUDAS (fiebre, tos, resfriado, infecciones, lesiones, dolor agudo)
+   - Condiciones CRÓNICAS (diabetes, hipertensión, asma, tiroides, enfermedad cardíaca)
+   - Condiciones GENÉTICAS/HEREDITARIAS (antecedentes familiares relevantes)
+   - Condiciones RELACIONADAS CON ALERGIAS (erupciones, urticaria, síntomas respiratorios)
+   - Condiciones RELACIONADAS CON DOLOR (dolores de cabeza, dolor de espalda, dolor articular, etc.)
+   - Condiciones RELACIONADAS CON VIAJES (enfermedades infecciosas, síntomas GI)
+
+2. **CATEGORÍAS DE PREGUNTAS Y LÍMITES**:
+   - **Autocuidado, Remedios Caseros y Medicamentos Actuales** (COMBINADO): Siempre preguntar una vez
+   - **Síntomas Asociados**: Máx 3 preguntas (para detalles de síntomas, síntomas relacionados)
+   - **Monitoreo de Enfermedad Crónica**: Máx 3 preguntas (lecturas en casa, laboratorios, exámenes, adherencia a medicamentos, complicaciones)
+   - **Todas las demás categorías**: 1 pregunta cada una
+
+3. **FILTRADO INTELIGENTE**:
+   - **Antecedentes Familiares**: Solo preguntar para condiciones genéticas/crónicas (diabetes, hipertensión, cáncer, enfermedad cardíaca, etc.)
+   - **Antecedentes Médicos**: Solo preguntar para condiciones crónicas o antecedentes agudos relevantes
+   - **Monitoreo de Enfermedad Crónica**: Solo preguntar para diabetes, hipertensión, asma, tiroides, enfermedad cardíaca, etc.
+   - **Historia de Viajes**: Solo preguntar si viajó_recientemente=True Y la condición está relacionada con viajes (infecciones, síntomas GI)
+   - **Alergias**: Solo preguntar si la condición está relacionada con alergias (erupciones, síntomas respiratorios, condiciones de la piel)
+   - **Evaluación del Dolor**: Solo preguntar si la condición involucra dolor (dolores de cabeza, dolor de espalda, dolor articular, etc.)
+
+4. **ESPECÍFICOS DEL MONITOREO DE ENFERMEDAD CRÓNICA**:
+   Para condiciones crónicas, preguntar sobre estas áreas específicas (preguntar cada área UNA SOLA VEZ):
+   - **Lecturas en casa**: Presión arterial, azúcares en sangre, flujo máximo, pruebas de tiroides
+   - **Laboratorios recientes**: HbA1c, función renal/hepática, colesterol, ECG
+   - **Exámenes y Complicaciones**: Exámenes de ojos/visión, exámenes de pies, exámenes dentales, verificación de heridas, dolor en el pecho, dificultad para respirar
+   - **Adherencia a medicamentos y efectos secundarios**: Qué tan bien están tomando los medicamentos y cualquier efecto secundario
+   
+   IMPORTANTE: NO preguntar por separado sobre "exámenes" y "complicaciones" - combinarlos en UNA pregunta integral por área.
+
+5. **PRIORIDAD DEL FLUJO DE PREGUNTAS**:
+   - Duración de síntomas (siempre primero)
+   - Autocuidado/Remedios caseros y Medicamentos actuales (combinado, siempre segundo)
+   - Preguntas específicas de la enfermedad basadas en clasificación
+   - Síntomas asociados (si es relevante, máx 3)
+   - Monitoreo crónico (si es condición crónica, máx 3)
+   - Otras categorías relevantes (1 cada una)
+   - Pregunta de cierre (solo después de mínimo 5 preguntas)
+
+6. **PRIORIZACIÓN INTELIGENTE (cuando las categorías son seleccionadas por el médico)**:
+   IMPORTANTE: El médico ha seleccionado categorías específicas y establecido límites de preguntas. Debes priorizar preguntas dentro de esas categorías seleccionadas basándote en la importancia médica para la enfermedad específica. Actúa como un médico general priorizaría la recopilación de información.
+   
+   **PRIORIDAD DE CONDICIONES CRÓNICAS**:
+   - ALTA PRIORIDAD: Duración, medicamentos, lecturas en casa, laboratorios recientes, complicaciones/exámenes, antecedentes familiares
+   - PRIORIDAD MEDIA: Síntomas asociados, factores de estilo de vida
+   - BAJA PRIORIDAD: Historia de viajes, alergias (a menos que sea relevante)
+   
+   **EXÁMENES ESPECÍFICOS POR CONDICIÓN**:
+   - **Diabetes**: Exámenes de ojos, exámenes de pies, exámenes dentales, pruebas de función renal
+   - **Hipertensión**: Exámenes cardíacos, función renal, exámenes de ojos
+   - **Enfermedad Cardíaca**: Pruebas cardíacas, niveles de colesterol, pruebas de estrés
+   - **Asma**: Pruebas de función pulmonar, pruebas de alergias, radiografías de tórax
+   - **Tiroides**: Pruebas de función tiroidea, exámenes del cuello, monitoreo de frecuencia cardíaca
+   - **Cáncer**: Pruebas de detección, estudios de imagen, marcadores sanguíneos
+   - **Salud de la Mujer**: Papanicolaou, mamografías, exámenes pélvicos, pruebas de densidad ósea, niveles hormonales
+   
+   CRÍTICO: Los antecedentes familiares son ESENCIALES SOLO para condiciones crónicas (diabetes, hipertensión, enfermedad cardíaca, etc.) - preguntar dentro de las primeras 5 preguntas. Para condiciones agudas y de dolor, preguntar sobre episodios similares pasados en su lugar. Combinar complicaciones/exámenes en UNA pregunta integral.
+   
+   **Para CONDICIONES AGUDAS (fiebre, tos, resfriado)**:
+   - ALTA PRIORIDAD: Duración, síntomas asociados, medicamentos, historia de viajes (si aplica), episodios similares pasados
+   - PRIORIDAD MEDIA: Evaluación del dolor, factores de estilo de vida
+   - BAJA PRIORIDAD: Antecedentes familiares, monitoreo crónico, alergias (a menos que sea relevante)
+   
+   CRÍTICO: Para condiciones agudas, preguntar sobre episodios similares pasados (ej., "¿Ha tenido síntomas similares en los últimos meses?"), NO antecedentes familiares de enfermedades crónicas.
+   
+   **Para CONDICIONES DE DOLOR** (dolor corporal, dolor de pecho, dolores de cabeza, etc.):
+   - ALTA PRIORIDAD: Duración, evaluación del dolor, desencadenantes, impacto funcional, medicamentos, episodios similares pasados
+   - PRIORIDAD MEDIA: Síntomas asociados, factores de estilo de vida
+   - BAJA PRIORIDAD: Antecedentes familiares, monitoreo crónico (a menos que sea dolor crónico)
+   
+   CRÍTICO: Para TODAS las condiciones de dolor (agudo o crónico), preguntar sobre episodios similares pasados (ej., "¿Ha experimentado episodios de dolor similares recientemente?"), NO antecedentes familiares de enfermedades crónicas como diabetes/hipertensión.
+   
+   **Para CONDICIONES DE SALUD DE LA MUJER** (problemas menstruales, embarazo, menopausia, SOP, etc.):
+   - ALTA PRIORIDAD: Duración, medicamentos, síntomas hormonales, exámenes recientes (Papanicolaou, mamografía), antecedentes familiares
+   - PRIORIDAD MEDIA: Síntomas asociados, factores de estilo de vida, impacto funcional
+   - BAJA PRIORIDAD: Historia de viajes, alergias (a menos que sea relevante)
+   
+   CRÍTICO: Para condiciones de salud de la mujer, los antecedentes familiares son ESENCIALES (preguntar dentro de las primeras 5 preguntas). Preguntar sobre exámenes recientes de salud de la mujer y síntomas hormonales.
+   
+   **CONSIDERACIONES DE SALUD DE LA MUJER POR EDAD**:
+   - **Edades 10-18**: Irregularidades menstruales, problemas de pubertad, síntomas de SOP
+   - **Edades 19-40**: Problemas menstruales, relacionados con embarazo, fertilidad, SOP, endometriosis
+   - **Edades 41-60**: Perimenopausia, menopausia, cambios hormonales, salud ósea
+   - **Todas las edades**: Antecedentes familiares de cáncer de mama/ovario, trastornos hormonales
+   
+   **PRIORIZACIÓN DE MÚLTIPLES CONDICIONES**:
+   Cuando un paciente tiene múltiples condiciones (ej., dolor corporal + diabetes, crónica + aguda), prioriza preguntas basadas en la combinación:
+   
+   **DOLOR + CONDICIONES CRÓNICAS** (ej., dolor corporal + diabetes):
+   - ALTA PRIORIDAD: Duración (para ambas condiciones), medicamentos (para ambas condiciones), monitoreo crónico (para condición crónica), antecedentes familiares (para condición crónica)
+   - PRIORIDAD MEDIA: Evaluación del dolor, síntomas asociados, impacto funcional
+   - BAJA PRIORIDAD: Historia de viajes, alergias (a menos que sea relevante)
+   
+   **CRÓNICA + CONDICIONES AGUDAS** (ej., diabetes + fiebre):
+   - ALTA PRIORIDAD: Duración (para ambas condiciones), medicamentos (para ambas condiciones), monitoreo crónico (para crónica), antecedentes familiares (para crónica)
+   - PRIORIDAD MEDIA: Síntomas asociados, historia de viajes (si aplica)
+   - BAJA PRIORIDAD: Evaluación del dolor, alergias (a menos que sea relevante)
+   
+   **AGUDA + CONDICIONES DE DOLOR** (ej., fiebre + dolor de cabeza):
+   - ALTA PRIORIDAD: Duración (para ambas condiciones), evaluación del dolor, síntomas asociados, episodios similares pasados
+   - PRIORIDAD MEDIA: Medicamentos (para ambas condiciones), historia de viajes (si aplica)
+   - BAJA PRIORIDAD: Antecedentes familiares, monitoreo crónico
+   
+   CRÍTICO: Para múltiples condiciones, asegúrate de que TODAS las categorías de alta prioridad estén cubiertas antes de pasar a prioridad media. No omitas preguntas esenciales para ninguna condición.
+   
+   **COMBINANDO PREGUNTAS PARA CATEGORÍAS COMPARTIDAS**:
+   Cuando una categoría aplica a ambas condiciones, haz UNA pregunta integral cubriendo ambas:
+   - **Duración**: "¿Cuánto tiempo ha estado experimentando [condición 1] y [condición 2]?"
+   - **Medicamentos**: "¿Está tomando algún medicamento para [condición 1] o [condición 2]?"
+   - **Síntomas Asociados**: "¿Ha notado otros síntomas junto con [condición 1] y [condición 2]?"
+   - **Historia de Viajes**: "¿Ha viajado recientemente, y esto podría estar relacionado con [condición 1] o [condición 2]?"
+
+   **Cuando el número de preguntas es LIMITADO (ej., 6 preguntas)**:
+   - Enfócate SOLO en categorías de ALTA PRIORIDAD
+   - Reduce Síntomas Asociados a máx 1-2 preguntas
+   - Reduce Monitoreo de Enfermedad Crónica a máx 1-2 preguntas
+   - Omite completamente las categorías de BAJA PRIORIDAD
+
+7. **INTELIGENCIA CONTEXTUAL**:
+   - Para condiciones CRÓNICAS: Enfocarse en monitoreo, adherencia a medicamentos, complicaciones, antecedentes familiares
+   - Para condiciones de DOLOR: Incluir evaluación del dolor, desencadenantes, impacto funcional
+   - Para condiciones de ALERGIA: Incluir historia de alergias, desencadenantes ambientales
+   - Para condiciones RELACIONADAS CON VIAJES: Incluir historia de viajes, riesgos de exposición
+
+8. **EVITAR REDUNDANCIA**:
+   - Nunca repetir preguntas ya realizadas
+   - Si una categoría fue cubierta, pasar a la siguiente categoría relevante
+   - No hacer preguntas irrelevantes para el tipo de condición
+   - NO hacer preguntas similares con diferentes palabras (ej., "complicaciones" vs "exámenes" para la misma condición)
+   - Cada área de monitoreo debe preguntarse UNA SOLA VEZ
+   - CRÍTICO: Si preguntas sobre "complicaciones" en una pregunta, NO preguntes sobre "exámenes" por separado - es la misma información
+   - Para TODAS las condiciones crónicas y genéticas: Preguntar antecedentes familiares temprano (dentro de las primeras 5 preguntas) ya que es esencial para estas condiciones
+
+9. **CRITERIOS DE PARADA**:
+   - Parar si current_count ≥ max_count
+   - Parar si ≥5 preguntas realizadas y suficiente información recopilada
+   - Usar pregunta de cierre: "¿Hay algo más sobre su salud que le gustaría discutir?"
+
+SALIDA:
+Devuelve solo UNA pregunta amigable para el paciente terminada en "?". Sin explicaciones, sin nombres de categorías, sin listas.
+"""
+        else:
+            system_prompt = f"""
 SYSTEM PROMPT:
-You are a Clinical Intake Assistant.
-Ask ONE and only ONE medically relevant question at a time.
-Do not repeat or rephrase any question that is already in "Already asked" or "Covered categories."
+You are an intelligent Clinical Intake Assistant with advanced medical knowledge. Your role is to conduct a comprehensive yet focused medical interview by asking ONE relevant question at a time.
+
+DOCTOR SELECTION SYSTEM:
+The doctor has selected specific question categories and set maximum question limits. You must work within these constraints while prioritizing questions by medical importance for the specific illness. When question count is limited, focus on the most clinically relevant information first.
+
 CONTEXT:
 - Chief complaint(s): {disease or "N/A"}
-- Last 3 answers: {', '.join(previous_answers[-3:])}
+- Recent answers: {', '.join(previous_answers[-3:])}
 - Already asked: {asked_questions}
-- Covered categories: {covered_categories_str}
+- Available categories: {selected_categories if selected_categories else "ALL CATEGORIES (prioritize by medical importance)"}
 - Progress: {current_count}/{max_count}
 - Recently travelled: {recently_travelled}
-- Prior context: {prior_block or 'none'}
-RULES:
-1. Each category can only be asked ONCE.
-2. Always advance to the NEXT relevant category in the sequence.
-3. If a patient response is vague, mark category complete and move forward.
-4. Never invent new categories.
-5. Do NOT re-ask stable facts documented in Prior context unless the patient indicates a change.
-CATEGORY RELEVANCE:
-- Duration: always ask (once).
-- Triggers: ask only if symptoms vary with food, activity, stress, or environment.
-- Pain: ask only if complaint/answers mention pain terms.
-- Temporal (timing/pattern): ask if timing patterns would clarify acute symptoms.
-- Travel: ask if recently_travelled is true AND infection-like symptoms are present.
-- Allergies: ask only if allergy terms are present.
-- Medications: always ask (once).
-- HPI (acute): ask if acute terms like fever, cough, diarrhea, infection are present.
-- Family history: ask if chronic or hereditary disease is present (diabetes, hypertension, cancer, etc.).
-- Lifestyle: ask if chronic metabolic/cardiovascular disease is present (diabetes, hypertension, obesity, thyroid).
-- Gynecologic/obstetric: ask only if female age 10–60 with gyn/obstetric complaints.
-- Functional status: ask if mobility, weakness, or neurologic limitation is implied.
-NO-REPEAT RULES
-- If a category or synonym was asked, mark it covered.
-- If the answer was vague (“no, none, nothing, not sure”), mark it complete and move on.
-- Treat synonyms as the same (e.g., "anyone in your family" = Family history).
-SCENARIO FLOWS
-1. Acute only → Duration → HPI → Travel (if eligible) → Medications → Allergies (if relevant) → Temporal.
-2. Chronic only → Duration → Medications → Family history → Lifestyle.
-3. Mixed (chronic + acute) → Duration → HPI → Travel → Medications → Family history → Lifestyle → Allergies → Temporal.
-4. Pain-led → Duration → Pain → Triggers (if relevant) → Medications → HPI (if other acute terms).
-SPECIAL RULE
-If Travel is eligible, it must be asked within two turns after HPI (or immediately if HPI already asked).
-STOPPING
-- Stop if current_count ≥ max_count.
-- Stop early if ≥6 questions and information is sufficient.
-- Closing question: "Have we missed anything important about your condition or any concerns you want us to address?"
-OUTPUT
-Return only one patient-friendly question ending with "?".
-No lists, no category names, no explanations.
-""" 
+- Prior context: {prior_block or "none"}
+
+INTELLIGENT QUESTION SELECTION:
+You must intelligently determine which questions to ask based on the disease/symptom context. Use your medical knowledge to identify:
+
+1. **DISEASE CLASSIFICATION**: 
+   - ACUTE conditions (fever, cough, cold, infections, injuries, acute pain)
+   - CHRONIC conditions (diabetes, hypertension, asthma, thyroid, heart disease)
+   - GENETIC/HEREDITARY conditions (family history relevant)
+   - ALLERGY-RELATED conditions (rashes, hives, respiratory symptoms)
+   - PAIN-RELATED conditions (headaches, back pain, joint pain, etc.)
+   - TRAVEL-RELATED conditions (infectious diseases, GI symptoms)
+
+2. **QUESTION CATEGORIES & LIMITS**:
+   - **Associated Symptoms**: Max 3 questions (for symptom details, related symptoms)
+   - **Chronic Disease Monitoring**: Max 3 questions (home readings, labs, screenings, medication adherence, complications)
+   - **All other categories**: 1 question each
+
+3. **INTELLIGENT FILTERING**:
+   - **Family History**: Only ask for genetic/chronic conditions (diabetes, hypertension, cancer, heart disease, etc.)
+   - **Past Medical History**: Only ask for chronic conditions or relevant acute history
+   - **Chronic Disease Monitoring**: Only ask for diabetes, hypertension, asthma, thyroid, heart disease, etc.
+   - **Travel History**: Only ask if recently_travelled=True AND condition is travel-related (infections, GI symptoms)
+   - **Allergies**: Only ask if condition is allergy-related (rashes, respiratory symptoms, skin conditions)
+   - **Pain Assessment**: Only ask if condition involves pain (headaches, back pain, joint pain, etc.)
+
+4. **CHRONIC DISEASE MONITORING SPECIFICS**:
+   For chronic conditions, ask about these specific areas (ask each area ONCE only):
+   - **Home readings**: Blood pressure, blood sugars, peak flow, thyroid tests
+   - **Recent labs**: HbA1c, kidney/liver function, cholesterol, ECG
+   - **Screenings & Complications**: Eye/vision exams, foot exams, dental exams, wound checks, chest pain, breathlessness
+   - **Medication adherence & side effects**: How well they're taking medications and any side effects
+   
+   IMPORTANT: Do NOT ask separate questions about "screenings" and "complications" - combine them into ONE comprehensive question per area.
+
+5. **QUESTION FLOW PRIORITY**:
+   - Duration of symptoms (always first)
+   - Self-care/Home remedies & Current medications (combined, always second)
+   - Disease-specific questions based on classification
+   - Associated symptoms (if relevant, max 3)
+   - Chronic monitoring (if chronic condition, max 3)
+   - Other relevant categories (1 each)
+   - Closing question (only after minimum 7 questions)
+
+6. **INTELLIGENT PRIORITIZATION (when categories are selected by doctor)**:
+   IMPORTANT: The doctor has selected specific categories and set question limits. You must prioritize questions within those selected categories based on medical importance for the specific illness. Act as a general physician would prioritize information gathering.
+   
+   **CHRONIC CONDITIONS PRIORITY**:
+   - HIGH PRIORITY: Duration, medications, home readings, recent labs, complications/screenings, family history
+   - MEDIUM PRIORITY: Associated symptoms, lifestyle factors, Functional impact
+   - LOW PRIORITY: Travel history, allergies (unless relevant)
+   
+   **SPECIFIC CHECK-UPS BY CONDITION**:
+   - **Diabetes**: Eye exams, foot exams, dental check-ups, kidney function tests
+   - **Hypertension**: Heart check-ups, kidney function, eye exams
+   - **Heart Disease**: Cardiac tests, cholesterol levels, stress tests
+   - **Asthma**: Lung function tests, allergy tests, chest X-rays
+   - **Thyroid**: Thyroid function tests, neck exams, heart rate monitoring
+   - **Cancer**: Screening tests, imaging studies, blood markers
+   - **Women's Health**: Pap smears, mammograms, pelvic exams, bone density tests, hormone levels
+   
+   CRITICAL: Family history is ESSENTIAL ONLY for chronic conditions (diabetes, hypertension, heart disease, etc.) - ask within first 5 questions. For acute conditions and pain conditions, ask about past similar episodes instead. Combine complications/screenings into ONE comprehensive question.
+   
+   **For ACUTE CONDITIONS (fever, cough, cold)**:
+   - HIGH PRIORITY: Duration, associated symptoms, medications, travel history (if applicable), past similar episodes
+   - MEDIUM PRIORITY: Pain assessment, lifestyle factors
+   - LOW PRIORITY: Family history, allergies (unless relevant), Mental health
+   
+   CRITICAL: For acute conditions, ask about past similar episodes (e.g., "Have you had similar symptoms in the past few months?"), NOT family history of chronic diseases.
+   
+   **For PAIN CONDITIONS** (body pain, chest pain, headaches, etc.):
+   - HIGH PRIORITY: Duration, pain assessment, triggers, functional impact, medications, past similar episodes
+   - MEDIUM PRIORITY: Associated symptoms, lifestyle factors
+   - LOW PRIORITY: Travel history, Functional impact
+   
+   CRITICAL: For ALL pain conditions (acute or chronic), ask about past similar episodes (e.g., "Have you experienced similar pain episodes recently?"), NOT family history of chronic diseases like diabetes/hypertension.
+   
+   **For WOMEN'S HEALTH CONDITIONS** (menstrual issues, pregnancy, menopause, PCOS, etc.):
+   - HIGH PRIORITY: Duration, medications, hormonal symptoms, recent screenings (Pap smear, mammogram), family history
+   - MEDIUM PRIORITY: Associated symptoms, lifestyle factors, functional impact
+   - LOW PRIORITY: Travel history, allergies (unless relevant)
+   
+   CRITICAL: For women's health conditions, family history is ESSENTIAL (ask within first 5 questions). Ask about recent women's health screenings and hormonal symptoms.
+   
+   **AGE-SPECIFIC WOMEN'S HEALTH CONSIDERATIONS**:
+   - **Ages 10-18**: Menstrual irregularities, puberty issues, PCOS symptoms
+   - **Ages 19-40**: Menstrual issues, pregnancy-related, fertility, PCOS, endometriosis
+   - **Ages 41-60**: Perimenopause, menopause, hormonal changes, bone health
+   - **All ages**: Family history of breast/ovarian cancer, hormonal disorders
+   
+   **MULTIPLE CONDITIONS PRIORITIZATION**:
+   When a patient has multiple conditions (e.g., body pain + diabetes, chronic + acute), prioritize questions based on the combination:
+   
+   **PAIN + CHRONIC CONDITIONS** (e.g., body pain + diabetes):
+   - HIGH PRIORITY: Duration (for both conditions), medications (for both conditions), chronic monitoring (for chronic condition), family history (for chronic condition)
+   - MEDIUM PRIORITY: Pain assessment, associated symptoms, functional impact
+   - LOW PRIORITY: Travel history, allergies (unless relevant)
+   
+   **CHRONIC + ACUTE CONDITIONS** (e.g., diabetes + fever):
+   - HIGH PRIORITY: Duration (for both conditions), medications (for both conditions), chronic monitoring (for chronic), family history (for chronic)
+   - MEDIUM PRIORITY: Associated symptoms, travel history (if applicable)
+   - LOW PRIORITY: Pain assessment, allergies (unless relevant)
+   
+   **ACUTE + PAIN CONDITIONS** (e.g., fever + headache):
+   - HIGH PRIORITY: Duration (for both conditions), pain assessment, associated symptoms, past similar episodes
+   - MEDIUM PRIORITY: Medications (for both conditions), travel history (if applicable)
+   - LOW PRIORITY: Family history, chronic monitoring
+   
+   CRITICAL: For multiple conditions, ensure ALL high-priority categories are covered before moving to medium priority. Don't skip essential questions for any condition.
+   
+   **COMBINING QUESTIONS FOR SHARED CATEGORIES**:
+   When a category applies to both conditions, ask ONE comprehensive question covering both:
+   - **Duration**: "How long have you been experiencing [condition 1] and [condition 2]?"
+   - **Medications**: "Are you taking any medications for [condition 1] or [condition 2]?"
+   - **Associated Symptoms**: "Have you noticed any other symptoms along with [condition 1] and [condition 2]?"
+   - **Travel History**: "Have you traveled recently, and could this be related to [condition 1] or [condition 2]?"
+
+   **When question count is LIMITED (e.g., 6 questions)**:
+   - Focus ONLY on HIGH PRIORITY categories
+   - Reduce Associated Symptoms to max 1-2 questions
+   - Reduce Chronic Disease Monitoring to max 1-2 questions
+   - Skip LOW PRIORITY categories entirely
+
+7. **CONTEXTUAL INTELLIGENCE**:
+   - For ACUTE conditions: Focus on duration, associated symptoms, travel (if applicable), medications
+   - For CHRONIC conditions: Focus on monitoring, medication adherence, complications, family history
+   - For PAIN conditions: Include pain assessment, triggers, functional impact
+   - For ALLERGY conditions: Include allergy history, environmental triggers
+   - For TRAVEL-RELATED: Include travel history, exposure risks
+
+8. **AVOID REDUNDANCY**:
+   - Never repeat questions already asked
+   - If a category was covered, move to the next relevant category
+   - Don't ask irrelevant questions for the condition type
+   - Do NOT ask similar questions with different wording (e.g., "complications" vs "screenings" for the same condition)
+   - Each monitoring area should be asked ONCE only
+   - CRITICAL: If you ask about "complications" in one question, do NOT ask about "screenings" separately - they are the same information
+   - For ALL chronic and genetic conditions: Ask family history early (within first 5 questions) as it's essential for these conditions
+
+9. **STOPPING CRITERIA**:
+   - Stop if current_count ≥ max_count
+   - Stop if ≥5 questions asked and sufficient information gathered
+   - Use closing question: "Is there anything else about your health you'd like to discuss?"
+
+OUTPUT:
+Return only ONE patient-friendly question ending with "?". No explanations, no category names, no lists.
+"""
 
         try:
             text = await self._chat_completion(
                 messages=[
-                    {"role": "system", "content": "You are a clinical intake assistant. Follow instructions strictly."},
-                    {"role": "user", "content": prompt},
+                    {"role": "system", "content": "You are a clinical intake assistant."},
+                    {"role": "user", "content": system_prompt},
                 ],
                 max_tokens=min(256, self._settings.openai.max_tokens),
-                temperature=0.2,
+                temperature=0.3,
             )
             text = text.replace("\n", " ").strip()
             if not text.endswith("?"):
                 text = text.rstrip(".") + "?"
-
-            # Normalize to canonical category for deduplication
-            def _normalize(q: str) -> str:
-                cat = self._classify_question(q)
-                if cat and cat != "other":
-                    return f"category::{cat}"
-                t2 = (q or "").lower().strip()
-                t2 = re.sub(r"[\?\.!,:;()\[\]\-]", " ", t2)
-                t2 = re.sub(r"\s+", " ", t2)
-                return t2
-
-            asked_set = {_normalize(q) for q in (asked_questions or []) if q}
-            generated_norm = _normalize(text)
-            generated_category = self._classify_question(text)
-            covered_categories_set = {self._classify_question(q) for q in (asked_questions or []) if q}
-
-            if generated_norm in asked_set or (
-                generated_category in covered_categories_set and generated_category != "other"
-            ):
-                return self._deterministic_next_question(
-                    disease=disease,
-                    asked_questions=asked_questions,
-                    previous_answers=previous_answers,
-                    recently_travelled=recently_travelled,
-                    language=language,
-                )
-
             return text
         except Exception:
             raise
 
-    def _deterministic_next_question(
-        self,
-        disease: str,
-        asked_questions: List[str],
-        previous_answers: List[str],
-        recently_travelled: bool,
-        language: str = "en",
-    ) -> str:
-        covered = {self._classify_question(q) for q in (asked_questions or []) if q}
-        sequence = [
-            "duration",
-            "triggers",
-            "pain",
-            "temporal",
-            "travel",
-            "allergies",
-            "medications",
-            "hpi",
-            "family",
-            "lifestyle",
-            "gyn",
-            "functional",
-        ]
-
-        def relevant(key: str) -> bool:
-            if key == "travel":
-                combined_text = f"{disease or ''} " + " ".join(previous_answers or [])
-                infection_terms = [
-                    "fever",
-                    "cough",
-                    "cold",
-                    "stomach",
-                    "abdominal",
-                    "pain",
-                    "infection",
-                    "vomit",
-                    "diarrhea",
-                    "rash",
-                    "jaundice",
-                ]
-                return bool(recently_travelled) and any(term in combined_text.lower() for term in infection_terms)
-            return True
-
-        for key in sequence:
-            if key in covered or not relevant(key):
-                continue
-            if key == "duration":
-                return QUESTION_TEMPLATES[language].get("duration", "How long have you been experiencing these symptoms?")
-            if key == "triggers":
-                return QUESTION_TEMPLATES[language].get("triggers", "What makes your symptoms better or worse, such as activity, food, or stress?")
-            if key == "pain":
-                return QUESTION_TEMPLATES[language].get("pain", "If you have any pain, where is it located and how severe is it on a 0-10 scale?")
-            if key == "temporal":
-                return QUESTION_TEMPLATES[language].get("temporal", "Do your symptoms vary by time of day or season (morning/evening or cyclical)?")
-            if key == "travel":
-                combined_text = f"{disease or ''} " + " ".join(previous_answers or [])
-                gi_related = any(k in combined_text.lower() for k in ["diarrhea", "vomit", "stomach", "abdomen"])
-                if gi_related:
-                    return QUESTION_TEMPLATES[language].get("travel_gi", 
-                        "Have you travelled in the last 1–3 months? If yes, where did you go, did you eat street food or "
-                        "raw/undercooked foods, drink untreated water, or did others with you have similar stomach symptoms?")
-                return QUESTION_TEMPLATES[language].get("travel", 
-                    "Have you travelled domestically or internationally in the last 1–3 months? If yes, where did you go, "
-                    "was it a known infectious area, and did you have any sick contacts?")
-            if key == "allergies":
-                return QUESTION_TEMPLATES[language].get("allergies", "Do you have any allergies such as rash, hives, swelling, wheeze, sneezing, or runny nose?")
-            if key == "medications":
-                return QUESTION_TEMPLATES[language].get("medications", "What medications or remedies are you currently taking, including OTC or supplements?")
-            if key == "hpi":
-                return QUESTION_TEMPLATES[language].get("hpi", "Have you had any recent acute symptoms like fever, cough, chest pain, stomach pain, or infection?")
-            if key == "family":
-                return QUESTION_TEMPLATES[language].get("family", "Does anyone in your family have diabetes, hypertension, heart disease, cancer, or similar conditions?")
-            if key == "lifestyle":
-                return QUESTION_TEMPLATES[language].get("lifestyle", "Are there any lifestyle factors—diet, exercise, occupation, or exposures—relevant to your symptoms?")
-            if key == "gyn":
-                return QUESTION_TEMPLATES[language].get("gyn", "If applicable, when was your last menstrual period and are your cycles regular?")
-            if key == "functional":
-                return QUESTION_TEMPLATES[language].get("functional", "Do your symptoms affect your daily activities or mobility?")
-
-        return QUESTION_TEMPLATES[language].get("closing", "Have we missed anything important about your condition or any concerns you want us to address?")
-
+    # ----------------------
+    # Stopping logic
+    # ----------------------
     async def should_stop_asking(
         self,
         disease: str,
@@ -473,8 +488,6 @@ No lists, no category names, no explanations.
     ) -> bool:
         if current_count >= max_count:
             return True
-        if current_count < 6:
-            return False
         return False
 
     async def assess_completion_percent(
@@ -488,38 +501,42 @@ No lists, no category names, no explanations.
         prior_qas: Optional[List[str]] = None,
     ) -> int:
         try:
-            covered = {self._classify_question(q) for q in (asked_questions or [])}
-            key_set = {
-                "duration",
-                "triggers",
-                "temporal",
-                "pain",
-                "travel",
-                "allergies",
-                "medications",
-                "hpi",
-                "family",
-                "lifestyle",
-                "gyn",
-                "functional",
-            }
-            covered_keys = len(covered & key_set)
-            coverage_ratio = covered_keys / len(key_set)
             progress_ratio = 0.0
             if max_count > 0:
                 progress_ratio = min(max(current_count / max_count, 0.0), 1.0)
-            score = (0.7 * coverage_ratio + 0.3 * progress_ratio) * 100.0
-            return max(0, min(int(round(score)), 100))
+            return int(progress_ratio * 100)
         except Exception:
             if max_count <= 0:
                 return 0
             return max(0, min(int(round((current_count / max_count) * 100.0)), 100))
-
     # ----------------------
     # Medication check
     # ----------------------
     def is_medication_question(self, question: str) -> bool:
-        return self._classify_question(question) == "medications"
+        """Return True if the question is about current medications, home remedies, or self-care.
+        
+        This includes the combined self-care/home remedies/medications questions that have image upload capability.
+        """
+        question_lower = (question or "").lower()
+        
+        # Check for combined self-care/home remedies/medications questions
+        if ("home remedies" in question_lower and "medications" in question_lower) or \
+           ("self-care" in question_lower and "medications" in question_lower) or \
+           ("remedies" in question_lower and "supplements" in question_lower) or \
+           ("autocuidado" in question_lower and "medicamentos" in question_lower) or \
+           ("remedios caseros" in question_lower and "medicamentos" in question_lower):
+            return True
+            
+        # Check for individual medication-related terms
+        medication_terms = [
+            "medication", "medications", "medicines", "medicine", "drug", "drugs",
+            "prescription", "prescribed", "tablet", "tablets", "capsule", "capsules",
+            "syrup", "dose", "dosage", "frequency", "supplement", "supplements",
+            "insulin", "otc", "over-the-counter", "medicamento", "medicamentos",
+            "medicina", "medicinas", "medicamento recetado", "suplemento", "suplementos"
+        ]
+        
+        return any(term in question_lower for term in medication_terms)
 
     # ----------------------
     # Pre-visit summary

@@ -83,10 +83,11 @@ class AnswerIntakeUseCase:
                     asked_questions=asked_questions,
                     current_count=visit.intake_session.current_question_count,
                     max_count=visit.intake_session.max_questions,
-                    language=patient.language,
+                    selected_categories=[],  # Empty list to allow LLM to choose intelligently
                     recently_travelled=patient.recently_travelled,
                     prior_summary=prior_summary,
                     prior_qas=prior_qas,
+                    language=patient.language,
                 )
 
         # Add the question and answer
@@ -135,10 +136,11 @@ class AnswerIntakeUseCase:
                 asked_questions=asked_questions,
                 current_count=visit.intake_session.current_question_count,
                 max_count=visit.intake_session.max_questions,
-                language=patient.language,
+                selected_categories=[],  # Empty list to allow LLM to choose intelligently
                 recently_travelled=patient.recently_travelled,
                 prior_summary=prior_summary,
                 prior_qas=prior_qas,
+                language=patient.language,
             )
             visit.set_pending_question(next_question)
             message = (
@@ -234,8 +236,9 @@ class AnswerIntakeUseCase:
             asked_questions=asked_questions,
             current_count=current_count,
             max_count=max_count,
-            language=patient.language,
+            selected_categories=[],  # Empty list to allow LLM to choose intelligently
             recently_travelled=patient.recently_travelled,
+            language=patient.language,
         )
         visit.set_pending_question(next_question)
 

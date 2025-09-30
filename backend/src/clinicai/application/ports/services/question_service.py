@@ -22,9 +22,11 @@ class QuestionService(ABC):
         asked_questions: List[str],
         current_count: int,
         max_count: int,
+        selected_categories: List[str],
         recently_travelled: bool = False,
         prior_summary: Optional[str] = None,
         prior_qas: Optional[List[str]] = None,
+        language: str = "en",
     ) -> str:
         """Generate the next question based on context."""
         pass
