@@ -14,6 +14,7 @@ const AdhocTranscribe: React.FC = () => {
   const [dialogue, setDialogue] = useState<Array<Record<string, string>>>([]);
   const [audioUrl, setAudioUrl] = useState<string>("");
   const [uploading, setUploading] = useState(false);
+  const [adhocId, setAdhocId] = useState<string>("");
   const recorderMimeRef = useRef<string>("");
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -184,24 +185,38 @@ const AdhocTranscribe: React.FC = () => {
       }
       const data = await res.json();
       const text = data?.transcript || "";
-      const adhocId = data?.adhoc_id as string | undefined;
+      const receivedAdhocId = data?.adhoc_id as string | undefined;
+      
       setTranscript(text);
+      setAdhocId(receivedAdhocId || "");
 
       // Structure dialogue via ad-hoc structure endpoint
       if (text) {
         setStatus("Structuring dialogue…");
         try {
+          console.log("Calling structure endpoint with adhoc_id:", receivedAdhocId);
           const sres = await fetch(`${BACKEND_BASE_URL}/transcription/structure`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ transcript: text, adhoc_id: adhocId }),
+            body: JSON.stringify({ transcript: text, adhoc_id: receivedAdhocId }),
           });
+          console.log("Structure endpoint response status:", sres.status);
           if (sres.ok) {
             const sdata = await sres.json();
+            console.log("Structure endpoint response data:", sdata);
             const dlg = sdata?.dialogue;
-            if (Array.isArray(dlg)) setDialogue(dlg);
+            if (Array.isArray(dlg)) {
+              console.log("Setting dialogue with", dlg.length, "turns");
+              setDialogue(dlg);
+            } else {
+              console.log("No valid dialogue array in response");
+            }
+          } else {
+            console.error("Structure endpoint failed:", sres.status, await sres.text());
           }
-        } catch {}
+        } catch (error) {
+          console.error("Structure endpoint error:", error);
+        }
       }
       setStatus("Completed.");
     } catch (e: any) {
@@ -295,6 +310,15 @@ const AdhocTranscribe: React.FC = () => {
             <div>
               <div className="text-sm font-semibold mb-1">Transcript</div>
               <div className="text-sm whitespace-pre-wrap bg-gray-50 p-3 rounded border">{transcript}</div>
+              
+              {/* Audio Storage Status */}
+              {adhocId && (
+                <div className="mt-3">
+                  <div className="text-xs text-gray-500">
+                    Audio file stored in database (ID: {adhocId})
+                  </div>
+                </div>
+              )}
             </div>
           )
         )}
