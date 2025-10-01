@@ -6,6 +6,7 @@ const AdhocTranscribe: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [transcript, setTranscript] = useState<string>("");
   const [status, setStatus] = useState<string>("");
+  const [language, setLanguage] = useState<'en' | 'sp'>('en');
   const [loading, setLoading] = useState(false);
   const [recording, setRecording] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -144,15 +145,42 @@ const AdhocTranscribe: React.FC = () => {
     try {
       // Upload audio to ad-hoc transcription endpoint (no patient/visit)
       setStatus("Uploading audio for transcription…");
+      console.log("Uploading file:", file?.name, "size:", file?.size, "type:", file?.type);
+      
       const form = new FormData();
       form.append("audio_file", file);
+      form.append('language', language);
+      
+      console.log("Form data entries:");
+      for (let [key, value] of form.entries()) {
+        console.log(key, value);
+      }
+      
       const res = await fetch(`${BACKEND_BASE_URL}/transcription`, {
         method: "POST",
         body: form,
       });
+      
+      console.log("Response status:", res.status, res.statusText);
+      
       if (!res.ok) {
-        const t = await res.text();
-        throw new Error(`Transcription failed ${res.status}: ${t}`);
+        let msg = `Transcription failed ${res.status}`;
+        try {
+          const j = await res.json();
+          console.log("Error response:", j);
+          if (j?.detail) {
+            if (typeof j.detail === 'string') msg += `: ${j.detail}`;
+            else if (j.detail?.message) msg += `: ${j.detail.message}`;
+            else msg += `: ${JSON.stringify(j.detail)}`;
+          }
+        } catch {
+          try { 
+            const text = await res.text();
+            console.log("Error text:", text);
+            msg += `: ${text}`; 
+          } catch {}
+        }
+        throw new Error(msg);
       }
       const data = await res.json();
       const text = data?.transcript || "";
@@ -204,6 +232,13 @@ const AdhocTranscribe: React.FC = () => {
       <p className="text-sm text-gray-600 mb-6">Upload or record audio</p>
 
       <div className="bg-white p-6 rounded-lg border border-gray-200 space-y-4">
+        <div className="space-y-2">
+          <label className="block text-sm font-medium">Language</label>
+          <select value={language} onChange={(e) => setLanguage((e.target.value as any) || 'en')} className="px-3 py-2 border rounded">
+            <option value="en">English</option>
+            <option value="sp">Spanish</option>
+          </select>
+        </div>
         <div className="space-y-2">
           <label className="block text-sm font-medium">Select audio file</label>
           <input type="file" accept="audio/*,audio/mp4,.m4a,video/mpeg,video/mp4,.mp4,.mpeg,.mpg" onChange={(e) => setFile(e.target.files?.[0] || null)} />

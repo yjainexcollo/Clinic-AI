@@ -48,57 +48,63 @@ export interface BackendRegisterResponse {
   message: string;
 }
 
+// Backend answer request
 export interface BackendAnswerRequest {
   patient_id: string;
   visit_id: string;
   answer: string;
 }
 
-export interface OCRQualityInfo {
-  quality: 'excellent' | 'good' | 'poor' | 'failed';
-  confidence: number;
-  extracted_text: string;
-  extracted_medications: string[];
-  suggestions: string[];
-  word_count: number;
-  has_medication_keywords: boolean;
-}
-
+// Backend answer response
 export interface BackendAnswerResponse {
   next_question: string | null;
   is_complete: boolean;
-  question_count: number;
-  max_questions: number;
-  completion_percent: number;
-  message: string;
+  completion_percent?: number;
   allows_image_upload?: boolean;
-  ocr_quality?: OCRQualityInfo | null;
+  max_questions?: number;
+  ocr_quality?: OCRQualityInfo;
 }
 
-// Register patient against backend FastAPI
-export async function registerPatientBackend(payload: {
-  first_name: string;
-  last_name: string;
-  mobile: string;
-  gender: string;
-  age: number;
-  recently_travelled: boolean;
-  consent: boolean;
-  country?: string;
-}): Promise<BackendRegisterResponse> {
-  const resp = await fetch(`${BACKEND_BASE_URL}/patients/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Backend error ${resp.status}: ${text}`);
-  }
-  return resp.json();
+// OCR Quality Info interface
+export interface OCRQualityInfo {
+  confidence: number;
+  quality_score: number;
+  needs_review: boolean;
 }
 
-// Answer intake question via backend
+// Post-visit summary interfaces
+export interface PostVisitSummaryResponse {
+  patient_id: string;
+  visit_id: string;
+  patient_name: string;
+  visit_date: string;
+  clinic_name: string;
+  doctor_name: string;
+  chief_complaint: string;
+  key_findings: string[];
+  diagnosis: string;
+  medications: Array<{
+    name: string;
+    dosage: string;
+    frequency: string;
+    duration: string;
+    purpose: string;
+  }>;
+  other_recommendations: string[];
+  tests_ordered: Array<{
+    test_name: string;
+    purpose: string;
+    instructions: string;
+  }>;
+  next_appointment?: string;
+  red_flag_symptoms: string[];
+  patient_instructions: string[];
+  reassurance_note: string;
+  clinic_contact: string;
+  generated_at: string;
+}
+
+// Backend answer API
 export async function answerIntakeBackend(
   payload: BackendAnswerRequest,
   imageFile?: File,
@@ -112,17 +118,38 @@ export async function answerIntakeBackend(
     form.append("visit_id", payload.visit_id);
     form.append("answer", payload.answer);
     files.forEach((f) => form.append("medication_images", f));
-    resp = await fetch(`${BACKEND_BASE_URL}/patients/consultations/answer`, {
+    resp = await fetch(`${BACKEND_BASE_URL}/patients/consultations/answer`, {   
       method: "POST",
       body: form,
     });
   } else {
-    resp = await fetch(`${BACKEND_BASE_URL}/patients/consultations/answer`, {
+    resp = await fetch(`${BACKEND_BASE_URL}/patients/consultations/answer`, {   
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
   }
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Backend error ${resp.status}: ${text}`);
+  }
+  return resp.json();
+}
+
+// Upload multiple medication images via webhook route
+export async function uploadMedicationImages(
+  patientId: string,
+  visitId: string,
+  files: File[]
+): Promise<{ uploaded_images: Array<{ id: string; filename: string; content_type?: string }>; status: string }>{
+  const form = new FormData();
+  files.forEach((f) => form.append("images", f));
+  form.append("patient_id", patientId);
+  form.append("visit_id", visitId);
+  const resp = await fetch(`${BACKEND_BASE_URL}/patients/webhook/images`, {     
+    method: "POST",
+    body: form,
+  });
   if (!resp.ok) {
     const text = await resp.text();
     throw new Error(`Backend error ${resp.status}: ${text}`);
@@ -162,13 +189,53 @@ export async function editAnswerBackend(payload: {
 function generatePatientId(): string {
   const counterKey = "patient_counter";
   const currentCounter = localStorage.getItem(counterKey);
-  const nextCounter = currentCounter ? parseInt(currentCounter) + 1 : 1;
+  const nextCounter = currentCounter ? parseInt(currentCounter) + 1 : 1;        
 
   // Store the updated counter
   localStorage.setItem(counterKey, nextCounter.toString());
 
   // Generate patient ID in format CLINIC01-0001, CLINIC01-0002, etc.
   return `CLINIC01-${String(nextCounter).padStart(4, "0")}`;
+}
+
+// Backend patient registration function
+export async function registerPatientBackend(
+  patientData: {
+    first_name: string;
+    last_name: string;
+    mobile: string;
+    age: number;
+    gender: string;
+    recently_travelled?: boolean;
+    consent: boolean;
+    country?: string;
+    language?: string;
+  }
+): Promise<BackendRegisterResponse> {
+  // Add a safety timeout so UI won't spin indefinitely
+  const controller = new AbortController();
+  const timeoutMs = 20000; // 20s
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(`${BACKEND_BASE_URL}/patients/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patientData),
+      signal: controller.signal,
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`Backend error ${resp.status}: ${text}`);
+    }
+    return resp.json();
+  } catch (e: any) {
+    if (e?.name === "AbortError") {
+      throw new Error("Request timed out while creating patient. Please try again.");
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function createPatient(
@@ -182,7 +249,7 @@ export async function createPatient(
     const payload = {
       patient_id: patient_id,
       ...patientData,
-      summary: "", 
+      summary: "",
       soapSummary:"",
       patientRecapSummary:"",
       doctorRecapSummary:"",
@@ -205,7 +272,7 @@ export async function createPatient(
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);       
     }
 
     const result = await response.json();
@@ -238,7 +305,7 @@ export async function updatePatientSummary(
 
     console.log("Updating patient summary:", payload);
 
-    const response = await fetch(`${API_ENDPOINT}/api-patient-update`, {
+    const response = await fetch(`${API_ENDPOINT}/api-patient-update`, {        
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -248,7 +315,7 @@ export async function updatePatientSummary(
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);       
     }
 
     const result = await response.json();
@@ -257,7 +324,7 @@ export async function updatePatientSummary(
     return result;
   } catch (error) {
     console.error("Error updating patient summary:", error);
-    throw new Error("Failed to update patient summary. Please try again.");
+    throw new Error("Failed to update patient summary. Please try again.");     
   }
 }
 
@@ -276,7 +343,7 @@ export async function getPatient(
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);       
     }
 
     const result = await response.json();
@@ -285,7 +352,7 @@ export async function getPatient(
     return result;
   } catch (error) {
     console.error("Error getting patient:", error);
-    throw new Error("Failed to get patient details. Please try again.");
+    throw new Error("Failed to get patient details. Please try again.");        
   }
 }
 
@@ -293,7 +360,7 @@ export async function getPatient(
 export async function getPreVisitSummary(
   patientId: string,
   visitId: string
-): Promise<{ patient_id: string; visit_id: string; summary: string; generated_at: string }> {
+): Promise<{ patient_id: string; visit_id: string; summary: string; generated_at: string; medication_images?: Array<{ id: string; filename: string; content_type?: string }> }> {
   try {
     const response = await fetch(`${BACKEND_BASE_URL}/patients/${patientId}/visits/${visitId}/summary`, {
       method: "GET",
@@ -310,31 +377,161 @@ export async function getPreVisitSummary(
     return await response.json();
   } catch (error) {
     console.error("Error getting pre-visit summary:", error);
-    throw new Error("Failed to get pre-visit summary. Please try again.");
+    throw new Error("Failed to get pre-visit summary. Please try again.");      
   }
 }
 
-// ------------------------
-// Medication Images API
-// ------------------------
-export async function uploadMedicationImages(
+// Get post-visit summary from backend
+export async function getPostVisitSummary(
   patientId: string,
-  visitId: string,
-  files: File[]
-): Promise<{ uploaded_images: Array<{ id: string; filename: string; content_type?: string }>; status: string }>{
-  const form = new FormData();
-  files.forEach((f) => form.append("images", f));
-  form.append("patient_id", patientId);
-  form.append("visit_id", visitId);
-  const resp = await fetch(`${BACKEND_BASE_URL}/patients/webhook/images`, {
-    method: "POST",
-    body: form,
-  });
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`Backend error ${resp.status}: ${text}`);
+  visitId: string
+): Promise<PostVisitSummaryResponse> {
+  try {
+    console.log(`Requesting post-visit summary for patient: ${patientId}, visit: ${visitId}`);
+    console.log(`Backend URL: ${BACKEND_BASE_URL}/patients/summary/postvisit`);
+    
+    // First try to fetch stored summary
+    let response = await fetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/summary/postvisit`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    });
+    if (response.status === 404) {
+      // Not found -> generate then fetch
+      const gen = await fetch(`${BACKEND_BASE_URL}/patients/summary/postvisit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ patient_id: patientId, visit_id: visitId }),
+      });
+      if (!gen.ok) {
+        const t = await gen.text();
+        throw new Error(`Backend error ${gen.status}: ${t}`);
+      }
+      response = await fetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/summary/postvisit`, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+      });
+    }
+
+    console.log(`Response status: ${response.status}`);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Backend error response:`, errorText);
+      throw new Error(`Backend error ${response.status}: ${errorText}`);
+    }
+
+    const result = await response.json();
+    console.log(`Post-visit summary response:`, result);
+    return result;
+  } catch (error) {
+    console.error("Error getting post-visit summary:", error);
+    throw error; // Re-throw the original error instead of a generic message
   }
-  return resp.json();
+}
+
+// Generate (create) post-visit summary only
+export async function generatePostVisitSummary(patientId: string, visitId: string): Promise<PostVisitSummaryResponse> {
+  const gen = await fetch(`${BACKEND_BASE_URL}/patients/summary/postvisit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ patient_id: patientId, visit_id: visitId }),
+  });
+  if (!gen.ok) {
+    const t = await gen.text();
+    throw new Error(`Backend error ${gen.status}: ${t}`);
+  }
+  return gen.json();
+}
+
+// Fetch stored post-visit summary only (no generation fallback)
+export async function getStoredPostVisitSummary(patientId: string, visitId: string): Promise<PostVisitSummaryResponse> {
+  const response = await fetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/summary/postvisit`, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Backend error ${response.status}: ${text}`);
+  }
+  return response.json();
+}
+
+// Share post-visit summary via WhatsApp
+export function sharePostVisitSummaryViaWhatsApp(summary: PostVisitSummaryResponse): void {
+  const message = formatPostVisitSummaryForWhatsApp(summary);
+  const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+  window.open(whatsappUrl, '_blank');
+}
+
+// Format post-visit summary for WhatsApp sharing
+function formatPostVisitSummaryForWhatsApp(summary: PostVisitSummaryResponse): string {
+  let message = `🏥 *${summary.clinic_name}*\n`;
+  message += `📅 Visit Date: ${new Date(summary.visit_date).toLocaleDateString()}\n`;
+  message += `👨‍⚕️ Doctor: ${summary.doctor_name}\n\n`;
+  
+  message += `*Chief Complaint:*\n${summary.chief_complaint}\n\n`;
+  
+  if (summary.key_findings.length > 0) {
+    message += `*Key Findings:*\n`;
+    summary.key_findings.forEach((finding, index) => {
+      message += `${index + 1}. ${finding}\n`;
+    });
+    message += `\n`;
+  }
+  
+  message += `*Diagnosis:*\n${summary.diagnosis}\n\n`;
+  
+  if (summary.medications.length > 0) {
+    message += `*Medications:*\n`;
+    summary.medications.forEach((med, index) => {
+      message += `${index + 1}. *${med.name}*\n`;
+      message += `   Dosage: ${med.dosage}\n`;
+      message += `   Frequency: ${med.frequency}\n`;
+      message += `   Duration: ${med.duration}\n`;
+      if (med.purpose) message += `   Purpose: ${med.purpose}\n`;
+      message += `\n`;
+    });
+  }
+  
+  if (summary.other_recommendations.length > 0) {
+    message += `*Recommendations:*\n`;
+    summary.other_recommendations.forEach((rec, index) => {
+      message += `${index + 1}. ${rec}\n`;
+    });
+    message += `\n`;
+  }
+  
+  if (summary.tests_ordered.length > 0) {
+    message += `*Tests Ordered:*\n`;
+    summary.tests_ordered.forEach((test, index) => {
+      message += `${index + 1}. *${test.test_name}*\n`;
+      message += `   Purpose: ${test.purpose}\n`;
+      message += `   Instructions: ${test.instructions}\n\n`;
+    });
+  }
+  
+  if (summary.next_appointment) {
+    message += `*Next Appointment:*\n${summary.next_appointment}\n\n`;
+  }
+  
+  if (summary.red_flag_symptoms.length > 0) {
+    message += `⚠️ *Warning Signs - Seek immediate medical attention if:*\n`;
+    summary.red_flag_symptoms.forEach((symptom, index) => {
+      message += `${index + 1}. ${symptom}\n`;
+    });
+    message += `\n`;
+  }
+  
+  message += `*Patient Instructions:*\n`;
+  summary.patient_instructions.forEach((instruction, index) => {
+    message += `${index + 1}. ${instruction}\n`;
+  });
+  message += `\n`;
+  
+  message += `*${summary.reassurance_note}*\n\n`;
+  message += `📞 *Contact:* ${summary.clinic_contact}`;
+  
+  return message;
 }
 
 // ------------------------
@@ -387,7 +584,7 @@ export interface VitalsData {
   bpPosition: string;
   heartRate: string;
   rhythm: string;
-  respiratoryRate?: string; // optional
+  respiratoryRate: string;
   temperature: string;
   tempUnit: string;
   tempMethod: string;
@@ -434,6 +631,46 @@ export async function getVitals(patientId: string, visitId: string): Promise<Vit
     `${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/vitals`,
     { headers: { Accept: "application/json" } }
   );
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`Backend error ${res.status}: ${t}`);
+  }
+  return res.json();
+}
+
+// ------------------------
+// Doctor Preferences API
+// ------------------------
+export interface DoctorPreferencesResponse {
+  doctor_id: string;
+  global_categories: string[];
+  selected_categories: string[];
+  max_questions: number;
+}
+
+export interface UpsertDoctorPreferencesRequest {
+  categories: string[];
+  max_questions: number;
+  global_categories?: string[];
+}
+
+export async function getDoctorPreferences(): Promise<DoctorPreferencesResponse> {
+  const res = await fetch(`${BACKEND_BASE_URL}/doctor/preferences`, {
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`Backend error ${res.status}: ${t}`);
+  }
+  return res.json();
+}
+
+export async function saveDoctorPreferences(payload: UpsertDoctorPreferencesRequest): Promise<{ success?: boolean } & Partial<DoctorPreferencesResponse>> {
+  const res = await fetch(`${BACKEND_BASE_URL}/doctor/preferences`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(payload),
+  });
   if (!res.ok) {
     const t = await res.text();
     throw new Error(`Backend error ${res.status}: ${t}`);

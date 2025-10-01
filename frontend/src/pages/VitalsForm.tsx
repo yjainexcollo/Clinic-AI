@@ -156,8 +156,12 @@ const VitalsForm: React.FC = () => {
         tempUnit: vitals.tempUnit === "°F" ? "F" : vitals.tempUnit === "°C" ? "C" : vitals.tempUnit,
       };
 
-      // Store vitals first
+      // Store vitals data to backend
       await storeVitals(patientId, visitId, sendVitals);
+      try {
+        localStorage.setItem(`vitals_done_${patientId}_${visitId}`, '1');
+      } catch {}
+      setAlreadySubmitted(true);
 
       // Show SOAP generation progress and trigger generation idempotently
       setGeneratingSoap(true);
@@ -186,7 +190,7 @@ const VitalsForm: React.FC = () => {
         } else {
           setGeneratingSoap(false);
           // Fall back to intake complete if SOAP not ready
-          navigate(`/intake/${patientId}?done=1`);
+      navigate(`/intake/${patientId}?done=1`);
         }
       };
       poll();

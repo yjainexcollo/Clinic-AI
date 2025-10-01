@@ -11,6 +11,8 @@ import SoapSummary from "./pages/SoapSummary";
 import VitalsForm from "./pages/VitalsForm";
 import TranscriptUpload from "./pages/TranscriptUpload";
 import AdhocTranscribe from "./pages/AdhocTranscribe";
+import DoctorPreferences from "./pages/DoctorPreferences";
+import PostVisitSummary from "./pages/PostVisitSummary";
 
 const App: React.FC = () => {
   return (
@@ -29,7 +31,9 @@ const App: React.FC = () => {
         <Route path="/vitals/:patientId/:visitId" element={<VitalsForm />} />
         <Route path="/transcribe/:patientId/:visitId" element={<TranscriptUpload />} />
         <Route path="/transcribe/adhoc" element={<AdhocTranscribe />} />
+        <Route path="/doctor/preferences" element={<DoctorPreferences />} />
         <Route path="*" element={<Navigate to="/patient-registration" replace />} />
+        <Route path="/post-visit/:patientId/:visitId" element={<PostVisitSummary />} />
       </Routes>
     </Router>
   );

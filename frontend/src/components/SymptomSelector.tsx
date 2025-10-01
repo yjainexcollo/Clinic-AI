@@ -5,11 +5,12 @@ interface SymptomSelectorProps {
   selectedSymptoms: string[];
   onSymptomsChange: (symptoms: string[]) => void;
   placeholder?: string;
+  language?: 'en' | 'sp';
 }
 
 // Common symptoms for intake form
 const SYMPTOM_CATEGORIES = {
-  "Common": [
+  en: [
     "Fever",
     "Cough / Cold",
     "Headache",
@@ -17,11 +18,24 @@ const SYMPTOM_CATEGORIES = {
     "Chest Pain",
     "Breathing Difficulty",
     "Fatigue / Weakness",
-    // Split slash pairs that represent different symptoms
     "Body Pain",
     "Joint Pain",
     "Skin Rash",
     "Itching",
+    "Diabetes"
+  ],
+  sp: [
+    "Fiebre",
+    "Tos / Resfriado",
+    "Dolor de Cabeza",
+    "Dolor de Estómago",
+    "Dolor en el Pecho",
+    "Dificultad para Respirar",
+    "Fatiga / Debilidad",
+    "Dolor Corporal",
+    "Dolor Articular",
+    "Erupción Cutánea",
+    "Picazón",
     "Diabetes"
   ]
 };
@@ -29,9 +43,13 @@ const SYMPTOM_CATEGORIES = {
 const SymptomSelector: React.FC<SymptomSelectorProps> = ({
   selectedSymptoms,
   onSymptomsChange,
-  placeholder = "Select your symptoms..."
+  placeholder = "Select your symptoms...",
+  language = 'en'
 }) => {
   const [customSymptom, setCustomSymptom] = useState("");
+  
+  // Get symptoms based on language
+  const symptoms = SYMPTOM_CATEGORIES[language] || SYMPTOM_CATEGORIES.en;
 
   // Toggle symptom selection
   const toggleSymptom = (symptom: string) => {
@@ -67,7 +85,7 @@ const SymptomSelector: React.FC<SymptomSelectorProps> = ({
   return (
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-2">
-        Symptoms *
+        {language === 'sp' ? 'Síntomas *' : 'Symptoms *'}
       </label>
       
       {/* Selected symptoms display */}
@@ -94,7 +112,7 @@ const SymptomSelector: React.FC<SymptomSelectorProps> = ({
       {/* Symptom options (no category heading) */}
       <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-lg p-4 bg-gray-50">
         <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-          {Object.values(SYMPTOM_CATEGORIES).flat().map((symptom) => (
+          {symptoms.map((symptom) => (
             <button
               key={symptom}
               type="button"
@@ -119,7 +137,7 @@ const SymptomSelector: React.FC<SymptomSelectorProps> = ({
             value={customSymptom}
             onChange={(e) => setCustomSymptom(e.target.value)}
             onKeyPress={handleCustomKeyPress}
-            placeholder="Add custom symptom..."
+            placeholder={language === 'sp' ? 'Añadir síntoma personalizado...' : 'Add custom symptom...'}
             className="medical-input flex-1"
           />
           <button
@@ -134,7 +152,9 @@ const SymptomSelector: React.FC<SymptomSelectorProps> = ({
       </div>
 
       {/* Helper text */}
-      <p className="mt-2 text-xs text-gray-500">Click on symptoms to select them.</p>
+      <p className="mt-2 text-xs text-gray-500">
+        {language === 'sp' ? 'Haga clic en los síntomas para seleccionarlos.' : 'Click on symptoms to select them.'}
+      </p>
     </div>
   );
 };

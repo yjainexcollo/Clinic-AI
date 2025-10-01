@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { registerPatientBackend } from "../services/patientService";
+import { LanguageToggle, Language } from "./LanguageToggle";
+import { useLanguage } from "../contexts/LanguageContext";
 
 interface PersonalFormProps {
   onPatientCreated?: (patientId: string) => void;
@@ -17,6 +19,8 @@ interface PersonalFormData {
 }
 
 const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
+  const { language, setLanguage, t } = useLanguage();
+  
   const [form, setForm] = useState<PersonalFormData>({
     firstName: "",
     lastName: "",
@@ -88,6 +92,7 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
       const { dial, maxDigits } = getPhoneRules(form.country);
       const digits = (form.mobileNumber || "").replace(/[^0-9]/g, "").slice(0, maxDigits);
       const mobileE164 = `${dial}${digits}`;
+      console.log('DEBUG: Sending language to backend:', language);
       const backendResp = await registerPatientBackend({
         first_name: form.firstName.trim(),
         last_name: form.lastName.trim(),
@@ -95,8 +100,9 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
         gender: form.gender,
         age: ageNumber,
         recently_travelled: form.travelHistory,
-        country: form.country,
         consent: true,
+        country: form.country,
+        language: language,
       });
 
       if (backendResp.patient_id) {
@@ -120,8 +126,15 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
         localStorage.setItem(`symptoms_${backendResp.patient_id}`, JSON.stringify(predefined));
 
         // Redirect including first question so it shows immediately
-        const q = encodeURIComponent(backendResp.first_question || "Why have you come in today? What is the main concern you want help with?");
+        console.log('DEBUG: PersonalForm - backend response:', backendResp);
+        console.log('DEBUG: PersonalForm - first_question from backend:', backendResp.first_question);
+        
+        const fallbackQuestion = language === 'sp' 
+          ? "¿Por qué ha venido hoy? ¿Cuál es la principal preocupación con la que necesita ayuda?"
+          : "Why have you come in today? What is the main concern you want help with?";
+        const q = encodeURIComponent(backendResp.first_question || fallbackQuestion);
         const v = encodeURIComponent(backendResp.visit_id);
+        console.log('DEBUG: PersonalForm - redirecting with question:', decodeURIComponent(q));
         window.location.href = `/intake/${backendResp.patient_id}?q=${q}&v=${v}`;
       } else {
         setError("Failed to create patient");
@@ -143,11 +156,19 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-medical-primary-light to-gray-50 flex items-center justify-center p-4">
       <div className="medical-card max-w-md w-full">
+        {/* Language Toggle */}
+        <div className="mb-4 flex justify-end">
+          <LanguageToggle
+            selectedLanguage={language}
+            onLanguageChange={setLanguage}
+          />
+        </div>
+        
         {/* Appointment banner */}
         <div className="mb-4 rounded-md border bg-blue-50 p-3 text-blue-800">
-          <div className="text-sm">Your appointment</div>
+          <div className="text-sm">{t('appointment.your_appointment')}</div>
           <div className="font-semibold">
-            Tue, Sep 23 • 2:30 PM PT • Clinic A (123 Main St)
+            {language === 'sp' ? 'Mar, 23 Sep • 2:30 PM PT • Clínica A (123 Calle Principal)' : 'Tue, Sep 23 • 2:30 PM PT • Clinic A (123 Main St)'}
           </div>
         </div>
         <div className="text-center mb-6">
@@ -167,10 +188,10 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
             </svg>
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            Personal Information
+            {language === 'sp' ? 'Información Personal' : 'Personal Information'}
           </h2>
           <p className="text-gray-600 text-sm">
-            Please provide your basic information to get started
+            {language === 'sp' ? 'Por favor proporcione su información básica para comenzar' : 'Please provide your basic information to get started'}
           </p>
         </div>
 
@@ -178,23 +199,27 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
           {/* First and Last Name Fields */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">First Name *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                {language === 'sp' ? 'Nombre *' : 'First Name *'}
+              </label>
               <input
                 name="firstName"
                 value={form.firstName}
                 onChange={handleChange}
-                placeholder="First name"
+                placeholder={language === 'sp' ? 'Nombre' : 'First name'}
                 required
                 className="medical-input"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Last Name *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                {language === 'sp' ? 'Apellido *' : 'Last Name *'}
+              </label>
               <input
                 name="lastName"
                 value={form.lastName}
                 onChange={handleChange}
-                placeholder="Last name"
+                placeholder={language === 'sp' ? 'Apellido' : 'Last name'}
                 required
                 className="medical-input"
               />
@@ -204,7 +229,7 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
           {/* Country and Mobile Number */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Mobile Number *
+              {language === 'sp' ? 'Número Móvil *' : 'Mobile Number *'}
             </label>
             <div className="flex items-center gap-1">
               <select
@@ -241,7 +266,10 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
               />
             </div>
             <p id="phone-help" className="text-xs text-gray-500 mt-1">
-              Enter your mobile number; default country is US. We’ll format it to E.164 on submit.
+              {language === 'sp' 
+                ? 'Ingrese su número móvil; el país predeterminado es EE.UU. Lo formatearemos a E.164 al enviar.'
+                : 'Enter your mobile number; default country is US. We\'ll format it to E.164 on submit.'
+              }
             </p>
           </div>
 
@@ -249,7 +277,7 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Gender *
+                {language === 'sp' ? 'Género *' : 'Gender *'}
               </label>
               <select
                 name="gender"
@@ -258,21 +286,29 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
                 required
                 className="medical-select"
               >
-                <option value="">Select Gender</option>
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-                <option value="other">Other</option>
+                <option value="">
+                  {language === 'sp' ? 'Seleccionar Género' : 'Select Gender'}
+                </option>
+                <option value="male">
+                  {language === 'sp' ? 'Masculino' : 'Male'}
+                </option>
+                <option value="female">
+                  {language === 'sp' ? 'Femenino' : 'Female'}
+                </option>
+                <option value="other">
+                  {language === 'sp' ? 'Otro' : 'Other'}
+                </option>
               </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Age *
+                {language === 'sp' ? 'Edad *' : 'Age *'}
               </label>
               <input
                 name="age"
                 value={form.age}
                 onChange={handleChange}
-                placeholder="Age"
+                placeholder={language === 'sp' ? 'Edad' : 'Age'}
                 type="number"
                 min="0"
                 max="150"
@@ -293,7 +329,7 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
               className="h-4 w-4 rounded border-gray-300 text-medical-primary focus:ring-medical-primary"
             />
             <label htmlFor="travelHistory" className="text-sm text-gray-700">
-              I have travelled recently (last 30 days)
+              {language === 'sp' ? 'He viajado recientemente (últimos 30 días)' : 'I have travelled recently (last 30 days)'}
             </label>
           </div>
 
@@ -309,7 +345,7 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
               required
             />
             <label htmlFor="consent" className="text-sm text-gray-700">
-              I consent to processing my data for clinical intake
+              {language === 'sp' ? 'Consiento al procesamiento de mis datos para la admisión clínica' : 'I consent to processing my data for clinical intake'}
             </label>
           </div>
 
@@ -323,7 +359,7 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
             {loading ? (
               <>
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                Creating Patient...
+                {language === 'sp' ? 'Creando Paciente...' : 'Creating Patient...'}
               </>
             ) : (
               <>
@@ -340,7 +376,7 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
                     d="M13 7l5 5m0 0l-5 5m5-5H6"
                   />
                 </svg>
-                Continue to Intake
+                {language === 'sp' ? 'Continuar a Admisión' : 'Continue to Intake'}
               </>
             )}
           </button>
