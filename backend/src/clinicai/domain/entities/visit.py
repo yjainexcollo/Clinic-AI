@@ -64,20 +64,53 @@ class IntakeSession:
             if qa.question.lower().strip() == question.lower().strip():
                 raise DuplicateQuestionError(question)
             
-            # Semantic duplicate check - classify both questions and compare categories
+            # Semantic duplicate check - classify both questions and compare categories using AI
             try:
+                import asyncio
                 from clinicai.adapters.external.question_service_openai import OpenAIQuestionService
                 question_service = OpenAIQuestionService()
                 
-                existing_category = question_service._classify_question(qa.question or "")
-                new_category = question_service._classify_question(question or "")
+                # Use AI to classify both questions
+                existing_category = asyncio.run(question_service._classify_question(qa.question or ""))
+                new_category = asyncio.run(question_service._classify_question(question or ""))
                 
-                # If both questions belong to the same category and it's not "other", it's a duplicate
+                # Only consider it a duplicate if:
+                # 1. Same category AND
+                # 2. Category is not "other" AND
+                # 3. Category is one that should only be asked once AND
+                # 4. The questions are asking about the same specific condition/context
                 if (existing_category == new_category and 
                     existing_category != "other" and 
-                    existing_category in ["duration", "triggers", "pain", "temporal", "travel", "allergies", "medications", "hpi", "family", "lifestyle", "gyn", "functional"]):
-                    print(f"DEBUG: Duplicate detected - existing: '{qa.question}' (category: {existing_category}), new: '{question}' (category: {new_category})")
-                    raise DuplicateQuestionError(question)
+                    existing_category in ["duration", "family", "travel", "allergies", "medications"]):
+                    
+                    # Use AI to determine if questions are about different conditions
+                    context_prompt = f"""You are a medical question analyzer. Determine if these two questions are asking about DIFFERENT medical conditions or contexts.
+
+QUESTION 1: "{qa.question}"
+QUESTION 2: "{question}"
+
+If the questions are about DIFFERENT conditions (e.g., asthma vs cough, diabetes vs fever, different types of pain), respond with "DIFFERENT".
+If the questions are about the SAME condition or context, respond with "SAME".
+
+Respond with only "DIFFERENT" or "SAME"."""
+
+                    try:
+                        messages = [{"role": "user", "content": context_prompt}]
+                        result = asyncio.run(question_service._chat_completion(messages, max_tokens=10, temperature=0.1))
+                        context_result = result.strip().upper()
+                        
+                        if context_result == "SAME":
+                            print(f"DEBUG: Duplicate detected - existing: '{qa.question}' (category: {existing_category}), new: '{question}' (category: {new_category})")
+                            raise DuplicateQuestionError(question)
+                        elif context_result == "DIFFERENT":
+                            print(f"DEBUG: Different conditions - existing: '{qa.question}' (category: {existing_category}), new: '{question}' (category: {new_category})")
+                            continue
+                            
+                    except Exception as context_e:
+                        print(f"DEBUG: Context analysis failed: {context_e}")
+                        # Fall back to allowing the question if context analysis fails
+                        continue
+                        
             except Exception as e:
                 # If classification fails, fall back to exact text matching only
                 print(f"DEBUG: Question classification failed, using exact text matching: {e}")
