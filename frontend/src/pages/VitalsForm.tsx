@@ -190,7 +190,7 @@ const VitalsForm: React.FC = () => {
         } else {
           setGeneratingSoap(false);
           // Fall back to intake complete if SOAP not ready
-      navigate(`/intake/${patientId}?done=1`);
+      navigate(`/intake/${patientId}?v=${visitId}&done=1`);
         }
       };
       poll();
@@ -202,7 +202,7 @@ const VitalsForm: React.FC = () => {
   };
 
   const handleCancel = () => {
-    navigate(`/intake/${patientId}?done=1`);
+    navigate(`/intake/${patientId}?v=${visitId}&done=1`);
   };
 
   return (

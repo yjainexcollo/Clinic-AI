@@ -102,7 +102,7 @@ const PostVisitSummary: React.FC = () => {
   };
 
   const handleGoBack = () => {
-    navigate(`/intake/${patientId}?v=${visitId}`);
+    navigate(`/intake/${patientId}?v=${visitId}&done=1`);
   };
 
   if (loading) {

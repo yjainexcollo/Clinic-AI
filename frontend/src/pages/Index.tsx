@@ -145,7 +145,7 @@ const Index = () => {
   // Check if post-visit summary exists
   useEffect(() => {
     const checkPostVisitSummary = async () => {
-      if (!patientId || !visitId) return;
+      if (!patientId || !visitId || !isComplete) return;
       
       try {
         const response = await fetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/summary/postvisit`, {
@@ -158,15 +158,15 @@ const Index = () => {
       }
     };
 
-    if (patientId && visitId) {
+    if (patientId && visitId && isComplete) {
       checkPostVisitSummary();
     }
-  }, [patientId, visitId]);
+  }, [patientId, visitId, isComplete]);
 
   // Check if transcript exists
   useEffect(() => {
     const checkTranscript = async () => {
-      if (!patientId || !visitId) return;
+      if (!patientId || !visitId || !isComplete) return;
       
       // First check localStorage flag
       const transcriptKey = `transcript_done_${patientId}_${visitId}`;
@@ -199,15 +199,15 @@ const Index = () => {
       }
     };
 
-    if (patientId && visitId) {
+    if (patientId && visitId && isComplete) {
       checkTranscript();
     }
-  }, [patientId, visitId]);
+  }, [patientId, visitId, isComplete]);
 
   // Check if vitals exist
   useEffect(() => {
     const checkVitals = async () => {
-      if (!patientId || !visitId) return;
+      if (!patientId || !visitId || !isComplete) return;
       
       // First check localStorage flag
       const vitalsKey = `vitals_done_${patientId}_${visitId}`;
@@ -240,10 +240,10 @@ const Index = () => {
       }
     };
 
-    if (patientId && visitId) {
+    if (patientId && visitId && isComplete) {
       checkVitals();
     }
-  }, [patientId, visitId]);
+  }, [patientId, visitId, isComplete]);
 
   const initializeSession = async () => {
     try {
@@ -875,7 +875,7 @@ const Index = () => {
           )}
 
           {/* Completion Summary */}
-          {(isComplete || visitId) && (
+          {isComplete && (
             <div className="medical-card">
               <div className="text-center mb-6">
                 <div className="w-16 h-16 bg-medical-primary rounded-full flex items-center justify-center mx-auto mb-4">

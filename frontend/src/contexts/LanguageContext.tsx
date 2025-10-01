@@ -181,26 +181,21 @@ export const LanguageProvider: React.FC<LanguageProviderProps> = ({ children }) 
   const [language, setLanguage] = useState<Language>(() => {
     // Get language from localStorage or default to English
     const savedLanguage = localStorage.getItem('clinicai_language') as Language;
-    console.log('DEBUG: LanguageContext - savedLanguage from localStorage:', savedLanguage);
     // Migrate old "es" values to "sp"
     if (savedLanguage === 'es' as any) {
-      console.log('DEBUG: LanguageContext - migrating "es" to "sp"');
       localStorage.setItem('clinicai_language', 'sp');
       return 'sp';
     }
     const finalLanguage = savedLanguage || 'en';
-    console.log('DEBUG: LanguageContext - final language:', finalLanguage);
     return finalLanguage;
   });
 
   useEffect(() => {
     // Save language to localStorage whenever it changes
-    console.log('DEBUG: LanguageContext - saving language to localStorage:', language);
     localStorage.setItem('clinicai_language', language);
   }, [language]);
 
   const handleSetLanguage = (newLanguage: Language) => {
-    console.log('DEBUG: LanguageContext - setLanguage called with:', newLanguage);
     setLanguage(newLanguage);
   };
 

@@ -218,7 +218,7 @@ const SoapSummary: React.FC = () => {
     <div className="max-w-4xl mx-auto p-4">
       <div className="mb-6">
         <button
-          onClick={() => navigate(`/intake/${patientId}?v=${visitId}`)}
+          onClick={() => navigate(`/intake/${patientId}?v=${visitId}&done=1`)}
           className="mb-3 inline-flex items-center px-3 py-1.5 rounded bg-gray-200 hover:bg-gray-300 text-gray-800"
         >
           ← {language === 'sp' ? 'Volver a la Página Principal' : 'Back to Main Page'}
@@ -244,7 +244,7 @@ const SoapSummary: React.FC = () => {
 
       <div className="flex gap-2 flex-wrap">
         <Link
-          to={`/intake/${patientId}?v=${visitId}`}
+          to={`/intake/${patientId}?v=${visitId}&done=1`}
           className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
         >
           Back to Main Page

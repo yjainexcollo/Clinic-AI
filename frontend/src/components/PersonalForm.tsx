@@ -92,7 +92,6 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
       const { dial, maxDigits } = getPhoneRules(form.country);
       const digits = (form.mobileNumber || "").replace(/[^0-9]/g, "").slice(0, maxDigits);
       const mobileE164 = `${dial}${digits}`;
-      console.log('DEBUG: Sending language to backend:', language);
       const backendResp = await registerPatientBackend({
         first_name: form.firstName.trim(),
         last_name: form.lastName.trim(),
@@ -124,17 +123,12 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
           "Skin Rash / Itching"
         ];
         localStorage.setItem(`symptoms_${backendResp.patient_id}`, JSON.stringify(predefined));
-
-        // Redirect including first question so it shows immediately
-        console.log('DEBUG: PersonalForm - backend response:', backendResp);
-        console.log('DEBUG: PersonalForm - first_question from backend:', backendResp.first_question);
         
         const fallbackQuestion = language === 'sp' 
           ? "¿Por qué ha venido hoy? ¿Cuál es la principal preocupación con la que necesita ayuda?"
           : "Why have you come in today? What is the main concern you want help with?";
         const q = encodeURIComponent(backendResp.first_question || fallbackQuestion);
         const v = encodeURIComponent(backendResp.visit_id);
-        console.log('DEBUG: PersonalForm - redirecting with question:', decodeURIComponent(q));
         window.location.href = `/intake/${backendResp.patient_id}?q=${q}&v=${v}`;
       } else {
         setError("Failed to create patient");
