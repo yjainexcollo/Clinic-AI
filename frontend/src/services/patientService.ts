@@ -5,7 +5,7 @@ const API_ENDPOINT =
 // Backend API base URL (FastAPI) with normalization
 function normalizeBaseUrl(input?: string): string {
   let url = (input || "").trim();
-  if (!url) return "http://localhost:8000";
+  if (!url) return "https://clinicai-backend-x7v3qgkqra-uc.a.run.app";
   // Add protocol if missing
   if (!/^https?:\/\//i.test(url)) {
     url = `http://${url}`;
@@ -19,7 +19,7 @@ function normalizeBaseUrl(input?: string): string {
 
 const BACKEND_BASE_URL: string = normalizeBaseUrl(
   (import.meta as any).env?.VITE_BACKEND_BASE_URL as string
-) || "http://localhost:8000";
+) || "https://clinicai-backend-x7v3qgkqra-uc.a.run.app";
 
 export { BACKEND_BASE_URL };
 

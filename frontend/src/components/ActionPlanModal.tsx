@@ -29,7 +29,10 @@ interface ActionPlanModalProps {
   adhocId: string;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://clinicai-backend-x7v3qgkqra-uc.a.run.app';
+
+// Debug: Log the API base URL
+console.log('ActionPlanModal API_BASE_URL:', API_BASE_URL);
 
 const ActionPlanModal: React.FC<ActionPlanModalProps> = ({ isOpen, onClose, adhocId }) => {
   const [actionPlan, setActionPlan] = useState<ActionPlan | null>(null);
@@ -46,7 +49,9 @@ const ActionPlanModal: React.FC<ActionPlanModalProps> = ({ isOpen, onClose, adho
 
   const checkActionPlanStatus = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/transcription/adhoc/${adhocId}/action-plan/status`);
+      const url = `${API_BASE_URL}/transcription/adhoc/${adhocId}/action-plan/status`;
+      console.log('ActionPlanModal fetching from URL:', url);
+      const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
         setStatus(data.status);
@@ -122,7 +127,9 @@ const ActionPlanModal: React.FC<ActionPlanModalProps> = ({ isOpen, onClose, adho
     setStatusMessage('Starting Action and Plan generation...');
     
     try {
-      const response = await fetch(`${API_BASE_URL}/transcription/adhoc/action-plan`, {
+      const url = `${API_BASE_URL}/transcription/adhoc/action-plan`;
+      console.log('ActionPlanModal generating from URL:', url);
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

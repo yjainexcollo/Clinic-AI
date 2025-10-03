@@ -30,7 +30,7 @@ export interface AudioStats {
   other_files: number;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://clinicai-backend-x7v3qgkqra-uc.a.run.app';
 
 class AudioService {
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
