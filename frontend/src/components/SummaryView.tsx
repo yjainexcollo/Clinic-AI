@@ -5,6 +5,7 @@ import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
 import { FileText, Calendar, User, Clock, X } from 'lucide-react';
 import { getPreVisitSummary, BACKEND_BASE_URL } from '../services/patientService';
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface SummaryViewProps {
   patientId: string;
@@ -28,6 +29,7 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
   const [summaryData, setSummaryData] = useState<SummaryData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const { language } = useLanguage();
 
   const loadSummary = async () => {
     try {
@@ -51,7 +53,7 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
   const formatDate = (dateString: string) => {
     try {
       const date = new Date(dateString);
-      return date.toLocaleString('en-US', {
+      return date.toLocaleString(language === 'sp' ? 'es-ES' : 'en-US', {
         year: 'numeric',
         month: 'long',
         day: 'numeric',
@@ -71,7 +73,7 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
             <div className="flex items-center space-x-2">
               <FileText className="h-6 w-6 text-blue-600" />
-              <CardTitle>Pre-Visit Summary</CardTitle>
+              <CardTitle>{language === 'sp' ? 'Resumen Pre-Consulta' : 'Pre-Visit Summary'}</CardTitle>
             </div>
             <Button variant="ghost" size="sm" onClick={onClose}>
               <X className="h-4 w-4" />
@@ -80,7 +82,7 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
           <CardContent className="flex items-center justify-center py-12">
             <div className="text-center">
               <div className="h-8 w-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4"></div>
-              <p className="text-gray-600">Loading your pre-visit summary...</p>
+              <p className="text-gray-600">{language === 'sp' ? 'Cargando su resumen pre-consulta...' : 'Loading your pre-visit summary...'}</p>
             </div>
           </CardContent>
         </Card>
@@ -95,7 +97,7 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
             <div className="flex items-center space-x-2">
               <FileText className="h-6 w-6 text-blue-600" />
-              <CardTitle>Pre-Visit Summary</CardTitle>
+              <CardTitle>{language === 'sp' ? 'Resumen Pre-Consulta' : 'Pre-Visit Summary'}</CardTitle>
             </div>
             <Button variant="ghost" size="sm" onClick={onClose}>
               <X className="h-4 w-4" />
@@ -109,10 +111,10 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
             </Alert>
             <div className="flex justify-center mt-6 space-x-3">
               <Button onClick={() => loadSummary()}>
-                Try Again
+                {language === 'sp' ? 'Intentar de nuevo' : 'Try Again'}
               </Button>
               <Button variant="outline" onClick={onClose}>
-                Close
+                {language === 'sp' ? 'Cerrar' : 'Close'}
               </Button>
             </div>
           </CardContent>
@@ -128,13 +130,21 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
   // Format summary: bold known headings without showing markdown symbols
   const renderSummary = (text: string) => {
     const lines = (text || '').split(/\n+/);
-    const headings = [
-      'Chief Complaint:',
-      'HPI:',
-      'History:',
-      'Current Medication:',
-      'Review of Systems:',
-    ];
+    const headings = language === 'sp'
+      ? [
+          'Motivo de Consulta:',
+          'HPI:',
+          'Historia:',
+          'Medicaciones actuales:',
+          'Revisión de Sistemas:',
+        ]
+      : [
+          'Chief Complaint:',
+          'HPI:',
+          'History:',
+          'Current Medication:',
+          'Review of Systems:',
+        ];
     return (
       <div className="space-y-3">
         {lines.map((line, idx) => {
@@ -161,9 +171,9 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
           <div className="flex items-center space-x-2">
             <FileText className="h-6 w-6 text-blue-600" />
             <div>
-              <CardTitle>Pre-Visit Summary</CardTitle>
+              <CardTitle>{language === 'sp' ? 'Resumen Pre-Consulta' : 'Pre-Visit Summary'}</CardTitle>
               <CardDescription>
-                AI-generated clinical summary for your upcoming appointment
+                {language === 'sp' ? 'Resumen clínico generado por IA para su próxima cita' : 'AI-generated clinical summary for your upcoming appointment'}
               </CardDescription>
             </div>
           </div>
@@ -179,17 +189,17 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
           <div className="flex flex-wrap gap-4 mb-6 p-4 bg-gray-50 rounded-lg">
             <div className="flex items-center space-x-2">
               <User className="h-4 w-4 text-gray-500" />
-              <span className="text-sm text-gray-600">Patient ID:</span>
+              <span className="text-sm text-gray-600">{language === 'sp' ? 'ID del Paciente:' : 'Patient ID:'}</span>
               <Badge variant="secondary">{summaryData.patient_id}</Badge>
             </div>
             <div className="flex items-center space-x-2">
               <FileText className="h-4 w-4 text-gray-500" />
-              <span className="text-sm text-gray-600">Visit ID:</span>
+              <span className="text-sm text-gray-600">{language === 'sp' ? 'ID de la Visita:' : 'Visit ID:'}</span>
               <Badge variant="secondary">{summaryData.visit_id}</Badge>
             </div>
             <div className="flex items-center space-x-2">
               <Clock className="h-4 w-4 text-gray-500" />
-              <span className="text-sm text-gray-600">Generated:</span>
+              <span className="text-sm text-gray-600">{language === 'sp' ? 'Generado:' : 'Generated:'}</span>
               <span className="text-sm font-medium">{formatDate(summaryData.generated_at)}</span>
             </div>
           </div>
@@ -199,14 +209,14 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
             <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                 <FileText className="h-5 w-5 mr-2 text-blue-600" />
-                Clinical Summary
+                {language === 'sp' ? 'Resumen Clínico' : 'Clinical Summary'}
               </h3>
               <div className="text-gray-700 whitespace-pre-wrap leading-relaxed">
                 {renderSummary(summaryData.summary)}
               </div>
               {Array.isArray(summaryData.medication_images) && summaryData.medication_images.length > 0 && (
                 <div className="mt-6">
-                  <h4 className="text-sm font-semibold text-gray-800 mb-2">Uploaded prescription images</h4>
+                  <h4 className="text-sm font-semibold text-gray-800 mb-2">{language === 'sp' ? 'Imágenes de prescripción subidas' : 'Uploaded prescription images'}</h4>
                   <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
                     {summaryData.medication_images.map((img) => (
                       <div key={img.id} className="border rounded p-1 bg-gray-50">
@@ -228,10 +238,10 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
           <div className="flex justify-center mt-8 space-x-3">
             <Button onClick={() => window.print()} variant="outline">
               <FileText className="h-4 w-4 mr-2" />
-              Print Summary
+              {language === 'sp' ? 'Imprimir Resumen' : 'Print Summary'}
             </Button>
             <Button onClick={onClose}>
-              Close
+              {language === 'sp' ? 'Cerrar' : 'Close'}
             </Button>
           </div>
         </CardContent>

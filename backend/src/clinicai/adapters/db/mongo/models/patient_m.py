@@ -49,12 +49,13 @@ class TranscriptionSessionMongo(BaseModel):
     error_message: Optional[str] = Field(None, description="Error message if failed")
     audio_duration_seconds: Optional[float] = Field(None, description="Audio duration in seconds")
     word_count: Optional[int] = Field(None, description="Word count of transcript")
+    structured_dialogue: Optional[list[dict]] = Field(None, description="Ordered Doctor/Patient turns")
 
 
 class SoapNoteMongo(BaseModel):
     """Embedded model for SOAP note (no revision_id)."""
     subjective: str = Field(..., description="Subjective section")
-    objective: str = Field(..., description="Objective section")
+    objective: dict = Field(..., description="Objective section (structured object)")
     assessment: str = Field(..., description="Assessment section")
     plan: str = Field(..., description="Plan section")
     highlights: List[str] = Field(default_factory=list, description="Key highlights")
@@ -84,6 +85,9 @@ class VisitMongo(Document):
     transcription_session: Optional[TranscriptionSessionMongo] = None
     soap_note: Optional[SoapNoteMongo] = None
     vitals: Optional[dict] = None
+    
+    # Step 4: Post-Visit Summary (Patient Sharing)
+    post_visit_summary: Optional[dict] = None
 
     class Config:
         # Exclude revision_id and other MongoDB-specific fields when serializing
@@ -100,6 +104,7 @@ class PatientMongo(Document):
     age: int = Field(..., description="Patient age")
     gender: Optional[str] = Field(None, description="Patient gender")
     recently_travelled: bool = Field(default=False, description="Has the patient travelled recently")
+    language: str = Field(default="en", description="Patient preferred language (en for English, sp for Spanish)")
     visits: List[VisitMongo] = Field(default_factory=list, description="List of visits")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -131,3 +136,34 @@ class MedicationImageMongo(Document):
     class Settings:
         name = "medication_images"
         indexes = ["patient_id", "visit_id", "uploaded_at"]
+
+
+class AdhocTranscriptMongo(Document):
+    """MongoDB model for ad-hoc (patientless) transcripts."""
+    transcript: str = Field(..., description="Raw transcribed text")
+    structured_dialogue: Optional[list[dict]] = Field(None, description="Ordered Doctor/Patient turns")
+    language: Optional[str] = Field(None)
+    confidence: Optional[float] = Field(None)
+    duration: Optional[float] = Field(None)
+    word_count: Optional[int] = Field(None)
+    model: Optional[str] = Field(None)
+    filename: Optional[str] = Field(None)
+    audio_file_path: Optional[str] = Field(None, description="Path to stored audio file")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Settings:
+        name = "adhoc_transcripts"
+        indexes = ["created_at"]
+
+
+class DoctorPreferencesMongo(Document):
+    """MongoDB model for storing doctor preferences (standalone; independent of intake)."""
+    doctor_id: str = Field(..., description="Doctor ID", unique=True)
+    global_categories: list[str] = Field(default_factory=list)
+    selected_categories: list[str] = Field(default_factory=list)
+    max_questions: int = Field(default=5)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Settings:
+        name = "doctor_preferences"
+        indexes = ["doctor_id", "updated_at"]

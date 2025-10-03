@@ -10,6 +10,8 @@ from fastapi.responses import JSONResponse
 import logging
 
 from .api.routers import health, patients, notes, prescriptions
+from .api.routers import doctor as doctor_router
+from .api.routers import transcription as transcription_router
 from .core.config import get_settings
 from .domain.errors import DomainError
 import asyncio
@@ -34,6 +36,8 @@ async def lifespan(app: FastAPI):
             PatientMongo,
             VisitMongo,
             MedicationImageMongo,
+            AdhocTranscriptMongo,
+            DoctorPreferencesMongo,
         )
 
         # Use configured URI
@@ -60,7 +64,7 @@ async def lifespan(app: FastAPI):
         db = client[db_name]
         await init_beanie(
             database=db,
-            document_models=[PatientMongo, VisitMongo, MedicationImageMongo],
+            document_models=[PatientMongo, VisitMongo, MedicationImageMongo, AdhocTranscriptMongo, DoctorPreferencesMongo],
         )
         print("✅ Database connection established")
     except Exception as e:
@@ -155,6 +159,8 @@ def create_app() -> FastAPI:
     app.include_router(patients.router)
     app.include_router(notes.router)
     app.include_router(prescriptions.router)
+    app.include_router(transcription_router.router)
+    app.include_router(doctor_router.router)
 
     # Global exception handler for domain errors
     @app.exception_handler(DomainError)
@@ -216,5 +222,11 @@ async def root():
             "get_vitals": "GET /notes/{patient_id}/visits/{visit_id}/vitals",
             # Prescription endpoints
             "upload_prescriptions": "POST /prescriptions/upload",
+            # Doctor preferences
+            "get_doctor_preferences": "GET /doctor/preferences",
+            "save_doctor_preferences": "POST /doctor/preferences",
+            # Intake session (preferences-aware)
+            "start_intake": "POST /intake/start",
+            "next_question": "POST /intake/next-question",
         },
     }

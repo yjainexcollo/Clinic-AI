@@ -52,25 +52,16 @@ class IntakeSession:
         attachment_image_paths: Optional[List[str]] = None,
         ocr_texts: Optional[List[str]] = None,
     ) -> None:
-
-        """Add a question and answer to the intake."""
-        # Check if intake is already completed
-        if self.status == "completed":
-            raise IntakeAlreadyCompletedError(
-                "Cannot add questions to completed intake"
-            )
-
-        # Check question limit
-
         # Check limit
-
         if self.current_question_count >= self.max_questions:
             raise QuestionLimitExceededError(
                 self.current_question_count, self.max_questions
             )
 
-        # Check for duplicate questions
+        # Check for duplicate questions - exact text match only
+        # Note: Semantic duplicate checking is handled at the application layer
         for qa in self.questions_asked:
+            # Exact text match (case-insensitive)
             if qa.question.lower().strip() == question.lower().strip():
                 raise DuplicateQuestionError(question)
 
@@ -161,6 +152,8 @@ class TranscriptionSession:
     error_message: Optional[str] = None
     audio_duration_seconds: Optional[float] = None
     word_count: Optional[int] = None
+    # Cached structured dialogue turns (ordered Doctor/Patient), to avoid re-structuring on the fly
+    structured_dialogue: Optional[List[Dict[str, Any]]] = None
 
 
 @dataclass
@@ -168,7 +161,7 @@ class SoapNote:
     """SOAP note data for Step-03."""
     
     subjective: str
-    objective: str
+    objective: Dict[str, Any]
     assessment: str
     plan: str
     highlights: List[str] = field(default_factory=list)
@@ -202,6 +195,8 @@ class Visit:
     soap_note: Optional[SoapNote] = None
     # Objective Vitals (optional)
     vitals: Optional[Dict[str, Any]] = None
+    # Step 4: Post-Visit Summary for patient sharing (stored JSON)
+    post_visit_summary: Optional[Dict[str, Any]] = None
 
     def __post_init__(self) -> None:
         """Initialize intake session."""
@@ -305,6 +300,21 @@ class Visit:
         """Check if pre-visit summary exists."""
         return self.pre_visit_summary is not None
 
+    # Step-04: Post-Visit Summary Methods
+    def store_post_visit_summary(self, summary: Dict[str, Any]) -> None:
+        """Persist post-visit summary JSON for patient sharing."""
+        self.post_visit_summary = {
+            **(summary or {}),
+            "stored_at": datetime.utcnow().isoformat(),
+        }
+        self.updated_at = datetime.utcnow()
+    
+    def get_post_visit_summary(self) -> Optional[Dict[str, Any]]:
+        return self.post_visit_summary
+    
+    def has_post_visit_summary(self) -> bool:
+        return self.post_visit_summary is not None
+
     # Step-03: Audio Transcription & SOAP Generation Methods
 
     def start_transcription(self, audio_file_path: str) -> None:
@@ -320,7 +330,7 @@ class Visit:
         self.status = "transcription"
         self.updated_at = datetime.utcnow()
 
-    def complete_transcription(self, transcript: str, audio_duration: Optional[float] = None) -> None:
+    def complete_transcription(self, transcript: str, audio_duration: Optional[float] = None, structured_dialogue: Optional[List[Dict[str, Any]]] = None) -> None:
         """Complete the transcription process."""
         if not self.transcription_session:
             raise ValueError("No active transcription session")
@@ -330,6 +340,10 @@ class Visit:
         self.transcription_session.completed_at = datetime.utcnow()
         self.transcription_session.audio_duration_seconds = audio_duration
         self.transcription_session.word_count = len(transcript.split()) if transcript else 0
+        
+        # Store structured dialogue if provided
+        if structured_dialogue:
+            self.transcription_session.structured_dialogue = structured_dialogue
         
         # Move to SOAP generation status
         self.status = "soap_generation"
@@ -398,9 +412,5 @@ class Visit:
         return self.status == "transcription"
 
     def can_generate_soap(self) -> bool:
-
-        return self.status == "soap_generation" and self.is_transcription_complete()
-
         """Check if SOAP can be generated."""
         return self.status == "soap_generation" and self.is_transcription_complete()
-

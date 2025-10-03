@@ -15,7 +15,8 @@ class SoapService(ABC):
         transcript: str,
         patient_context: Optional[Dict[str, Any]] = None,
         intake_data: Optional[Dict[str, Any]] = None,
-        pre_visit_summary: Optional[Dict[str, Any]] = None
+        pre_visit_summary: Optional[Dict[str, Any]] = None,
+        vitals: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Generate SOAP note from transcript and context.
@@ -25,6 +26,7 @@ class SoapService(ABC):
             patient_context: Patient demographics and basic info
             intake_data: Pre-visit intake responses
             pre_visit_summary: Pre-visit summary from Step-02
+            vitals: Objective vitals captured via vitals form
             
         Returns:
             Dict containing structured SOAP note data
@@ -41,5 +43,23 @@ class SoapService(ABC):
             
         Returns:
             True if valid, False otherwise
+        """
+        pass
+
+    @abstractmethod
+    async def generate_post_visit_summary(
+        self,
+        patient_data: Dict[str, Any],
+        soap_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Generate post-visit summary for patient sharing.
+        
+        Args:
+            patient_data: Patient demographics and basic info
+            soap_data: SOAP note data from completed visit
+            
+        Returns:
+            Dict containing structured post-visit summary data
         """
         pass

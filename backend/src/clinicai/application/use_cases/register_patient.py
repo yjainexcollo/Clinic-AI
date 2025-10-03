@@ -43,9 +43,14 @@ class RegisterPatientUseCase:
             visit = Visit(
                 visit_id=visit_id, patient_id=existing_patient.patient_id.value, symptom=""
             )
-            # First consultation question should ask for primary symptom
-            first_question = "Why have you come in today? What is the main concern you want help with?"
+            # Update patient's language preference for this visit
+            existing_patient.language = request.language
+            first_question = await self._question_service.generate_first_question(
+                disease=visit.symptom or "general consultation",
+                language=request.language
+            )
             existing_patient.add_visit(visit)
+            visit.set_pending_question(first_question)
             await self._patient_repository.save(existing_patient)
             return RegisterPatientResponse(
                 patient_id=existing_patient.patient_id.value,
@@ -71,6 +76,7 @@ class RegisterPatientUseCase:
             age=request.age,
             gender=request.gender,
             recently_travelled=request.recently_travelled,
+            language=request.language,
         )
 
         # Generate visit ID
@@ -83,7 +89,8 @@ class RegisterPatientUseCase:
 
         # Generate first question via QuestionService for consistency
         first_question = await self._question_service.generate_first_question(
-            disease=visit.symptom or "general consultation"
+            disease=visit.symptom or "general consultation",
+            language=patient.language
         )
 
         # Add visit to patient and cache pending question to ensure UI/DB match

@@ -9,11 +9,14 @@ import PersonalForm from "./components/PersonalForm";
 import Index from "./pages/Index";
 import SoapSummary from "./pages/SoapSummary";
 import VitalsForm from "./pages/VitalsForm";
+import TranscriptUpload from "./pages/TranscriptUpload";
+import AdhocTranscribe from "./pages/AdhocTranscribe";
+import DoctorPreferences from "./pages/DoctorPreferences";
 import PostVisitSummary from "./pages/PostVisitSummary";
 
 const App: React.FC = () => {
   return (
-    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <Router>
       <Routes>
         <Route
           path="/"
@@ -26,8 +29,11 @@ const App: React.FC = () => {
         <Route path="/intake/:patientId" element={<IntakePage />} />
         <Route path="/soap/:patientId/:visitId" element={<SoapSummary />} />
         <Route path="/vitals/:patientId/:visitId" element={<VitalsForm />} />
-        <Route path="/post-visit/:patientId/:visitId" element={<PostVisitSummary />} />
+        <Route path="/transcribe/:patientId/:visitId" element={<TranscriptUpload />} />
+        <Route path="/transcribe/adhoc" element={<AdhocTranscribe />} />
+        <Route path="/doctor/preferences" element={<DoctorPreferences />} />
         <Route path="*" element={<Navigate to="/patient-registration" replace />} />
+        <Route path="/post-visit/:patientId/:visitId" element={<PostVisitSummary />} />
       </Routes>
     </Router>
   );

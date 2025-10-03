@@ -12,7 +12,7 @@ type ServerImage = { id: string; filename: string; content_type?: string };
 
 type QueuedImage = { id: string; file: File; previewUrl: string };
 
-const MedicationImageUploader: React.FC<Props> = ({ patientId, visitId, title = "Add prescription images (optional)", onChange }) => {
+const MedicationImageUploader: React.FC<Props> = ({ patientId, visitId, title = "What medications do you take? (upload images, optional)", onChange }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string>("");
   const [successMsg, setSuccessMsg] = useState<string>("");
@@ -146,7 +146,7 @@ const MedicationImageUploader: React.FC<Props> = ({ patientId, visitId, title = 
         className="block w-full text-sm text-gray-700"
       />
 
-      {/* Queue previews staged for submit */}
+      {/* Queue previews with remove-before-upload */}
       {queue.length > 0 && (
         <div className="mt-2">
           <div className="text-xs text-gray-600 mb-2">Selected (will upload when you submit your answer):</div>
@@ -165,7 +165,16 @@ const MedicationImageUploader: React.FC<Props> = ({ patientId, visitId, title = 
               </div>
             ))}
           </div>
-          <div className="flex justify-end mt-2 text-[11px] text-gray-500">Images will be sent with your answer.</div>
+          <div className="flex justify-end mt-2">
+            <button
+              type="button"
+              onClick={uploadQueued}
+              disabled={isUploading}
+              className="px-3 py-1.5 rounded bg-blue-600 text-white text-sm disabled:opacity-60"
+            >
+              {isUploading ? `Uploading... ${formatElapsed(elapsed)}` : `Upload ${queue.length} image(s)`}
+            </button>
+          </div>
         </div>
       )}
 
@@ -208,5 +217,3 @@ const MedicationImageUploader: React.FC<Props> = ({ patientId, visitId, title = 
 };
 
 export default MedicationImageUploader;
-
-

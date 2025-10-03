@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { generateSoapNote, getSoapNote } from "../services/patientService";
+import { useLanguage } from "../contexts/LanguageContext";
 
 const Block: React.FC<{ title: string; children?: React.ReactNode }> = ({ title, children }) => (
   <div className="mb-6">
@@ -13,9 +14,163 @@ const Block: React.FC<{ title: string; children?: React.ReactNode }> = ({ title,
 
 const render = (v: any) => (v == null ? "Not discussed" : String(v));
 
+// Safe parser for Python dict format
+function parsePythonDict(str: string): any {
+  try {
+    // Simple approach: replace single quotes with double quotes
+    // This works for most cases but might break with apostrophes in strings
+    const jsonStr = str.replace(/'/g, '"');
+    const result = JSON.parse(jsonStr);
+    return result;
+  } catch (e) {
+    // If that fails, try a more careful approach
+    // Handle common cases where apostrophes might be in the data
+    let result = str;
+    
+    // Replace single quotes around keys and values, but preserve apostrophes in the middle
+    result = result.replace(/'([^']*)':/g, '"$1":'); // Keys
+    result = result.replace(/: '([^']*)'/g, ': "$1"'); // Values
+    
+    try {
+      const parsed = JSON.parse(result);
+      return parsed;
+    } catch (e2) {
+      // Last resort: return the original string
+      return str;
+    }
+  }
+}
+
+function renderObjective(obj: any): React.ReactNode {
+  if (obj == null) return <span className="opacity-60">Not discussed</span>;
+  let data: any = obj;
+  
+  // If it's already an object, use it directly
+  if (typeof obj === "object" && !Array.isArray(obj)) {
+    data = obj;
+  } else if (typeof obj === "string") {
+    const t = obj.trim();
+    
+    // Check if it's a JSON string containing Python dict format
+    if (t.startsWith('"{') && t.endsWith('}"')) {
+      try {
+        // First parse the JSON string to get the Python dict string
+        const pythonDictString = JSON.parse(t);
+        // Then parse the Python dict
+        data = parsePythonDict(pythonDictString);
+      } catch (e) {
+        // fall through to raw string
+      }
+    } else if ((t.startsWith("{") && t.endsWith("}")) || (t.startsWith("[") && t.endsWith("]"))) {
+      try {
+        // First try standard JSON parsing
+        data = JSON.parse(t);
+      } catch {
+        try {
+          // If that fails, try to convert Python dict format to JSON format
+          const jsonString = t.replace(/'/g, '"');
+          data = JSON.parse(jsonString);
+        } catch {
+          // If that also fails, try a more sophisticated approach
+          try {
+            data = parsePythonDict(t);
+          } catch (e) {
+            // fall through to raw string
+          }
+        }
+      }
+    }
+  }
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    const vital = data.vital_signs || data.vitals || data.vitalSigns;
+    const physical = data.physical_exam || data.exam || data.physicalExam;
+    return (
+      <div className="space-y-3">
+        {vital && typeof vital === "object" && (
+          <div>
+            <div className="text-sm font-semibold mb-1">Vital Signs</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {Object.entries(vital).map(([k, v]) => (
+                <div key={k} className="flex items-start gap-2 text-sm">
+                  <span className="min-w-28 font-medium capitalize text-gray-700">{k.replace(/_/g, " ")}</span>
+                  <span className="flex-1">{String(v)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {physical && (
+          <div>
+            <div className="text-sm font-semibold mb-1">Physical Exam</div>
+            {typeof physical === "object" && !Array.isArray(physical) ? (
+              <div className="space-y-2">
+                {Object.entries(physical).map(([k, v]) => (
+                  <div key={k} className="flex items-start gap-2 text-sm">
+                    <span className="min-w-28 font-medium capitalize text-gray-700">{k.replace(/_/g, " ")}</span>
+                    <span className="flex-1">{String(v)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-sm whitespace-pre-wrap">{String(physical)}</div>
+            )}
+          </div>
+        )}
+        {!vital && !physical && (
+          <div className="space-y-2">
+            {Object.entries(data).map(([k, v]) => (
+              <div key={k} className="flex items-start gap-2 text-sm">
+                <span className="min-w-28 font-medium capitalize text-gray-700">{k.replace(/_/g, " ")}</span>
+                <span className="flex-1">
+                  {typeof v === "object" && v !== null ? (
+                    <div className="space-y-1">
+                      {Object.entries(v).map(([subK, subV]) => (
+                        <div key={subK} className="flex items-start gap-2">
+                          <span className="min-w-20 text-xs font-medium text-gray-600">{subK.replace(/_/g, " ")}</span>
+                          <span className="text-xs">{String(subV)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    String(v)
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+  
+  // If we still have a string that looks like a dict, try one more time
+  if (typeof data === "string" && data.includes("'vital_signs'") && data.includes("'physical_exam'")) {
+    try {
+      const finalResult = parsePythonDict(data);
+      if (typeof finalResult === "object" && finalResult !== null) {
+        data = finalResult;
+      }
+    } catch (e) {
+      // fall through
+    }
+  }
+  
+  // If data is still a string, show it as formatted text instead of raw
+  if (typeof data === "string") {
+    return (
+      <div className="text-sm text-red-600 bg-red-50 p-3 rounded border">
+        <strong>Raw Data:</strong> {data}
+      </div>
+    );
+  }
+  
+  return <span className="whitespace-pre-wrap">{String(data)}</span>;
+}
+
 const SoapSummary: React.FC = () => {
   const { patientId = "", visitId = "" } = useParams();
   const navigate = useNavigate();
+  const { language, setLanguage, t } = useLanguage();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [soap, setSoap] = useState<any>(null);
@@ -62,50 +217,41 @@ const SoapSummary: React.FC = () => {
   return (
     <div className="max-w-4xl mx-auto p-4">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold">SOAP Summary</h1>
-        <p className="text-xs opacity-60">Patient: {patientId} · Visit: {visitId}</p>
+        <button
+          onClick={() => navigate(`/intake/${patientId}?v=${visitId}&done=1`)}
+          className="mb-3 inline-flex items-center px-3 py-1.5 rounded bg-gray-200 hover:bg-gray-300 text-gray-800"
+        >
+          ← {language === 'sp' ? 'Volver a la Página Principal' : 'Back to Main Page'}
+        </button>
+        <h1 className="text-2xl font-bold">
+          SOAP Summary
+        </h1>
+        <p className="text-xs opacity-60">
+          {language === 'sp' ? 'Paciente' : 'Patient'}: {patientId} · {language === 'sp' ? 'Visita' : 'Visit'}: {visitId}
+        </p>
         {soap.generated_at && (
-          <p className="text-xs opacity-60">Generated: {new Date(soap.generated_at).toLocaleString()}</p>
+          <p className="text-xs opacity-60">
+            {language === 'sp' ? 'Generado' : 'Generated'}: {new Date(soap.generated_at).toLocaleString()}
+          </p>
         )}
       </div>
 
       <Block title="Subjective">{render(subj)}</Block>
-      <Block title="Objective">{render(obj)}</Block>
+      <Block title="Objective">{renderObjective(obj)}</Block>
       <Block title="Assessment">{render(assess)}</Block>
       <Block title="Plan">{render(plan)}</Block>
 
+
       <div className="flex gap-2 flex-wrap">
-        <button onClick={() => navigate(-1)} className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">
-          Back
-        </button>
-        <button
-          onClick={() => navigate(`/vitals/${patientId}/${visitId}`)}
-          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+        <Link
+          to={`/intake/${patientId}?v=${visitId}&done=1`}
+          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
         >
-          Fill Vitals Form
-        </button>
-        <button
-          onClick={async () => {
-            try {
-              setLoading(true);
-              await generateSoapNote(patientId, visitId);
-              const s = await getSoapNote(patientId, visitId);
-              setSoap(s);
-              setError("");
-            } catch (e: any) {
-              setError(e?.message || "Failed to regenerate SOAP");
-            } finally {
-              setLoading(false);
-            }
-          }}
-          className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
-        >
-          Regenerate
-        </button>
+          Back to Main Page
+        </Link>
       </div>
     </div>
   );
 };
 
 export default SoapSummary;
-

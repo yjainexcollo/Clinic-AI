@@ -16,54 +16,93 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { getPostVisitSummary, sharePostVisitSummaryViaWhatsApp, PostVisitSummaryResponse } from '../services/patientService';
+import { useLanguage } from '../contexts/LanguageContext';
 
 const PostVisitSummary: React.FC = () => {
   const { patientId, visitId } = useParams<{ patientId: string; visitId: string }>();
   const navigate = useNavigate();
+  const { language, setLanguage, t } = useLanguage();
   const [summary, setSummary] = useState<PostVisitSummaryResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(true);
+  const [processing, setProcessing] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    console.log('PostVisitSummary: patientId from URL:', patientId);
+    console.log('PostVisitSummary: visitId from URL:', visitId);
+    console.log('PostVisitSummary: URL params received:', { patientId, visitId });
+    
+    if (patientId && visitId) {
+      console.log('PostVisitSummary: Both IDs present, loading summary...');
+      loadPostVisitSummary();
+    } else {
+      console.error('PostVisitSummary: Missing IDs:', { patientId, visitId });
+    }
+  }, [patientId, visitId]);
 
   const loadPostVisitSummary = async () => {
-    if (!patientId || !visitId) {
-      setError('Missing patient or visit ID');
-      setLoading(false);
-      return;
-    }
-
+    if (!patientId || !visitId) return;
+    
     try {
       setLoading(true);
-      setError('');
-      const data = await getPostVisitSummary(patientId, visitId);
-      setSummary(data);
-    } catch (err: any) {
+      setError(null);
+      
+              setProcessing(true);
+              const data = await getPostVisitSummary(patientId, visitId);
+              setProcessing(false);
+              console.log('PostVisitSummary: Received data:', data);
+              console.log('PostVisitSummary: Chief complaint:', data.chief_complaint);
+              setSummary(data);
+    } catch (err) {
       console.error('Error loading post-visit summary:', err);
-      if (err.message?.includes('422')) {
-        setError('Post-visit summary cannot be generated yet. Please complete the SOAP summary first.');
-      } else if (err.message?.includes('404')) {
-        setError('Visit or patient not found.');
-      } else if (err.message?.includes('400')) {
-        setError('Invalid request. Please check your data.');
-      } else {
-        setError('Failed to load post-visit summary. Please try again later.');
+      
+      // Provide more specific error messages based on the error
+      let errorMessage = 'Failed to load post-visit summary';
+      
+      if (err instanceof Error) {
+        console.log('Error message:', err.message);
+        console.log('Error details:', err);
+        
+        if (err.message.includes('422')) {
+          errorMessage = 'Post-visit summary cannot be generated yet. Please ensure SOAP notes are generated first.';
+        } else if (err.message.includes('404')) {
+          errorMessage = 'Patient or visit not found.';
+        } else if (err.message.includes('400')) {
+          errorMessage = 'Invalid request. Please check your patient and visit information.';
+        } else if (err.message.includes('500')) {
+          errorMessage = 'Server error occurred while generating post-visit summary. Please check the backend logs for details.';
+        } else if (err.message.includes('Backend error')) {
+          // Extract the actual error from backend
+          const match = err.message.match(/Backend error \d+: (.+)/);
+          if (match) {
+            try {
+              const backendError = JSON.parse(match[1]);
+              errorMessage = backendError.message || backendError.detail?.message || match[1];
+            } catch {
+              errorMessage = match[1];
+            }
+          } else {
+            errorMessage = err.message;
+          }
+        } else {
+          errorMessage = err.message;
+        }
       }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    loadPostVisitSummary();
-  }, [patientId, visitId]);
-
-  const handleGoBack = () => {
-    navigate(`/soap/${patientId}/${visitId}`);
   };
 
   const handleShareViaWhatsApp = () => {
     if (summary) {
       sharePostVisitSummaryViaWhatsApp(summary);
     }
+  };
+
+  const handleGoBack = () => {
+    navigate(`/intake/${patientId}?v=${visitId}&done=1`);
   };
 
   if (loading) {
@@ -77,26 +116,46 @@ const PostVisitSummary: React.FC = () => {
     );
   }
 
+  if (processing) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 text-center">
+          <div className="w-10 h-10 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Generating post-visit summary…</h3>
+          <p className="text-sm text-gray-600">This may take a few moments.</p>
+        </div>
+      </div>
+    );
+  }
+
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="max-w-md mx-auto p-6">
-          <Alert className="border-red-200 bg-red-50">
-            <AlertCircle className="h-4 w-4 text-red-600" />
-            <AlertDescription className="text-red-800">
-              <p className="font-medium mb-2">Error Loading Summary</p>
-              <p className="text-sm mb-4">{error}</p>
-              <div className="flex gap-2">
-                <Button onClick={handleGoBack} variant="outline" size="sm">
-                  Go Back
-                </Button>
-                <Button onClick={loadPostVisitSummary} size="sm">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6">
+            <div className="text-center">
+              <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Error Loading Summary</h3>
+              <p className="text-gray-600 mb-4">{error}</p>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                <p className="text-blue-800 text-sm">
+                  <strong>Note:</strong> Post-visit summaries can only be generated after:
+                  <br />• The intake process is completed
+                  <br />• SOAP notes have been generated
+                  <br />• The visit is marked as completed
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Button onClick={loadPostVisitSummary} className="w-full">
                   Try Again
                 </Button>
+                <Button onClick={handleGoBack} variant="outline" className="w-full">
+                  Go Back to Main Page
+                </Button>
               </div>
-            </AlertDescription>
-          </Alert>
-        </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -104,12 +163,18 @@ const PostVisitSummary: React.FC = () => {
   if (!summary) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">No Summary Found</h2>
-          <p className="text-gray-600 mb-4">Post-visit summary is not available for this visit.</p>
-          <Button onClick={handleGoBack}>Go Back</Button>
-        </div>
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6">
+            <div className="text-center">
+              <AlertCircle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">No Summary Found</h3>
+              <p className="text-gray-600 mb-4">Post-visit summary is not available for this visit.</p>
+              <Button onClick={handleGoBack} className="w-full">
+                Go Back
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -125,16 +190,16 @@ const PostVisitSummary: React.FC = () => {
             className="mb-4"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to SOAP Summary
+            {language === 'sp' ? 'Volver a la Página Principal' : 'Back to Main Page'}
           </Button>
           
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">
-                Post-Visit Summary
+                {language === 'sp' ? 'Resumen Post-Consulta' : 'Post-Visit Summary'}
               </h1>
               <p className="text-gray-600 mt-2">
-                Patient-friendly summary for sharing
+                {language === 'sp' ? 'Resumen amigable para el paciente para compartir' : 'Patient-friendly summary for sharing'}
               </p>
             </div>
             <div className="flex space-x-2">
@@ -143,11 +208,11 @@ const PostVisitSummary: React.FC = () => {
                 className="bg-green-600 hover:bg-green-700"
               >
                 <Share2 className="h-4 w-4 mr-2" />
-                Share via WhatsApp
+                {t('summary.share_whatsapp')}
               </Button>
               <Button onClick={() => window.print()} variant="outline">
                 <FileText className="h-4 w-4 mr-2" />
-                Print
+                {t('summary.print')}
               </Button>
             </div>
           </div>
@@ -160,7 +225,7 @@ const PostVisitSummary: React.FC = () => {
             <CardDescription className="flex flex-wrap gap-4 text-sm">
               <span className="flex items-center">
                 <Calendar className="h-4 w-4 mr-1" />
-                Visit Date: {new Date(summary.visit_date).toLocaleDateString()}
+                {t('postvisit.visit_date')}: {new Date(summary.visit_date).toLocaleDateString()}
               </span>
               <span className="flex items-center">
                 <User className="h-4 w-4 mr-1" />
@@ -177,7 +242,7 @@ const PostVisitSummary: React.FC = () => {
         {/* Chief Complaint */}
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle className="text-lg">Chief Complaint</CardTitle>
+            <CardTitle className="text-lg">{t('postvisit.chief_complaint')}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-gray-700">{summary.chief_complaint || 'No chief complaint recorded'}</p>
@@ -188,13 +253,13 @@ const PostVisitSummary: React.FC = () => {
         {summary.key_findings.length > 0 && (
           <Card className="mb-6">
             <CardHeader>
-              <CardTitle className="text-lg">Key Findings</CardTitle>
+              <CardTitle className="text-lg">{t('postvisit.key_findings')}</CardTitle>
             </CardHeader>
             <CardContent>
               <ul className="space-y-2">
                 {summary.key_findings.map((finding, index) => (
                   <li key={index} className="flex items-start">
-                    <span className="text-blue-600 mr-2 mt-1">•</span>
+                    <span className="text-green-600 mr-2 mt-1">•</span>
                     <span className="text-gray-700">{finding}</span>
                   </li>
                 ))}
@@ -206,7 +271,7 @@ const PostVisitSummary: React.FC = () => {
         {/* Diagnosis */}
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle className="text-lg">Diagnosis</CardTitle>
+            <CardTitle className="text-lg">{t('postvisit.diagnosis')}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-gray-700">{summary.diagnosis}</p>
@@ -217,7 +282,7 @@ const PostVisitSummary: React.FC = () => {
         {summary.medications.length > 0 && (
           <Card className="mb-6">
             <CardHeader>
-              <CardTitle className="text-lg">Medications Prescribed</CardTitle>
+              <CardTitle className="text-lg">{t('postvisit.medications_prescribed')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -225,10 +290,10 @@ const PostVisitSummary: React.FC = () => {
                   <div key={index} className="border rounded-lg p-4">
                     <h4 className="font-semibold text-gray-900 mb-2">{med.name}</h4>
                     <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div><span className="font-medium">Dosage:</span> {med.dosage}</div>
-                      <div><span className="font-medium">Frequency:</span> {med.frequency}</div>
-                      <div><span className="font-medium">Duration:</span> {med.duration}</div>
-                      {med.purpose && <div><span className="font-medium">Purpose:</span> {med.purpose}</div>}
+                      <div><span className="font-medium">{t('postvisit.dosage')}:</span> {med.dosage}</div>
+                      <div><span className="font-medium">{t('postvisit.frequency')}:</span> {med.frequency}</div>
+                      <div><span className="font-medium">{t('postvisit.duration')}:</span> {med.duration}</div>
+                      {med.purpose && <div><span className="font-medium">{t('postvisit.purpose')}:</span> {med.purpose}</div>}
                     </div>
                   </div>
                 ))}
@@ -241,13 +306,13 @@ const PostVisitSummary: React.FC = () => {
         {summary.other_recommendations.length > 0 && (
           <Card className="mb-6">
             <CardHeader>
-              <CardTitle className="text-lg">Other Recommendations</CardTitle>
+              <CardTitle className="text-lg">{t('postvisit.other_recommendations')}</CardTitle>
             </CardHeader>
             <CardContent>
               <ul className="space-y-2">
                 {summary.other_recommendations.map((rec, index) => (
                   <li key={index} className="flex items-start">
-                    <span className="text-green-600 mr-2 mt-1">•</span>
+                    <span className="text-blue-600 mr-2 mt-1">•</span>
                     <span className="text-gray-700">{rec}</span>
                   </li>
                 ))}
@@ -260,7 +325,7 @@ const PostVisitSummary: React.FC = () => {
         {summary.tests_ordered.length > 0 && (
           <Card className="mb-6">
             <CardHeader>
-              <CardTitle className="text-lg">Tests Ordered</CardTitle>
+              <CardTitle className="text-lg">{t('postvisit.tests_ordered')}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -268,8 +333,8 @@ const PostVisitSummary: React.FC = () => {
                   <div key={index} className="border rounded-lg p-4">
                     <h4 className="font-semibold text-gray-900 mb-2">{test.test_name}</h4>
                     <div className="text-sm space-y-1">
-                      <div><span className="font-medium">Purpose:</span> {test.purpose}</div>
-                      <div><span className="font-medium">Instructions:</span> {test.instructions}</div>
+                      <div><span className="font-medium">{t('postvisit.purpose_simple')}:</span> {test.purpose}</div>
+                      <div><span className="font-medium">{t('postvisit.instructions')}:</span> {test.instructions}</div>
                     </div>
                   </div>
                 ))}
@@ -282,7 +347,7 @@ const PostVisitSummary: React.FC = () => {
         {summary.next_appointment && (
           <Card className="mb-6">
             <CardHeader>
-              <CardTitle className="text-lg">Next Appointment</CardTitle>
+              <CardTitle className="text-lg">{t('postvisit.next_appointment')}</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-gray-700">{summary.next_appointment}</p>
@@ -290,20 +355,20 @@ const PostVisitSummary: React.FC = () => {
           </Card>
         )}
 
-        {/* Warning Signs */}
+        {/* Red Flag Symptoms */}
         {summary.red_flag_symptoms.length > 0 && (
           <Card className="mb-6 border-red-200">
             <CardHeader className="bg-red-50">
               <CardTitle className="text-lg text-red-800 flex items-center">
                 <AlertCircle className="h-5 w-5 mr-2" />
-                Warning Signs
+                {t('postvisit.warning_signs')}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <Alert className="border-red-200 bg-red-50">
                 <AlertCircle className="h-4 w-4 text-red-600" />
                 <AlertDescription className="text-red-800">
-                  <p className="font-medium mb-2">Seek immediate medical attention if you experience:</p>
+                  <p className="font-medium mb-2">{t('postvisit.seek_immediate_attention')}</p>
                   <ul className="space-y-1">
                     {summary.red_flag_symptoms.map((symptom, index) => (
                       <li key={index} className="flex items-start">
@@ -321,7 +386,7 @@ const PostVisitSummary: React.FC = () => {
         {/* Patient Instructions */}
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle className="text-lg">Patient Instructions</CardTitle>
+            <CardTitle className="text-lg">{t('postvisit.patient_instructions')}</CardTitle>
           </CardHeader>
           <CardContent>
             <ul className="space-y-2">
@@ -335,16 +400,21 @@ const PostVisitSummary: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* Closing Note */}
+        {/* Reassurance Note */}
         <Card className="mb-6 border-blue-200">
           <CardHeader className="bg-blue-50">
-            <CardTitle className="text-lg text-blue-800">Closing Note</CardTitle>
+            <CardTitle className="text-lg text-blue-800">{t('postvisit.closing_note')}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-blue-800 font-medium mb-2">{summary.reassurance_note}</p>
-            <p className="text-blue-700 text-sm">📞 Contact: {summary.clinic_contact}</p>
+            <p className="text-blue-700 text-sm">📞 {t('postvisit.contact')}: {summary.clinic_contact}</p>
           </CardContent>
         </Card>
+
+        {/* Footer */}
+        <div className="text-center text-sm text-gray-500 py-4">
+          Generated on: {new Date(summary.generated_at).toLocaleString()}
+        </div>
       </div>
     </div>
   );

@@ -9,6 +9,7 @@ const VitalsForm: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [generatingSoap, setGeneratingSoap] = useState(false);
   const [bmi, setBmi] = useState<number | null>(null);
   const [alreadySubmitted, setAlreadySubmitted] = useState(false);
 
@@ -146,7 +147,7 @@ const VitalsForm: React.FC = () => {
         systolic: Number(vitals.systolic),
         diastolic: Number(vitals.diastolic),
         heartRate: Number(vitals.heartRate),
-        respiratoryRate: Number(vitals.respiratoryRate),
+        respiratoryRate: vitals.respiratoryRate !== "" && vitals.respiratoryRate != null ? Number(vitals.respiratoryRate) : undefined,
         temperature: Number(vitals.temperature),
         oxygenSaturation: Number(vitals.oxygenSaturation),
         weight: Number(vitals.weight),
@@ -157,9 +158,42 @@ const VitalsForm: React.FC = () => {
 
       // Store vitals data to backend
       await storeVitals(patientId, visitId, sendVitals);
+      try {
+        localStorage.setItem(`vitals_done_${patientId}_${visitId}`, '1');
+      } catch {}
+      setAlreadySubmitted(true);
 
-      // Redirect to Intake Complete page (force completion view)
-      navigate(`/intake/${patientId}?done=1`);
+      // Show SOAP generation progress and trigger generation idempotently
+      setGeneratingSoap(true);
+      try {
+        // Ensure we pass the internal id expected by backend: use current patientId as-is
+        await generateSoapNote(patientId, visitId);
+      } catch (e) {
+        // Ignore; we'll still poll for readiness
+      }
+
+      // Poll for SOAP availability, then navigate to SOAP view
+      const start = Date.now();
+      const maxMs = 180000; // 3 minutes
+      const poll = async (attempt = 0): Promise<void> => {
+        try {
+          const s = await getSoapNote(patientId, visitId);
+          if (s && (s as any).subjective !== undefined) {
+            setGeneratingSoap(false);
+            navigate(`/soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
+            return;
+          }
+        } catch {}
+        if (Date.now() - start < maxMs) {
+          const delay = Math.min(10000, 1000 * Math.pow(1.5, attempt));
+          setTimeout(() => poll(attempt + 1), delay);
+        } else {
+          setGeneratingSoap(false);
+          // Fall back to intake complete if SOAP not ready
+      navigate(`/intake/${patientId}?v=${visitId}&done=1`);
+        }
+      };
+      poll();
     } catch (err: any) {
       setError(err.message || "Failed to save vitals");
     } finally {
@@ -168,7 +202,7 @@ const VitalsForm: React.FC = () => {
   };
 
   const handleCancel = () => {
-    navigate(`/intake/${patientId}?done=1`);
+    navigate(`/intake/${patientId}?v=${visitId}&done=1`);
   };
 
   return (
@@ -178,6 +212,11 @@ const VitalsForm: React.FC = () => {
         <p className="text-sm text-gray-600 mt-2">
           Patient: {patientId} • Visit: {visitId}
         </p>
+        {generatingSoap && (
+          <p className="mt-2 text-sm text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-3 py-2 inline-block">
+            Generating SOAP summary… it will open automatically when ready.
+          </p>
+        )}
         {alreadySubmitted && (
           <p className="mt-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2 inline-block">
             Vitals already submitted for this visit. You can review them below.
@@ -287,7 +326,7 @@ const VitalsForm: React.FC = () => {
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Respiratory Rate</h2>
           <div className="w-full md:w-1/2">
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Breaths per minute *
+              Breaths per minute (optional)
             </label>
             <input
               type="number"
@@ -295,7 +334,6 @@ const VitalsForm: React.FC = () => {
               onChange={(e) => handleInputChange("respiratoryRate", e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="16"
-              required
             />
           </div>
         </div>

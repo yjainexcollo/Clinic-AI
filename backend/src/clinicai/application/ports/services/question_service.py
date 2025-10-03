@@ -3,14 +3,14 @@ Question service interface for AI-powered question generation.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 
 class QuestionService(ABC):
     """Abstract service for generating adaptive questions."""
 
     @abstractmethod
-    async def generate_first_question(self, disease: str) -> str:
+    async def generate_first_question(self, disease: str, language: str = "en") -> str:
         """Generate the first question based on primary symptom (backward param name)."""
         pass
 
@@ -22,6 +22,10 @@ class QuestionService(ABC):
         asked_questions: List[str],
         current_count: int,
         max_count: int,
+        recently_travelled: bool = False,
+        prior_summary: Optional[str] = None,
+        prior_qas: Optional[List[str]] = None,
+        patient_gender: Optional[str] = None,
     ) -> str:
         """Generate the next question based on context."""
         pass
@@ -54,23 +58,13 @@ class QuestionService(ABC):
         asked_questions: List[str],
         current_count: int,
         max_count: int,
+        prior_summary: Optional[str] = None,
+        prior_qas: Optional[List[str]] = None,
     ) -> int:
         """Return completion percent (0-100) based on information coverage."""
         pass
 
     @abstractmethod
-    async def assess_completion_percent(
-        self,
-        disease: str,
-        previous_answers: List[str],
-        asked_questions: List[str],
-        current_count: int,
-        max_count: int,
-    ) -> int:
-        """Return completion percent (0-100) based on information coverage."""
-        pass
-
-    @abstractmethod
-    def is_medication_question(self, question: str) -> bool:
+    async def is_medication_question(self, question: str) -> bool:
         """Check if a question is about medications and allows image upload."""
         pass

@@ -9,6 +9,8 @@ import OCRQualityFeedback from "../components/OCRQualityFeedback";
 import SummaryView from "../components/SummaryView";
 import TranscriptView from "../components/TranscriptView";
 import MedicationImageUploader from "../components/MedicationImageUploader";
+import { LanguageToggle } from "../components/LanguageToggle";
+import { useLanguage } from "../contexts/LanguageContext";
 
 interface Question {
   text: string;
@@ -18,6 +20,7 @@ interface Question {
 const Index = () => {
   const { patientId } = useParams<{ patientId: string }>();
   const location = useLocation();
+  const { language, setLanguage, t } = useLanguage();
   const [currentQuestion, setCurrentQuestion] = useState<string>("");
   const [currentAnswer, setCurrentAnswer] = useState<string>("");
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -34,6 +37,9 @@ const Index = () => {
   const pendingNextQuestionRef = useRef<string>("");
   const [completionPercent, setCompletionPercent] = useState<number>(0);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [hasPostVisitSummary, setHasPostVisitSummary] = useState<boolean>(false);
+  const [hasTranscript, setHasTranscript] = useState<boolean>(false);
+  const [hasVitals, setHasVitals] = useState<boolean>(false);
   const [editingValue, setEditingValue] = useState<string>("");
   const [ocrQuality, setOcrQuality] = useState<OCRQualityInfo | null>(null);
   const [showOcrFeedback, setShowOcrFeedback] = useState<boolean>(false);
@@ -45,7 +51,9 @@ const Index = () => {
   const [uploadAudioError, setUploadAudioError] = useState<string>("");
   const [showTranscript, setShowTranscript] = useState<boolean>(false);
   const [transcriptText, setTranscriptText] = useState<string>("");
+  const [isTranscriptLoading, setIsTranscriptLoading] = useState<boolean>(false);
   const [showTranscriptProcessing, setShowTranscriptProcessing] = useState<boolean>(false);
+  const [showPostVisitProcessing, setShowPostVisitProcessing] = useState<boolean>(false);
 
   // Recording state
   const [recording, setRecording] = useState<boolean>(false);
@@ -99,6 +107,9 @@ const Index = () => {
     if (patientId && v) {
       localStorage.setItem(`visit_${patientId}`, v);
       setVisitId(v);
+      // Skip welcome screen when coming from SOAP Summary (has visit ID)
+      setShowStartScreen(false);
+      setIsInitialized(true);
     }
     if (done === "1" || done === "true") {
       setIsComplete(true);
@@ -130,6 +141,109 @@ const Index = () => {
       inputRef.current.focus();
     }
   }, [currentQuestion, isComplete]);
+
+  // Check if post-visit summary exists
+  useEffect(() => {
+    const checkPostVisitSummary = async () => {
+      if (!patientId || !visitId || !isComplete) return;
+      
+      try {
+        const response = await fetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/summary/postvisit`, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' }
+        });
+        setHasPostVisitSummary(response.ok);
+      } catch (e) {
+        setHasPostVisitSummary(false);
+      }
+    };
+
+    if (patientId && visitId && isComplete) {
+      checkPostVisitSummary();
+    }
+  }, [patientId, visitId, isComplete]);
+
+  // Check if transcript exists
+  useEffect(() => {
+    const checkTranscript = async () => {
+      if (!patientId || !visitId || !isComplete) return;
+      
+      // First check localStorage flag
+      const transcriptKey = `transcript_done_${patientId}_${visitId}`;
+      const localStorageFlag = localStorage.getItem(transcriptKey) === '1';
+      
+      if (localStorageFlag) {
+        setHasTranscript(true);
+        return;
+      }
+      
+      // If no localStorage flag, check API
+      try {
+        const response = await fetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/transcript`, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const hasApiTranscript = !!data.transcript || !!data.structured_dialogue;
+          setHasTranscript(hasApiTranscript);
+          // If API has transcript but no localStorage flag, set the flag
+          if (hasApiTranscript) {
+            localStorage.setItem(transcriptKey, '1');
+          }
+        } else {
+          setHasTranscript(false);
+        }
+      } catch (e) {
+        setHasTranscript(false);
+      }
+    };
+
+    if (patientId && visitId && isComplete) {
+      checkTranscript();
+    }
+  }, [patientId, visitId, isComplete]);
+
+  // Check if vitals exist
+  useEffect(() => {
+    const checkVitals = async () => {
+      if (!patientId || !visitId || !isComplete) return;
+      
+      // First check localStorage flag
+      const vitalsKey = `vitals_done_${patientId}_${visitId}`;
+      const localStorageFlag = localStorage.getItem(vitalsKey) === '1';
+      
+      if (localStorageFlag) {
+        setHasVitals(true);
+        return;
+      }
+      
+      // If no localStorage flag, check API
+      try {
+        const response = await fetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/vitals`, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const hasApiVitals = !!data.vitals && Object.keys(data.vitals).length > 0;
+          setHasVitals(hasApiVitals);
+          // If API has vitals but no localStorage flag, set the flag
+          if (hasApiVitals) {
+            localStorage.setItem(vitalsKey, '1');
+          }
+        } else {
+          setHasVitals(false);
+        }
+      } catch (e) {
+        setHasVitals(false);
+      }
+    };
+
+    if (patientId && visitId && isComplete) {
+      checkVitals();
+    }
+  }, [patientId, visitId, isComplete]);
 
   const initializeSession = async () => {
     try {
@@ -362,8 +476,8 @@ const Index = () => {
     100
   );
 
-  // Show start screen if not initialized and not loading
-  if (showStartScreen && !isLoading) {
+  // Show start screen if not initialized and not loading, and no visit ID (not coming from SOAP Summary)
+  if (showStartScreen && !isLoading && !visitId) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-medical-primary-light to-gray-50 flex items-center justify-center p-4">
         <div className="medical-card max-w-md w-full text-center">
@@ -495,10 +609,10 @@ const Index = () => {
         <div className="max-w-4xl mx-auto px-4 py-6">
           <div className="text-center">
             <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">
-              {COPY.app.title}
+              {language === 'sp' ? 'Asistente de Admisión Clínica' : COPY.app.title}
             </h1>
             <p className="text-gray-600 text-sm md:text-base">
-              {COPY.app.subtitle}
+              {language === 'sp' ? 'Proporcione información médica para comenzar' : COPY.app.subtitle}
             </p>
           </div>
         </div>
@@ -583,6 +697,7 @@ const Index = () => {
                       <SymptomSelector
                         selectedSymptoms={selectedSymptoms}
                         onSymptomsChange={setSelectedSymptoms}
+                        language={language}
                       />
                     ) : (
                       <div className="space-y-3">
@@ -593,13 +708,14 @@ const Index = () => {
                           onChange={(e) => setCurrentAnswer(e.target.value)}
                           onKeyPress={handleKeyPress}
                           className="medical-input"
-                          placeholder="Type your answer here..."
+                          placeholder={language === 'sp' ? 'Escriba su respuesta aquí...' : 'Type your answer here...'}
                           required
                         />
                         {allowsImageUpload && patientId && (visitId || localStorage.getItem(`visit_${patientId}`)) && (
                           <MedicationImageUploader
                             patientId={patientId}
                             visitId={(visitId || localStorage.getItem(`visit_${patientId}`)) as string}
+                            title="What medications do you take? (upload images, optional)"
                           />
                         )}
                       </div>
@@ -611,7 +727,7 @@ const Index = () => {
                       disabled={questions.length === 0 ? selectedSymptoms.length === 0 : !currentAnswer.trim()}
                       className="medical-button w-full flex items-center justify-center gap-2"
                     >
-                      {COPY.form.nextButton}
+                      {language === 'sp' ? 'Siguiente' : COPY.form.nextButton}
                     </button>
                   </div>
                 </form>
@@ -619,7 +735,7 @@ const Index = () => {
                 <div className="flex flex-col items-center justify-center py-8">
                   <div className="w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin mb-4"></div>
                   <span className="text-blue-500 text-lg font-medium">
-                    Waiting for next question...
+                    {language === 'sp' ? 'Esperando la siguiente pregunta...' : 'Waiting for next question...'}
                   </span>
                 </div>
               )}
@@ -629,7 +745,9 @@ const Index = () => {
           {/* Previous answers with inline edit */}
           {!isComplete && questions.length > 0 && (
             <div className="medical-card mt-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-3">Previous answers</h3>
+              <h3 className="text-lg font-semibold text-gray-800 mb-3">
+                {language === 'sp' ? 'Respuestas anteriores' : 'Previous answers'}
+              </h3>
               <div className="space-y-3">
                 {questions.map((qa, idx) => (
                   <div key={idx} className="border border-gray-200 rounded-md p-3">
@@ -648,7 +766,7 @@ const Index = () => {
                             <MedicationImageUploader
                               patientId={patientId}
                               visitId={(visitId || localStorage.getItem(`visit_${patientId}`)) as string}
-                              title="Update prescription images (optional)"
+                              title="What medications do you take? (upload images, optional)"
                               onChange={() => {/* optional refresh hooks */}}
                             />
                           </div>
@@ -689,14 +807,14 @@ const Index = () => {
                           className="medical-button"
                           disabled={!editingValue.trim() || isLoading}
                         >
-                          Save
+                          {language === 'sp' ? 'Guardar' : 'Save'}
                         </button>
                         <button
                           onClick={() => { setEditingIndex(null); setEditingValue(""); }}
                           className="px-3 py-2 rounded-md bg-gray-200 text-gray-800"
                           disabled={isLoading}
                         >
-                          Cancel
+                          {language === 'sp' ? 'Cancelar' : 'Cancel'}
                         </button>
                       </div>
                     ) : (
@@ -705,7 +823,9 @@ const Index = () => {
                         <button
                           onClick={() => {
                             const ok = window.confirm(
-                              "Editing this answer will remove all subsequent questions and you will need to continue from here. Do you want to proceed?"
+                              language === 'sp' 
+                                ? "Editar esta respuesta eliminará todas las preguntas posteriores y tendrá que continuar desde aquí. ¿Desea proceder?"
+                                : "Editing this answer will remove all subsequent questions and you will need to continue from here. Do you want to proceed?"
                             );
                             if (!ok) return;
                             setEditingIndex(idx);
@@ -713,7 +833,7 @@ const Index = () => {
                           }}
                           className="text-blue-600 hover:underline text-sm"
                         >
-                          Edit
+                          {language === 'sp' ? 'Editar' : 'Edit'}
                         </button>
                       </div>
                     )}
@@ -724,7 +844,7 @@ const Index = () => {
           )}
 
           {/* Fallback if no question is received */}
-          {!isComplete && !currentQuestion && isInitialized && !isLoading && (
+          {!isComplete && !currentQuestion && isInitialized && !isLoading && !visitId && (
             <div className="medical-card text-center">
               <div className="text-red-500 mb-4">
                 <svg
@@ -793,7 +913,7 @@ const Index = () => {
               <div className="space-y-3">
                 <button
                   onClick={() => setShowSummaryView(true)}
-                  className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 transition-colors font-medium flex items-center justify-center gap-2"
+                  className="w-full bg-sky-600 text-white py-3 px-4 rounded-md hover:bg-sky-700 transition-colors font-medium flex items-center justify-center gap-2"
                 >
                   <svg
                     className="w-5 h-5"
@@ -808,48 +928,24 @@ const Index = () => {
                       d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
                     />
                   </svg>
-                  View Pre-Visit Summary
+                  1. View Pre-Visit Summary
                 </button>
                 <button
                   onClick={() => {
-                    setShowTranscript(false);
-                    setTranscriptText("");
+                    if (hasTranscript) {
+                      alert('Transcript already uploaded for this visit. Use "View Transcript" to see it.');
+                      return;
+                    }
                     setShowUploadAudio(true);
                   }}
-                  className="w-full bg-indigo-600 text-white py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors font-medium"
+                  disabled={hasTranscript}
+                  className={`w-full py-3 px-4 rounded-md transition-colors font-medium ${
+                    hasTranscript 
+                      ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
+                      : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                  }`}
                 >
-                  Upload Transcript
-                </button>
-                
-                <button
-                  onClick={async () => {
-                    try {
-                      if (!patientId || !visitId) return;
-                      // Attempt to generate SOAP (idempotent if already exists)
-                      await fetch(`${BACKEND_BASE_URL}/notes/soap/generate`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                        body: JSON.stringify({ patient_id: patientId, visit_id: visitId })
-                      });
-                      // Navigate to SOAP viewer route if available
-                      window.location.href = `/soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`;
-                    } catch (e) {
-                      alert('Failed to generate SOAP note. Please try again after transcript is ready.');
-                    }
-                  }}
-                  className="w-full bg-indigo-600 text-white py-3 px-4 rounded-md hover:bg-indigo-700 transition-colors font-medium"
-                >
-                  View SOAP Summary
-                </button>
-                
-                <button
-                  onClick={() => {
-                    if (!patientId || !visitId) return;
-                    window.location.href = `/vitals/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`;
-                  }}
-                  className="w-full bg-green-600 text-white py-3 px-4 rounded-md hover:bg-green-700 transition-colors font-medium"
-                >
-                  Fill Vitals Form
+                  {hasTranscript ? '2. Transcript Already Uploaded' : '2. Upload Transcript'}
                 </button>
                 
                 <button
@@ -872,23 +968,183 @@ const Index = () => {
                         throw new Error(`Failed to fetch transcript ${resp.status}: ${txt}`);
                       }
                       const data = await resp.json();
+                      // Prefer structured dialogue when available
+                      if (data && Array.isArray(data.structured_dialogue)) {
+                        setTranscriptText(JSON.stringify(data.structured_dialogue));
+                        setShowTranscript(true);
+                        return;
+                      }
                       setTranscriptText(data.transcript || '');
                       setShowTranscript(true);
                     } catch (e) {
                       alert('Transcript not available yet.');
                     }
                   }}
-                  className="w-full bg-gray-700 text-white py-3 px-4 rounded-md hover:bg-gray-800 transition-colors font-medium"
+                  className="w-full bg-violet-600 text-white py-3 px-4 rounded-md hover:bg-violet-700 transition-colors font-medium"
                 >
-                  View Transcript
+                  3. View Transcript
                 </button>
+                
+                <button
+                  onClick={() => {
+                    if (hasVitals) {
+                      alert('Vitals already filled for this visit. Use "View Vitals" to see them.');
+                      return;
+                    }
+                    
+                    const effectiveVisitId = visitId || (patientId ? localStorage.getItem(`visit_${patientId}`) : null);
+                    if (patientId && effectiveVisitId) {
+                      window.location.href = `/vitals/${encodeURIComponent(patientId)}/${encodeURIComponent(effectiveVisitId)}`;
+                    } else {
+                      alert('Missing visit information. Please start intake again.');
+                    }
+                  }}
+                  disabled={hasVitals}
+                  className={`w-full py-3 px-4 rounded-md transition-colors font-medium ${
+                    hasVitals 
+                      ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
+                      : 'bg-amber-600 text-white hover:bg-amber-700'
+                  }`}
+                >
+                  {hasVitals ? '4. Vitals Already Filled' : '4. Fill Vitals'}
+                </button>
+                
+                <button
+                  onClick={async () => {
+                    try {
+                      if (!patientId || !visitId) return;
+                      // Attempt to generate SOAP (idempotent if already exists)
+                      await fetch(`${BACKEND_BASE_URL}/notes/soap/generate`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        body: JSON.stringify({ patient_id: patientId, visit_id: visitId })
+                      });
+                      // Navigate to SOAP viewer route if available, else fetch and inline show
+                      window.location.href = `/soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`;
+                    } catch (e) {
+                      alert('Failed to generate SOAP note. Please try again after transcript is ready.');
+                    }
+                  }}
+                  className="w-full bg-rose-600 text-white py-3 px-4 rounded-md hover:bg-rose-700 transition-colors font-medium"
+                >
+                  5. View SOAP Summary
+                </button>
+
+                {/* Create Post-Visit Summary */}
+                <button
+                  onClick={async () => {
+                    if (hasPostVisitSummary) {
+                      alert('Post-visit summary already exists. Use "View Post Visit Summary" to see it.');
+                      return;
+                    }
+                    
+                    try {
+                      if (!patientId || !visitId) return;
+                      setShowPostVisitProcessing(true);
+                      const response = await fetch(`${BACKEND_BASE_URL}/patients/summary/postvisit`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        body: JSON.stringify({ patient_id: patientId, visit_id: visitId })
+                      });
+                      
+                      if (response.status === 422) {
+                        const errorData = await response.json();
+                        if (errorData.detail?.message?.includes('already exists')) {
+                          setHasPostVisitSummary(true);
+                          alert('Post-visit summary already exists!');
+                        } else {
+                          alert(`Error: ${errorData.detail?.message || 'Failed to create post-visit summary'}`);
+                        }
+                      } else if (response.ok) {
+                        setHasPostVisitSummary(true);
+                        alert('Post-visit summary created successfully!');
+                      } else {
+                        alert('Failed to generate Post-Visit Summary.');
+                      }
+                      setShowPostVisitProcessing(false);
+                    } catch (e) {
+                      setShowPostVisitProcessing(false);
+                      alert('Failed to generate Post-Visit Summary.');
+                    }
+                  }}
+                  disabled={hasPostVisitSummary}
+                  className={`w-full py-3 px-4 rounded-md transition-colors font-medium ${
+                    hasPostVisitSummary 
+                      ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
+                      : 'bg-cyan-600 text-white hover:bg-cyan-700'
+                  }`}
+                >
+                  {hasPostVisitSummary ? '6. Post Visit Summary Already Created' : '6. Create Post Visit Summary'}
+                </button>
+
+                {/* Step 7: View Post Visit Summary */}
+                <button
+                  onClick={() => {
+                    console.log('Index: patientId from URL:', patientId);
+                    console.log('Index: visitId from state:', visitId);
+                    
+                    // Try to get visitId from localStorage if not in state
+                    const storedVisitId = patientId ? localStorage.getItem(`visit_${patientId}`) : null;
+                    console.log('Index: visitId from localStorage:', storedVisitId);
+                    
+                    const effectiveVisitId = visitId || storedVisitId;
+                    console.log('Index: effective visitId:', effectiveVisitId);
+                    
+                    if (patientId && effectiveVisitId) {
+                      console.log('Index: Navigating to post-visit summary');
+                      window.location.href = `/post-visit/${patientId}/${effectiveVisitId}`;
+                    } else {
+                      console.error('Index: Missing patientId or visitId:', { 
+                        patientId, 
+                        visitId, 
+                        storedVisitId, 
+                        effectiveVisitId 
+                      });
+                      alert(`Missing information: patientId=${patientId}, visitId=${effectiveVisitId}. Please refresh the page or go back to registration.`);
+                    }
+                  }}
+                  className="w-full bg-emerald-600 text-white py-3 px-4 rounded-md hover:bg-emerald-700 transition-colors font-medium"
+                >
+                  <svg
+                    className="w-5 h-5 inline mr-2"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                    />
+                  </svg>
+                  7. View Post Visit Summary
+                </button>
+
+
+                {/* Removed "Start New Intake" button per request */}
+
+                {/* Step 8: Register New Patient */}
                 <button
                   onClick={() =>
                     (window.location.href = "/patient-registration")
                   }
-                  className="w-full bg-gray-600 text-white py-3 px-4 rounded-md hover:bg-gray-700 transition-colors font-medium"
+                  className="w-full bg-slate-700 text-white py-3 px-4 rounded-md hover:bg-slate-800 transition-colors font-medium"
                 >
-                  Register New Patient
+                  <svg
+                    className="w-5 h-5 inline mr-2"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
+                    />
+                  </svg>
+                  8. Register New Patient
                 </button>
               </div>
             </div>
@@ -937,6 +1193,7 @@ const Index = () => {
                   const form = new FormData();
                   form.append('patient_id', patientId);
                   form.append('visit_id', visitId);
+                  try { form.append('language', language as any); } catch {}
                   const chosen = (useBlob || selected) as File;
                   form.append('audio_file', chosen);
                   try {
@@ -972,6 +1229,7 @@ const Index = () => {
                     const maxMs = 300000; // 5 minutes
                     const poll = async () => {
                       attempt += 1;
+                      const delay = Math.min(6000, 2000 + attempt * 500);
                       try {
                         const t = await fetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/transcript`);
                         if (t.ok) {
@@ -1002,6 +1260,11 @@ const Index = () => {
                           setTranscriptText(transcriptContent);
                           setShowTranscriptProcessing(false);
                           setShowTranscript(true);
+                          try {
+                            const key = patientId && visitId ? `transcript_done_${patientId}_${visitId}` : null;
+                            if (key) localStorage.setItem(key, '1');
+                            setHasTranscript(true);
+                          } catch {}
                           return;
                         }
                         // If still processing, backend returns 202 with optional Retry-After
@@ -1110,6 +1373,23 @@ const Index = () => {
         </div>
       )}
 
+      {/* Post-Visit Summary Processing Modal */}
+      {showPostVisitProcessing && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 text-center">
+            <div className="w-10 h-10 border-2 border-cyan-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              {language === 'sp' ? 'Creando Resumen Post-Visita…' : 'Creating Post-Visit Summary…'}
+            </h3>
+            <p className="text-sm text-gray-600">
+              {language === 'sp' 
+                ? 'Esto puede tomar unos minutos. El resumen estará disponible cuando esté listo.' 
+                : 'This may take up to a few minutes. The summary will be available when ready.'}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Transcript Modal */}
       {showTranscript && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -1118,21 +1398,9 @@ const Index = () => {
               <h3 className="text-xl font-semibold text-gray-900">Transcript</h3>
               <button
                 type="button"
-                onClick={() => {
-                  setShowTranscript(false);
-                  setShowUploadAudio(true);
-                  setRecordedBlob(null);
-                  setUploadAudioError("");
-                }}
-                className="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
-              >
-                Re-upload / Transcribe again
-              </button>
-              <button
-                type="button"
                 onClick={() => setShowTranscript(false)}
                 aria-label="Close"
-                className="ml-2 h-8 w-8 flex items-center justify-center rounded-full bg-gray-200 text-gray-700 hover:bg-gray-300"
+                className="h-8 w-8 flex items-center justify-center rounded-full bg-gray-200 text-gray-700 hover:bg-gray-300"
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="18" y1="6" x2="6" y2="18"></line>

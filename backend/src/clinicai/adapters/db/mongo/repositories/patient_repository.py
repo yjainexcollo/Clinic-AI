@@ -166,6 +166,7 @@ class MongoPatientRepository(PatientRepository):
                     error_message=visit.transcription_session.error_message,
                     audio_duration_seconds=visit.transcription_session.audio_duration_seconds,
                     word_count=visit.transcription_session.word_count,
+                    structured_dialogue=getattr(visit.transcription_session, "structured_dialogue", None),
                 )
 
             # Convert SOAP note
@@ -194,6 +195,7 @@ class MongoPatientRepository(PatientRepository):
                 transcription_session=transcription_session_mongo,
                 soap_note=soap_note_mongo,
                 vitals=visit.vitals,
+                post_visit_summary=visit.post_visit_summary,
             )
             visits_mongo.append(visit_mongo)
 
@@ -209,6 +211,7 @@ class MongoPatientRepository(PatientRepository):
             existing_patient.age = patient.age
             existing_patient.gender = patient.gender
             existing_patient.recently_travelled = patient.recently_travelled
+            existing_patient.language = patient.language
             existing_patient.visits = visits_mongo
             existing_patient.updated_at = datetime.utcnow()
             return existing_patient
@@ -221,6 +224,7 @@ class MongoPatientRepository(PatientRepository):
                 age=patient.age,
                 gender=patient.gender,
                 recently_travelled=patient.recently_travelled,
+                language=patient.language,
                 visits=visits_mongo,
                 created_at=patient.created_at,
                 updated_at=patient.updated_at,
@@ -269,6 +273,7 @@ class MongoPatientRepository(PatientRepository):
                     error_message=visit_mongo.transcription_session.error_message,
                     audio_duration_seconds=visit_mongo.transcription_session.audio_duration_seconds,
                     word_count=visit_mongo.transcription_session.word_count,
+                    structured_dialogue=getattr(visit_mongo.transcription_session, "structured_dialogue", None),
                 )
 
             # Convert SOAP note
@@ -297,6 +302,7 @@ class MongoPatientRepository(PatientRepository):
                 pre_visit_summary=visit_mongo.pre_visit_summary,
                 transcription_session=transcription_session,
                 soap_note=soap_note,
+                post_visit_summary=getattr(visit_mongo, "post_visit_summary", None),
             )
             # Attach vitals if present
             visit.vitals = getattr(visit_mongo, "vitals", None)
@@ -309,6 +315,7 @@ class MongoPatientRepository(PatientRepository):
             age=patient_mongo.age,
             gender=getattr(patient_mongo, "gender", None),
             recently_travelled=getattr(patient_mongo, "recently_travelled", False),
+            language=getattr(patient_mongo, "language", "en"),
             visits=visits,
             created_at=patient_mongo.created_at,
             updated_at=patient_mongo.updated_at,
