@@ -8,7 +8,8 @@ from datetime import datetime
 from typing import List, Optional
 
 from beanie import Document
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
+import json
 
 
 class QuestionAnswerMongo(BaseModel):
@@ -63,6 +64,34 @@ class SoapNoteMongo(BaseModel):
     generated_at: datetime = Field(default_factory=datetime.utcnow)
     model_info: Optional[dict] = Field(None, description="Model information")
     confidence_score: Optional[float] = Field(None, description="Confidence score")
+    
+    @validator('objective', pre=True)
+    def validate_objective(cls, v):
+        """Convert string objective to dict if needed."""
+        if isinstance(v, str):
+            try:
+                # Try to parse as JSON if it looks like a dict string
+                if v.strip().startswith('{') and v.strip().endswith('}'):
+                    return json.loads(v)
+                else:
+                    # If it's not JSON, create a basic structure
+                    return {
+                        "vital_signs": {},
+                        "physical_exam": {"general_appearance": v or "Not discussed"}
+                    }
+            except:
+                # If parsing fails, create a basic structure
+                return {
+                    "vital_signs": {},
+                    "physical_exam": {"general_appearance": v or "Not discussed"}
+                }
+        elif not isinstance(v, dict):
+            # If it's neither string nor dict, create a basic structure
+            return {
+                "vital_signs": {},
+                "physical_exam": {"general_appearance": "Not discussed"}
+            }
+        return v
 
 
 class VisitMongo(Document):
