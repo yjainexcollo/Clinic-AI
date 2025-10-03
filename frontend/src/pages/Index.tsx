@@ -53,6 +53,7 @@ const Index = () => {
   const [transcriptText, setTranscriptText] = useState<string>("");
   const [isTranscriptLoading, setIsTranscriptLoading] = useState<boolean>(false);
   const [showTranscriptProcessing, setShowTranscriptProcessing] = useState<boolean>(false);
+  const [transcriptProcessingStatus, setTranscriptProcessingStatus] = useState<string>("Processing transcript...");
   const [showPostVisitProcessing, setShowPostVisitProcessing] = useState<boolean>(false);
 
   // Recording state
@@ -1216,10 +1217,22 @@ const Index = () => {
                     setShowTranscriptProcessing(true);
                     const start = Date.now();
                     let attempt = 0;
-                    const maxMs = 300000; // 5 minutes
+                    const maxMs = 600000; // 10 minutes (increased from 5 minutes)
                     const poll = async () => {
                       attempt += 1;
                       const delay = Math.min(6000, 2000 + attempt * 500);
+                      
+                      // Update status based on attempt number
+                      if (attempt <= 3) {
+                        setTranscriptProcessingStatus("Transcribing audio...");
+                      } else if (attempt <= 8) {
+                        setTranscriptProcessingStatus("Processing transcript...");
+                      } else if (attempt <= 15) {
+                        setTranscriptProcessingStatus("Structuring dialogue...");
+                      } else {
+                        setTranscriptProcessingStatus("Finalizing transcript...");
+                      }
+                      
                       try {
                         const t = await fetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/transcript`);
                         if (t.ok) {
@@ -1274,7 +1287,7 @@ const Index = () => {
                         setTimeout(poll, delay);
                       } else {
                         setShowTranscriptProcessing(false);
-                        setUploadAudioError('Processing timed out. Please re-upload your audio.');
+                        setUploadAudioError('Processing timed out after 10 minutes. This can happen with very long audio files. Please try with a shorter audio file or contact support if the issue persists.');
                         setShowUploadAudio(true);
                       }
                     };
@@ -1357,8 +1370,8 @@ const Index = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 text-center">
             <div className="w-10 h-10 border-2 border-medical-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Processing transcript…</h3>
-            <p className="text-sm text-gray-600">This may take up to a few minutes. The transcript will open automatically when ready.</p>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">{transcriptProcessingStatus}</h3>
+            <p className="text-sm text-gray-600">This may take up to 10 minutes for complex audio files. The transcript will open automatically when ready.</p>
           </div>
         </div>
       )}
