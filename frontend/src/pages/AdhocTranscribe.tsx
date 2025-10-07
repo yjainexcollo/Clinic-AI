@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { BACKEND_BASE_URL } from "../services/patientService";
 import { TranscriptView } from "../components/TranscriptView";
+import ActionPlanModal from "../components/ActionPlanModal";
+import { FileText } from "lucide-react";
 
 const AdhocTranscribe: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
@@ -24,6 +26,7 @@ const AdhocTranscribe: React.FC = () => {
   const animationRef = useRef<number | null>(null);
   const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const [showActionPlanModal, setShowActionPlanModal] = useState(false);
 
   useEffect(() => () => {
     // cleanup
@@ -46,12 +49,12 @@ const AdhocTranscribe: React.FC = () => {
       const source = audioCtx.createMediaStreamSource(stream);
       sourceNodeRef.current = source;
       source.connect(analyser);
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      const dataArray = new Uint8Array(analyser.frequencyBinCount) as Uint8Array;
       dataArrayRef.current = dataArray;
 
       const tick = () => {
         if (!analyserRef.current || !dataArrayRef.current) return;
-        analyserRef.current.getByteTimeDomainData(dataArrayRef.current);
+        analyserRef.current.getByteTimeDomainData(dataArrayRef.current as any);
         // Compute RMS over time-domain data
         let sumSquares = 0;
         for (let i = 0; i < dataArrayRef.current.length; i++) {
@@ -303,6 +306,19 @@ const AdhocTranscribe: React.FC = () => {
 
         {status && <div className="text-sm text-gray-800">{status}</div>}
 
+        <div>
+           {/* Action & Plan Button - Show only after transcript is generated */}
+           {adhocId && dialogue.length > 0 && (
+            <button
+              onClick={() => setShowActionPlanModal(true)}
+              className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <FileText className="w-4 h-4" />
+              <span>Generate Action & Plan</span>
+            </button>
+          )}
+        </div>
+
         {dialogue.length > 0 ? (
           <TranscriptView content={JSON.stringify(dialogue)} />
         ) : (
@@ -323,6 +339,15 @@ const AdhocTranscribe: React.FC = () => {
           )
         )}
       </div>
+
+      {/* Action Plan Modal */}
+      {showActionPlanModal && adhocId && (
+        <ActionPlanModal
+          isOpen={showActionPlanModal}
+          onClose={() => setShowActionPlanModal(false)}
+          adhocId={adhocId}
+        />
+      )}
     </div>
   );
 };
