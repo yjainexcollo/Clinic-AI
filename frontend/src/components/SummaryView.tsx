@@ -6,6 +6,7 @@ import { Alert, AlertDescription } from './ui/alert';
 import { FileText, Calendar, User, Clock, X } from 'lucide-react';
 import { getPreVisitSummary, BACKEND_BASE_URL } from '../services/patientService';
 import { useLanguage } from '../contexts/LanguageContext';
+import { renderMarkdownText } from '../utils/markdownRenderer';
 
 interface SummaryViewProps {
   patientId: string;
@@ -127,41 +128,9 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
     return null;
   }
 
-  // Format summary: bold known headings without showing markdown symbols
+  // Format summary: render markdown-formatted text with proper styling
   const renderSummary = (text: string) => {
-    const lines = (text || '').split(/\n+/);
-    const headings = language === 'sp'
-      ? [
-          'Motivo de Consulta:',
-          'HPI:',
-          'Historia:',
-          'Medicaciones actuales:',
-          'Revisión de Sistemas:',
-        ]
-      : [
-          'Chief Complaint:',
-          'HPI:',
-          'History:',
-          'Current Medication:',
-          'Review of Systems:',
-        ];
-    return (
-      <div className="space-y-3">
-        {lines.map((line, idx) => {
-          const key = `l-${idx}`;
-          const match = headings.find(h => line.startsWith(h));
-          if (match) {
-            const rest = line.slice(match.length).trimStart();
-            return (
-              <div key={key}>
-                <strong>{match}</strong> {rest}
-              </div>
-            );
-          }
-          return <div key={key}>{line}</div>;
-        })}
-      </div>
-    );
+    return renderMarkdownText(text);
   };
 
   return (

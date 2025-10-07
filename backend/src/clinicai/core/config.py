@@ -20,9 +20,9 @@ class DatabaseSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="MONGO_")
 
     uri: str = Field(
-        default="", description="MongoDB connection URI"
+        default="mongodb+srv://vishrutrela:Vishrut123@cluster0.idwtat0.mongodb.net/", description="MongoDB connection URI"
     )
-    db_name: str = Field(default="clinicai", description="MongoDB database name")
+    db_name: str = Field(default="doctorai", description="MongoDB database name")
     collection: str = Field(default="clinicAi", description="MongoDB collection name")
 
     @validator("uri")
