@@ -26,6 +26,7 @@ async def lifespan(app: FastAPI):
     print(f"🚀 Starting Clinic-AI Intake Assistant v{settings.app_version}")
     print(f"📊 Environment: {settings.app_env}")
     print(f"🔧 Debug mode: {settings.debug}")
+    
     # Initialize database connection (MongoDB + Beanie)
     try:
         from beanie import init_beanie  # type: ignore
@@ -64,11 +65,13 @@ async def lifespan(app: FastAPI):
             )
 
         db = client[db_name]
+        print(f"🔧 Initializing Beanie with database: {db_name}")
         await init_beanie(
             database=db,
             document_models=[PatientMongo, VisitMongo, MedicationImageMongo, AdhocTranscriptMongo, DoctorPreferencesMongo, AudioFileMongo],
         )
-        print("✅ Database connection established")
+        print("✅ Database connection established and Beanie initialized")
+        print("✅ All document models registered successfully")
     except Exception as e:
         print(f"❌ Database connection failed: {e}")
         raise

@@ -17,6 +17,7 @@ class SoapService(ABC):
         intake_data: Optional[Dict[str, Any]] = None,
         pre_visit_summary: Optional[Dict[str, Any]] = None,
         vitals: Optional[Dict[str, Any]] = None,
+        language: str = "en",
     ) -> Dict[str, Any]:
         """
         Generate SOAP note from transcript and context.
@@ -27,6 +28,7 @@ class SoapService(ABC):
             intake_data: Pre-visit intake responses
             pre_visit_summary: Pre-visit summary from Step-02
             vitals: Objective vitals captured via vitals form
+            language: Language for SOAP generation ("en" or "sp")
             
         Returns:
             Dict containing structured SOAP note data
