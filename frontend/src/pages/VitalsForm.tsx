@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { getSoapNote, generateSoapNote, storeVitals, getVitals, VitalsData } from "../services/patientService";
+import { useLanguage } from "../contexts/LanguageContext";
 
 // VitalsData interface is imported from patientService
 
 const VitalsForm: React.FC = () => {
   const { patientId = "", visitId = "" } = useParams();
   const navigate = useNavigate();
+  const { language, t } = useLanguage();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [generatingSoap, setGeneratingSoap] = useState(false);
@@ -76,55 +78,108 @@ const VitalsForm: React.FC = () => {
   const formatVitalsForSOAP = (): string => {
     const parts: string[] = [];
     
-    // Blood Pressure
-    if (vitals.systolic && vitals.diastolic) {
-      let bpText = `Blood pressure ${vitals.systolic}/${vitals.diastolic} mmHg`;
-      if (vitals.bpArm) bpText += ` (${vitals.bpArm} arm)`;
-      if (vitals.bpPosition) bpText += ` (${vitals.bpPosition})`;
-      parts.push(bpText);
-    }
-    
-    // Heart Rate
-    if (vitals.heartRate) {
-      let hrText = `Heart rate ${vitals.heartRate} bpm`;
-      if (vitals.rhythm) hrText += ` (${vitals.rhythm})`;
-      parts.push(hrText);
-    }
-    
-    // Respiratory Rate
-    if (vitals.respiratoryRate) {
-      parts.push(`Respiratory rate ${vitals.respiratoryRate} breaths/min`);
-    }
-    
-    // Temperature
-    if (vitals.temperature) {
-      let tempText = `Temperature ${vitals.temperature}${vitals.tempUnit}`;
-      if (vitals.tempMethod) tempText += ` (${vitals.tempMethod})`;
-      parts.push(tempText);
-    }
-    
-    // Oxygen Saturation
-    if (vitals.oxygenSaturation) {
-      parts.push(`SpO₂ ${vitals.oxygenSaturation}% on room air`);
-    }
-    
-    // Height, Weight, BMI
-    if (vitals.height && vitals.weight) {
-      const heightText = vitals.heightUnit === "cm" 
-        ? `${vitals.height} cm` 
-        : `${vitals.height} ft/in`;
-      const weightText = vitals.weightUnit === "kg" 
-        ? `${vitals.weight} kg` 
-        : `${vitals.weight} lbs`;
+    if (language === 'sp') {
+      // Blood Pressure
+      if (vitals.systolic && vitals.diastolic) {
+        let bpText = `Presión arterial ${vitals.systolic}/${vitals.diastolic} mmHg`;
+        if (vitals.bpArm) bpText += ` (brazo ${vitals.bpArm})`;
+        if (vitals.bpPosition) bpText += ` (${vitals.bpPosition})`;
+        parts.push(bpText);
+      }
       
-      let vitalsText = `Height ${heightText}, Weight ${weightText}`;
-      if (bmi) vitalsText += `, BMI ${bmi}`;
-      parts.push(vitalsText);
-    }
-    
-    // Pain Score
-    if (vitals.painScore) {
-      parts.push(`Pain score ${vitals.painScore}/10`);
+      // Heart Rate
+      if (vitals.heartRate) {
+        let hrText = `Frecuencia cardíaca ${vitals.heartRate} lpm`;
+        if (vitals.rhythm) hrText += ` (${vitals.rhythm})`;
+        parts.push(hrText);
+      }
+      
+      // Respiratory Rate
+      if (vitals.respiratoryRate) {
+        parts.push(`Frecuencia respiratoria ${vitals.respiratoryRate} respiraciones/min`);
+      }
+      
+      // Temperature
+      if (vitals.temperature) {
+        let tempText = `Temperatura ${vitals.temperature}${vitals.tempUnit}`;
+        if (vitals.tempMethod) tempText += ` (${vitals.tempMethod})`;
+        parts.push(tempText);
+      }
+      
+      // Oxygen Saturation
+      if (vitals.oxygenSaturation) {
+        parts.push(`SpO₂ ${vitals.oxygenSaturation}% en aire ambiente`);
+      }
+      
+      // Height, Weight, BMI
+      if (vitals.height && vitals.weight) {
+        const heightText = vitals.heightUnit === "cm" 
+          ? `${vitals.height} cm` 
+          : `${vitals.height} ft/in`;
+        const weightText = vitals.weightUnit === "kg" 
+          ? `${vitals.weight} kg` 
+          : `${vitals.weight} lbs`;
+        
+        let vitalsText = `Altura ${heightText}, Peso ${weightText}`;
+        if (bmi) vitalsText += `, IMC ${bmi}`;
+        parts.push(vitalsText);
+      }
+      
+      // Pain Score
+      if (vitals.painScore) {
+        parts.push(`Escala de dolor ${vitals.painScore}/10`);
+      }
+    } else {
+      // Blood Pressure
+      if (vitals.systolic && vitals.diastolic) {
+        let bpText = `Blood pressure ${vitals.systolic}/${vitals.diastolic} mmHg`;
+        if (vitals.bpArm) bpText += ` (${vitals.bpArm} arm)`;
+        if (vitals.bpPosition) bpText += ` (${vitals.bpPosition})`;
+        parts.push(bpText);
+      }
+      
+      // Heart Rate
+      if (vitals.heartRate) {
+        let hrText = `Heart rate ${vitals.heartRate} bpm`;
+        if (vitals.rhythm) hrText += ` (${vitals.rhythm})`;
+        parts.push(hrText);
+      }
+      
+      // Respiratory Rate
+      if (vitals.respiratoryRate) {
+        parts.push(`Respiratory rate ${vitals.respiratoryRate} breaths/min`);
+      }
+      
+      // Temperature
+      if (vitals.temperature) {
+        let tempText = `Temperature ${vitals.temperature}${vitals.tempUnit}`;
+        if (vitals.tempMethod) tempText += ` (${vitals.tempMethod})`;
+        parts.push(tempText);
+      }
+      
+      // Oxygen Saturation
+      if (vitals.oxygenSaturation) {
+        parts.push(`SpO₂ ${vitals.oxygenSaturation}% on room air`);
+      }
+      
+      // Height, Weight, BMI
+      if (vitals.height && vitals.weight) {
+        const heightText = vitals.heightUnit === "cm" 
+          ? `${vitals.height} cm` 
+          : `${vitals.height} ft/in`;
+        const weightText = vitals.weightUnit === "kg" 
+          ? `${vitals.weight} kg` 
+          : `${vitals.weight} lbs`;
+        
+        let vitalsText = `Height ${heightText}, Weight ${weightText}`;
+        if (bmi) vitalsText += `, BMI ${bmi}`;
+        parts.push(vitalsText);
+      }
+      
+      // Pain Score
+      if (vitals.painScore) {
+        parts.push(`Pain score ${vitals.painScore}/10`);
+      }
     }
     
     return parts.join(", ") + ".";
@@ -208,18 +263,18 @@ const VitalsForm: React.FC = () => {
   return (
     <div className="max-w-4xl mx-auto p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Objective Vitals Form</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{t('vitals.title')}</h1>
         <p className="text-sm text-gray-600 mt-2">
-          Patient: {patientId} • Visit: {visitId}
+          {t('vitals.patient_visit', { patientId, visitId })}
         </p>
         {generatingSoap && (
           <p className="mt-2 text-sm text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-3 py-2 inline-block">
-            Generating SOAP summary… it will open automatically when ready.
+            {t('vitals.generating_soap')}
           </p>
         )}
         {alreadySubmitted && (
           <p className="mt-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2 inline-block">
-            Vitals already submitted for this visit. You can review them below.
+            {t('vitals.already_submitted')}
           </p>
         )}
       </div>
@@ -227,11 +282,11 @@ const VitalsForm: React.FC = () => {
       <form onSubmit={handleSubmit} className="space-y-8">
         {/* Blood Pressure Section */}
         <div className="bg-white p-6 rounded-lg border border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Blood Pressure</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('vitals.blood_pressure')}</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Systolic (mmHg) *
+                {t('vitals.systolic')} *
               </label>
               <input
                 type="number"
@@ -244,7 +299,7 @@ const VitalsForm: React.FC = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Diastolic (mmHg) *
+                {t('vitals.diastolic')} *
               </label>
               <input
                 type="number"
@@ -257,31 +312,31 @@ const VitalsForm: React.FC = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Arm Used
+                {t('vitals.arm_used')}
               </label>
               <select
                 value={vitals.bpArm}
                 onChange={(e) => handleInputChange("bpArm", e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">Select arm</option>
-                <option value="Left">Left</option>
-                <option value="Right">Right</option>
+                <option value="">{t('vitals.select_arm')}</option>
+                <option value="Left">{t('vitals.left')}</option>
+                <option value="Right">{t('vitals.right')}</option>
               </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Position
+                {t('vitals.position')}
               </label>
               <select
                 value={vitals.bpPosition}
                 onChange={(e) => handleInputChange("bpPosition", e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">Select position</option>
-                <option value="Sitting">Sitting</option>
-                <option value="Standing">Standing</option>
-                <option value="Lying">Lying</option>
+                <option value="">{t('vitals.select_position')}</option>
+                <option value="Sitting">{t('vitals.sitting')}</option>
+                <option value="Standing">{t('vitals.standing')}</option>
+                <option value="Lying">{t('vitals.lying')}</option>
               </select>
             </div>
           </div>
@@ -289,11 +344,11 @@ const VitalsForm: React.FC = () => {
 
         {/* Heart Rate Section */}
         <div className="bg-white p-6 rounded-lg border border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Heart Rate (Pulse)</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('vitals.heart_rate')}</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Beats per minute (bpm) *
+                {t('vitals.bpm')} *
               </label>
               <input
                 type="number"
@@ -306,16 +361,16 @@ const VitalsForm: React.FC = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Rhythm
+                {t('vitals.rhythm')}
               </label>
               <select
                 value={vitals.rhythm}
                 onChange={(e) => handleInputChange("rhythm", e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">Select rhythm</option>
-                <option value="Regular">Regular</option>
-                <option value="Irregular">Irregular</option>
+                <option value="">{t('vitals.select_rhythm')}</option>
+                <option value="Regular">{t('vitals.regular')}</option>
+                <option value="Irregular">{t('vitals.irregular')}</option>
               </select>
             </div>
           </div>
@@ -323,10 +378,10 @@ const VitalsForm: React.FC = () => {
 
         {/* Respiratory Rate Section */}
         <div className="bg-white p-6 rounded-lg border border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Respiratory Rate</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('vitals.respiratory_rate')}</h2>
           <div className="w-full md:w-1/2">
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Breaths per minute (optional)
+              {t('vitals.breaths_per_minute')}
             </label>
             <input
               type="number"
@@ -340,11 +395,11 @@ const VitalsForm: React.FC = () => {
 
         {/* Temperature Section */}
         <div className="bg-white p-6 rounded-lg border border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Temperature</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('vitals.temperature')}</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Value *
+                {t('vitals.value')} *
               </label>
               <input
                 type="number"
@@ -358,7 +413,7 @@ const VitalsForm: React.FC = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Unit *
+                {t('vitals.unit')} *
               </label>
               <select
                 value={vitals.tempUnit}
@@ -371,18 +426,18 @@ const VitalsForm: React.FC = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Method
+                {t('vitals.method')}
               </label>
               <select
                 value={vitals.tempMethod}
                 onChange={(e) => handleInputChange("tempMethod", e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">Select method</option>
-                <option value="Oral">Oral</option>
-                <option value="Axillary">Axillary</option>
-                <option value="Tympanic">Tympanic</option>
-                <option value="Rectal">Rectal</option>
+                <option value="">{t('vitals.select_method')}</option>
+                <option value="Oral">{t('vitals.oral')}</option>
+                <option value="Axillary">{t('vitals.axillary')}</option>
+                <option value="Tympanic">{t('vitals.tympanic')}</option>
+                <option value="Rectal">{t('vitals.rectal')}</option>
               </select>
             </div>
           </div>
@@ -390,10 +445,10 @@ const VitalsForm: React.FC = () => {
 
         {/* Oxygen Saturation Section */}
         <div className="bg-white p-6 rounded-lg border border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Oxygen Saturation (SpO₂)</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('vitals.oxygen_saturation')}</h2>
           <div className="w-full md:w-1/2">
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              % value *
+              {t('vitals.percent_value')} *
             </label>
             <input
               type="number"
@@ -410,11 +465,11 @@ const VitalsForm: React.FC = () => {
 
         {/* Height and Weight Section */}
         <div className="bg-white p-6 rounded-lg border border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Height & Weight</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('vitals.height_weight')}</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Height (optional)
+                {t('vitals.height')}
               </label>
               <div className="flex gap-2">
                 <input
@@ -438,7 +493,7 @@ const VitalsForm: React.FC = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Weight *
+                {t('vitals.weight')} *
               </label>
               <div className="flex gap-2">
                 <input
@@ -464,7 +519,7 @@ const VitalsForm: React.FC = () => {
           {bmi && (
             <div className="mt-4 p-3 bg-blue-50 rounded-md">
               <span className="text-sm font-medium text-blue-900">
-                Calculated BMI: <strong>{bmi}</strong>
+                {t('vitals.calculated_bmi')} <strong>{bmi}</strong>
               </span>
             </div>
           )}
@@ -472,10 +527,10 @@ const VitalsForm: React.FC = () => {
 
         {/* Pain Score Section */}
         <div className="bg-white p-6 rounded-lg border border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Pain Score (Optional)</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('vitals.pain_score')}</h2>
           <div className="w-full md:w-1/2">
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Numeric scale (0-10)
+              {t('vitals.numeric_scale')}
             </label>
             <input
               type="number"
@@ -487,28 +542,28 @@ const VitalsForm: React.FC = () => {
               placeholder="0"
             />
             <p className="text-xs text-gray-500 mt-1">
-              0 = No pain, 10 = Worst possible pain
+              {t('vitals.pain_scale')}
             </p>
           </div>
         </div>
 
         {/* Additional Notes */}
         <div className="bg-white p-6 rounded-lg border border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Additional Notes</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('vitals.additional_notes')}</h2>
           <textarea
             value={vitals.notes}
             onChange={(e) => handleInputChange("notes", e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             rows={4}
-            placeholder="Any additional observations or notes..."
+            placeholder={t('vitals.notes_placeholder')}
           />
         </div>
 
         {/* Preview */}
         <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Vitals Preview (for SOAP Note)</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('vitals.preview')}</h2>
           <div className="text-sm text-gray-700 bg-white p-4 rounded border">
-            {formatVitalsForSOAP() || "Fill in the required fields to see preview..."}
+            {formatVitalsForSOAP() || t('vitals.preview_placeholder')}
           </div>
         </div>
 
@@ -526,14 +581,14 @@ const VitalsForm: React.FC = () => {
             onClick={handleCancel}
             className="px-6 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500"
           >
-            Cancel
+            {t('vitals.cancel')}
           </button>
           <button
             type="submit"
             disabled={loading || alreadySubmitted}
             className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {alreadySubmitted ? "Already Submitted" : (loading ? "Saving..." : "Save Vitals")}
+            {alreadySubmitted ? t('vitals.already_submitted_btn') : (loading ? t('vitals.saving') : t('vitals.save'))}
           </button>
         </div>
       </form>

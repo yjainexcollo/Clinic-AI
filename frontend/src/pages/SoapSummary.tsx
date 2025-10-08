@@ -3,16 +3,16 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { generateSoapNote, getSoapNote } from "../services/patientService";
 import { useLanguage } from "../contexts/LanguageContext";
 
-const Block: React.FC<{ title: string; children?: React.ReactNode }> = ({ title, children }) => (
+const Block: React.FC<{ title: string; children?: React.ReactNode; t: (key: string) => string }> = ({ title, children, t }) => (
   <div className="mb-6">
     <h2 className="text-lg font-semibold mb-2">{title}</h2>
     <div className="whitespace-pre-wrap text-sm leading-6 bg-white/60 rounded-md p-3 border">
-      {children || <span className="opacity-60">Not discussed</span>}
+      {children || <span className="opacity-60">{t('soap.not_discussed')}</span>}
     </div>
   </div>
 );
 
-const render = (v: any) => (v == null ? "Not discussed" : String(v));
+const render = (v: any, t: (key: string) => string) => (v == null ? t('soap.not_discussed') : String(v));
 
 // Safe parser for Python dict format
 function parsePythonDict(str: string): any {
@@ -41,8 +41,8 @@ function parsePythonDict(str: string): any {
   }
 }
 
-function renderObjective(obj: any): React.ReactNode {
-  if (obj == null) return <span className="opacity-60">Not discussed</span>;
+function renderObjective(obj: any, t: (key: string) => string): React.ReactNode {
+  if (obj == null) return <span className="opacity-60">{t('soap.not_discussed')}</span>;
   let data: any = obj;
   
   // If it's already an object, use it directly
@@ -205,9 +205,9 @@ const SoapSummary: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patientId, visitId]);
 
-  if (loading) return <div className="p-4">Loading SOAP summary…</div>;
+  if (loading) return <div className="p-4">{t('soap.loading')}</div>;
   if (error) return <div className="p-4 text-red-600">{error}</div>;
-  if (!soap) return <div className="p-4">No data.</div>;
+  if (!soap) return <div className="p-4">{t('soap.no_data')}</div>;
 
   const subj = (soap as any).soap?.subjective ?? soap.subjective;
   const obj = (soap as any).soap?.objective ?? soap.objective;
@@ -221,25 +221,25 @@ const SoapSummary: React.FC = () => {
           onClick={() => navigate(`/intake/${patientId}?v=${visitId}&done=1`)}
           className="mb-3 inline-flex items-center px-3 py-1.5 rounded bg-gray-200 hover:bg-gray-300 text-gray-800"
         >
-          ← {language === 'sp' ? 'Volver a la Página Principal' : 'Back to Main Page'}
+          ← {t('soap.back_to_main')}
         </button>
         <h1 className="text-2xl font-bold">
-          SOAP Summary
+          {t('soap.title')}
         </h1>
         <p className="text-xs opacity-60">
-          {language === 'sp' ? 'Paciente' : 'Patient'}: {patientId} · {language === 'sp' ? 'Visita' : 'Visit'}: {visitId}
+          {t('soap.patient_visit', { patientId, visitId })}
         </p>
         {soap.generated_at && (
           <p className="text-xs opacity-60">
-            {language === 'sp' ? 'Generado' : 'Generated'}: {new Date(soap.generated_at).toLocaleString()}
+            {t('soap.generated')}: {new Date(soap.generated_at).toLocaleString()}
           </p>
         )}
       </div>
 
-      <Block title="Subjective">{render(subj)}</Block>
-      <Block title="Objective">{renderObjective(obj)}</Block>
-      <Block title="Assessment">{render(assess)}</Block>
-      <Block title="Plan">{render(plan)}</Block>
+      <Block title={t('soap.subjective')} t={t}>{render(subj, t)}</Block>
+      <Block title={t('soap.objective')} t={t}>{renderObjective(obj, t)}</Block>
+      <Block title={t('soap.assessment')} t={t}>{render(assess, t)}</Block>
+      <Block title={t('soap.plan')} t={t}>{render(plan, t)}</Block>
 
 
       <div className="flex gap-2 flex-wrap">
@@ -247,7 +247,7 @@ const SoapSummary: React.FC = () => {
           to={`/intake/${patientId}?v=${visitId}&done=1`}
           className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
         >
-          Back to Main Page
+          {t('soap.back_to_main')}
         </Link>
       </div>
     </div>
