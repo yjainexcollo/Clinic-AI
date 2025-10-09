@@ -391,7 +391,7 @@ async def generate_soap_note(
 class VitalsPayload(BaseModel):
     patient_id: str = Field(...)
     visit_id: str = Field(...)
-    vitals: VitalsData = Field(...)
+    vitals: Dict[str, Any] = Field(...)
 
 
 @router.post(
