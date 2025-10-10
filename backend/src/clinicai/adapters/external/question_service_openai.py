@@ -501,7 +501,7 @@ PAIN CONDITIONS (DO NOT require family history or monitoring):
 - headaches, body pain, chest pain, back pain, joint pain, muscle pain, abdominal pain, pelvic pain, menstrual pain
 
 WOMEN'S HEALTH CONDITIONS (require family history if female):
-- menstrual issues, pregnancy-related, menopause, PCOS, endometriosis, gynecological conditions, breast issues, pelvic/abdominal pain in women
+- menstrual issues, pregnancy-related, menopause, PCOS/PCOD, endometriosis, gynecological conditions, breast issues, pelvic/abdominal pain in women
 
 ALLERGY-RELATED CONDITIONS (require allergy questions):
 - allergic reactions, skin conditions, food allergies, environmental allergies, asthma (when allergy-triggered)
@@ -513,7 +513,7 @@ STEP 2: If there are MULTIPLE conditions, apply rules for EACH one:
 - If there's a CHRONIC condition → ask family history and monitoring
 - If there's an ACUTE condition → DO NOT ask family history or monitoring
 - If there's a PAIN condition → DO NOT ask family history or monitoring
-- If there's a WOMEN'S HEALTH condition AND patient is FEMALE → ask family history
+- If there's a WOMEN'S HEALTH condition and genetical related AND patient is FEMALE → ask family history
 - If there's a WOMEN'S HEALTH condition AND patient is MALE → DO NOT ask family history
 - If there's an ALLERGY-RELATED condition → ask about allergies and exposures
 - If there's a TRAVEL-RELATED condition → ask about recent travel
