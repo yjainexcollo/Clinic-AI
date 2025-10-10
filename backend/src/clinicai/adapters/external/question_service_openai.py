@@ -155,6 +155,7 @@ Return ONLY the category name (e.g., "duration", "pain", "medications", etc.). N
         prior_summary: Optional[Any] = None,
         prior_qas: Optional[List[str]] = None,
         patient_gender: Optional[str] = None,
+        patient_age: Optional[int] = None,
         language: str = "en",
     ) -> str:
         # Force closing question at the end
@@ -189,6 +190,7 @@ Cuando el número de preguntas sea limitado, prioriza siempre la información m�
 
 Motivo(s) principal(es) de consulta: {disease or "N/A"}
 Género del paciente: {patient_gender or "No especificado"}
+Edad del paciente: {patient_age or "No especificada"}
 
 ANÁLISIS OBLIGATORIO DE CONDICIONES:
 
@@ -203,8 +205,9 @@ CONDICIONES AGUDAS (NO requieren historia familiar ni monitoreo):
 CONDICIONES DE DOLOR (NO requieren historia familiar ni monitoreo):
 - cefaleas, dolor corporal, dolor torácico, dolor lumbar, dolor articular, dolor muscular, dolor abdominal, dolor pélvico, dolor menstrual
 
-CONDICIONES DE SALUD DE LA MUJER (requieren historia familiar si es mujer):
+CONDICIONES DE SALUD DE LA MUJER (requieren historia familiar si es mujer y apropiado para la edad):
 - problemas menstruales, embarazo, menopausia, SOP, endometriosis, condiciones ginecológicas, problemas mamarios, dolor pélvico/abdominal en mujeres
+- CONSIDERACIONES DE EDAD: Solo preguntar sobre temas menstruales para mujeres de 12-60 años
 
 CONDICIONES ALÉRGICAS (requieren preguntas sobre alergias):
 - reacciones alérgicas, problemas cutáneos, alergias alimentarias, ambientales, asma inducida por alergia
@@ -216,12 +219,15 @@ PASO 2: Si hay MÚLTIPLES condiciones, aplica reglas para CADA una:
 - Si hay condición CRÓNICA → preguntar historia familiar y monitoreo
 - Si hay condición AGUDA → NO preguntar historia familiar ni monitoreo
 - Si hay condición de DOLOR → NO preguntar historia familiar ni monitoreo
-- Si hay condición de SALUD DE LA MUJER Y el paciente es MUJER → preguntar historia familiar
+- Si hay condición de SALUD DE LA MUJER Y el paciente es MUJER Y edad 12-60 → preguntar historia familiar y preguntas menstruales
+- Si hay condición de SALUD DE LA MUJER Y el paciente es MUJER Y edad <12 o >60 → preguntar historia familiar pero NO preguntas menstruales
 - Si hay condición de SALUD DE LA MUJER Y el paciente es HOMBRE → NO preguntar historia familiar
 - Si hay condición ALÉRGICA → preguntar sobre alergias y exposiciones
 - Si hay condición RELACIONADA CON VIAJES → preguntar sobre viajes recientes
 
-PASO 3: Para dolor abdominal/pélvico en MUJERES, considerar si puede ser relacionado con salud de la mujer.
+PASO 3: Para dolor abdominal/pélvico en MUJERES, considerar si puede ser relacionado con salud de la mujer:
+- Si edad 12-60: Preguntar sobre ciclo menstrual, embarazo, historia ginecológica
+- Si edad <12 o >60: Enfocarse en causas abdominales generales, evitar preguntas menstruales
 
 PASO 4: Determina qué preguntas hacer basado en TODAS las condiciones identificadas.
 
@@ -468,6 +474,20 @@ PASO 1: Analiza el motivo de consulta "{disease}" y clasifica CADA condición:
 
 PASO 2: Verifica que la pregunta no haya sido hecha antes.
 
+Enfoque Específico por Edad
+
+<12 años: NO preguntas menstruales - enfocarse en causas generales de síntomas
+
+10–18: Irregularidades menstruales, pubertad, SOP, dolor abdominal con períodos
+
+19–40: Problemas menstruales, embarazo, fertilidad, endometriosis
+
+41–60: Perimenopausia, menopausia, cambios hormonales, salud ósea
+
+>60 años: NO preguntas menstruales - enfocarse en causas generales, problemas relacionados con menopausia
+
+Todas las edades: Historia familiar de cáncer de mama/ovario, trastornos hormonales
+
 **REGLA ABSOLUTA**: Si el motivo es fiebre, tos, resfriado, infección, dolor agudo → NUNCA preguntar sobre historia familiar o monitoreo crónico.
 """
         else:
@@ -486,6 +506,7 @@ When questions are limited, always prioritize medically essential information fi
 
 Chief complaint(s): {disease or "N/A"}
 Patient gender: {patient_gender or "Not specified"}
+Patient age: {patient_age or "Not specified"}
 
 MANDATORY CONDITION ANALYSIS:
 
@@ -500,8 +521,9 @@ ACUTE CONDITIONS (DO NOT require family history or monitoring):
 PAIN CONDITIONS (DO NOT require family history or monitoring):
 - headaches, body pain, chest pain, back pain, joint pain, muscle pain, abdominal pain, pelvic pain, menstrual pain
 
-WOMEN'S HEALTH CONDITIONS (require family history if female):
+WOMEN'S HEALTH CONDITIONS (require family history if female and age-appropriate):
 - menstrual issues, pregnancy-related, menopause, PCOS, endometriosis, gynecological conditions, breast issues, pelvic/abdominal pain in women
+- AGE CONSIDERATIONS: Only ask menstrual-related questions for females aged 12-60 years
 
 ALLERGY-RELATED CONDITIONS (require allergy questions):
 - allergic reactions, skin conditions, food allergies, environmental allergies, asthma (when allergy-triggered)
@@ -513,12 +535,15 @@ STEP 2: If there are MULTIPLE conditions, apply rules for EACH one:
 - If there's a CHRONIC condition → ask family history and monitoring
 - If there's an ACUTE condition → DO NOT ask family history or monitoring
 - If there's a PAIN condition → DO NOT ask family history or monitoring
-- If there's a WOMEN'S HEALTH condition AND patient is FEMALE → ask family history
+- If there's a WOMEN'S HEALTH condition AND patient is FEMALE AND age 12-60 → ask family history and menstrual questions
+- If there's a WOMEN'S HEALTH condition AND patient is FEMALE AND age <12 or >60 → ask family history but NOT menstrual questions
 - If there's a WOMEN'S HEALTH condition AND patient is MALE → DO NOT ask family history
 - If there's an ALLERGY-RELATED condition → ask about allergies and exposures
 - If there's a TRAVEL-RELATED condition → ask about recent travel
 
-STEP 3: For abdominal/pelvic pain in FEMALES, consider if it could be women's health related.
+STEP 3: For abdominal/pelvic pain in FEMALES, consider if it could be women's health related:
+- If age 12-60: Ask about menstrual cycle, pregnancy, gynecological history
+- If age <12 or >60: Focus on general abdominal causes, avoid menstrual questions
 
 STEP 4: Determine what questions to ask based on ALL identified conditions.
 
@@ -670,11 +695,15 @@ Low: Travel history, allergies (unless relevant)
 
 Age-Specific Focus
 
+<12 years: NO menstrual questions - focus on general causes of symptoms
+
 10–18: Menstrual irregularities, puberty, PCOS, stomach pain with periods
 
 19–40: Menstrual issues, pregnancy, fertility, endometriosis
 
 41–60: Perimenopause, menopause, hormonal changes, bone health
+
+>60 years: NO menstrual questions - focus on general causes, menopause-related issues
 
 All ages: Family history of breast/ovarian cancer, hormonal disorders
 
@@ -707,7 +736,7 @@ Medications → "Are you taking any medications for [condition 1] or [condition 
 
 Associated Symptoms → "Have you noticed any other symptoms along with [condition 1] and [condition 2]?" (ALWAYS mention ALL conditions)
 
-Travel History → "Have you traveled recently, and could this be related to [condition 1] or [condition 2]?"
+Travel History → "What countries or regions did you visit, and were you exposed to any unusual environments or outbreaks that could be related to [condition 1] or [condition 2]?"
 
 **CRITICAL**: For medications, ask ONE question that covers ALL types of medications (prescribed, home remedies, over-the-counter). Do NOT ask separate medication questions.
 
@@ -776,7 +805,8 @@ STEP 1: Analyze the chief complaint "{disease}" and classify EACH condition:
 - Is there a CHRONIC condition (diabetes, asthma, hypertension, etc.)? → YES, ask family history and monitoring
 - Is there an ACUTE condition (fever, cough, cold, infection)? → DO NOT ask family history or monitoring
 - Is there a PAIN condition (headache, abdominal pain, etc.)? → DO NOT ask family history or monitoring
-- Is there a WOMEN'S HEALTH condition AND patient is FEMALE? → YES, ask family history
+- Is there a WOMEN'S HEALTH condition AND patient is FEMALE AND age 12-60? → YES, ask family history and menstrual questions
+- Is there a WOMEN'S HEALTH condition AND patient is FEMALE AND age <12 or >60? → YES, ask family history but NOT menstrual questions
 - Is there a WOMEN'S HEALTH condition AND patient is MALE? → DO NOT ask family history
 - Is there an ALLERGY-RELATED condition (allergic reactions, allergic asthma, etc.)? → YES, ask about allergies
 - Is there a TRAVEL-RELATED condition (infections, exposure)? → YES, ask about travel
