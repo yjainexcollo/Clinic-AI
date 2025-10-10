@@ -155,6 +155,7 @@ Return ONLY the category name (e.g., "duration", "pain", "medications", etc.). N
         prior_summary: Optional[Any] = None,
         prior_qas: Optional[List[str]] = None,
         patient_gender: Optional[str] = None,
+        patient_age: Optional[int] = None,
         language: str = "en",
     ) -> str:
         # Force closing question at the end
@@ -189,6 +190,7 @@ Cuando el número de preguntas sea limitado, prioriza siempre la información m�
 
 Motivo(s) principal(es) de consulta: {disease or "N/A"}
 Género del paciente: {patient_gender or "No especificado"}
+Edad del paciente: {patient_age or "No especificada"}
 
 ANÁLISIS OBLIGATORIO DE CONDICIONES:
 
@@ -203,8 +205,9 @@ CONDICIONES AGUDAS (NO requieren historia familiar ni monitoreo):
 CONDICIONES DE DOLOR (NO requieren historia familiar ni monitoreo):
 - cefaleas, dolor corporal, dolor torácico, dolor lumbar, dolor articular, dolor muscular, dolor abdominal, dolor pélvico, dolor menstrual
 
-CONDICIONES DE SALUD DE LA MUJER (requieren historia familiar si es mujer):
+CONDICIONES DE SALUD DE LA MUJER (requieren historia familiar si es mujer y apropiado para la edad):
 - problemas menstruales, embarazo, menopausia, SOP, endometriosis, condiciones ginecológicas, problemas mamarios, dolor pélvico/abdominal en mujeres
+- CONSIDERACIONES DE EDAD: Solo preguntar sobre temas menstruales para mujeres de 12-60 años
 
 CONDICIONES ALÉRGICAS (requieren preguntas sobre alergias):
 - reacciones alérgicas, problemas cutáneos, alergias alimentarias, ambientales, asma inducida por alergia
@@ -216,12 +219,15 @@ PASO 2: Si hay MÚLTIPLES condiciones, aplica reglas para CADA una:
 - Si hay condición CRÓNICA → preguntar historia familiar y monitoreo
 - Si hay condición AGUDA → NO preguntar historia familiar ni monitoreo
 - Si hay condición de DOLOR → NO preguntar historia familiar ni monitoreo
-- Si hay condición de SALUD DE LA MUJER Y el paciente es MUJER → preguntar historia familiar
+- Si hay condición de SALUD DE LA MUJER Y el paciente es MUJER Y edad 12-60 → preguntar historia familiar y preguntas menstruales
+- Si hay condición de SALUD DE LA MUJER Y el paciente es MUJER Y edad <12 o >60 → preguntar historia familiar pero NO preguntas menstruales
 - Si hay condición de SALUD DE LA MUJER Y el paciente es HOMBRE → NO preguntar historia familiar
 - Si hay condición ALÉRGICA → preguntar sobre alergias y exposiciones
 - Si hay condición RELACIONADA CON VIAJES → preguntar sobre viajes recientes
 
-PASO 3: Para dolor abdominal/pélvico en MUJERES, considerar si puede ser relacionado con salud de la mujer.
+PASO 3: Para dolor abdominal/pélvico en MUJERES, considerar si puede ser relacionado con salud de la mujer:
+- Si edad 12-60: Preguntar sobre ciclo menstrual, embarazo, historia ginecológica
+- Si edad <12 o >60: Enfocarse en causas abdominales generales, evitar preguntas menstruales
 
 PASO 4: Determina qué preguntas hacer basado en TODAS las condiciones identificadas.
 
@@ -261,7 +267,7 @@ Todas las demás categorías → Máx. 1
 
 **Antecedentes médicos**: solo si son relevantes
 
-**Historia de viajes**: solo si recently_travelled=True y la condición lo amerita. Cuando recently_travelled=True, preguntar DÓNDE viajaron, no SI viajaron.
+**Historia de viajes**: solo si recently_travelled=True y la condición lo amerita
 
 **Alergias**: solo si hay síntomas alérgicos (erupciones, urticaria, sibilancias, rinitis)
 
@@ -393,7 +399,7 @@ Medicamentos → "¿Está tomando algún medicamento para [condición 1] o [cond
 
 Síntomas asociados → "¿Ha notado otros síntomas junto con [condición 1] y [condición 2]?"
 
-Viajes → Cuando recently_travelled=True: "¿Dónde viajó recientemente que pudiera relacionarse con [condición 1] o [condición 2]?" Cuando recently_travelled=False: "¿Ha viajado recientemente que pudiera relacionarse con [condición 1] o [condición 2]?"
+Viajes → "¿Ha viajado recientemente que pudiera relacionarse con [condición 1] o [condición 2]?"
 
 CRÍTICO: Solo UNA pregunta sobre medicamentos que incluya todo (recetados, caseros, OTC).
 
@@ -468,6 +474,20 @@ PASO 1: Analiza el motivo de consulta "{disease}" y clasifica CADA condición:
 
 PASO 2: Verifica que la pregunta no haya sido hecha antes.
 
+Enfoque Específico por Edad
+
+<12 años: NO preguntas menstruales - enfocarse en causas generales de síntomas
+
+10–18: Irregularidades menstruales, pubertad, SOP, dolor abdominal con períodos
+
+19–40: Problemas menstruales, embarazo, fertilidad, endometriosis
+
+41–60: Perimenopausia, menopausia, cambios hormonales, salud ósea
+
+>60 años: NO preguntas menstruales - enfocarse en causas generales, problemas relacionados con menopausia
+
+Todas las edades: Historia familiar de cáncer de mama/ovario, trastornos hormonales
+
 **REGLA ABSOLUTA**: Si el motivo es fiebre, tos, resfriado, infección, dolor agudo → NUNCA preguntar sobre historia familiar o monitoreo crónico.
 """
         else:
@@ -486,6 +506,7 @@ When questions are limited, always prioritize medically essential information fi
 
 Chief complaint(s): {disease or "N/A"}
 Patient gender: {patient_gender or "Not specified"}
+Patient age: {patient_age or "Not specified"}
 
 MANDATORY CONDITION ANALYSIS:
 
@@ -500,8 +521,9 @@ ACUTE CONDITIONS (DO NOT require family history or monitoring):
 PAIN CONDITIONS (DO NOT require family history or monitoring):
 - headaches, body pain, chest pain, back pain, joint pain, muscle pain, abdominal pain, pelvic pain, menstrual pain
 
-WOMEN'S HEALTH CONDITIONS (require family history if female):
-- menstrual issues, pregnancy-related, menopause, PCOS/PCOD, endometriosis, gynecological conditions, breast issues, pelvic/abdominal pain in women
+WOMEN'S HEALTH CONDITIONS (require family history if female and age-appropriate):
+- menstrual issues, pregnancy-related, menopause, PCOS, endometriosis, gynecological conditions, breast issues, pelvic/abdominal pain in women
+- AGE CONSIDERATIONS: Only ask menstrual-related questions for females aged 12-60 years
 
 ALLERGY-RELATED CONDITIONS (require allergy questions):
 - allergic reactions, skin conditions, food allergies, environmental allergies, asthma (when allergy-triggered)
@@ -513,12 +535,15 @@ STEP 2: If there are MULTIPLE conditions, apply rules for EACH one:
 - If there's a CHRONIC condition → ask family history and monitoring
 - If there's an ACUTE condition → DO NOT ask family history or monitoring
 - If there's a PAIN condition → DO NOT ask family history or monitoring
-- If there's a WOMEN'S HEALTH condition and genetical related AND patient is FEMALE → ask family history
+- If there's a WOMEN'S HEALTH condition AND patient is FEMALE AND age 12-60 → ask family history and menstrual questions
+- If there's a WOMEN'S HEALTH condition AND patient is FEMALE AND age <12 or >60 → ask family history but NOT menstrual questions
 - If there's a WOMEN'S HEALTH condition AND patient is MALE → DO NOT ask family history
 - If there's an ALLERGY-RELATED condition → ask about allergies and exposures
 - If there's a TRAVEL-RELATED condition → ask about recent travel
 
-STEP 3: For abdominal/pelvic pain in FEMALES, consider if it could be women's health related.
+STEP 3: For abdominal/pelvic pain in FEMALES, consider if it could be women's health related:
+- If age 12-60: Ask about menstrual cycle, pregnancy, gynecological history
+- If age <12 or >60: Focus on general abdominal causes, avoid menstrual questions
 
 STEP 4: Determine what questions to ask based on ALL identified conditions.
 
@@ -558,7 +583,7 @@ All other categories → Max 1
 
 Past Medical History → Only if relevant to the illness
 
-Travel History → Only if recently_travelled=True and condition fits (GI, infectious, fever, cough). When recently_travelled=True, ask WHERE they travelled, not IF they travelled.
+Travel History → Only if recently_travelled=True and condition fits (GI, infectious, fever, cough)
 
 Allergies → Only if allergy-related symptoms are present (rashes, wheeze, hives, respiratory issues)
 
@@ -670,11 +695,15 @@ Low: Travel history, allergies (unless relevant)
 
 Age-Specific Focus
 
+<12 years: NO menstrual questions - focus on general causes of symptoms
+
 10–18: Menstrual irregularities, puberty, PCOS, stomach pain with periods
 
 19–40: Menstrual issues, pregnancy, fertility, endometriosis
 
 41–60: Perimenopause, menopause, hormonal changes, bone health
+
+>60 years: NO menstrual questions - focus on general causes, menopause-related issues
 
 All ages: Family history of breast/ovarian cancer, hormonal disorders
 
@@ -707,7 +736,7 @@ Medications → "Are you taking any medications for [condition 1] or [condition 
 
 Associated Symptoms → "Have you noticed any other symptoms along with [condition 1] and [condition 2]?" (ALWAYS mention ALL conditions)
 
-Travel History → When recently_travelled=True: "Where did you travel recently, and could this be related to [condition 1] or [condition 2]?" When recently_travelled=False: "Have you traveled recently, and could this be related to [condition 1] or [condition 2]?"
+Travel History → "What countries or regions did you visit, and were you exposed to any unusual environments or outbreaks that could be related to [condition 1] or [condition 2]?"
 
 **CRITICAL**: For medications, ask ONE question that covers ALL types of medications (prescribed, home remedies, over-the-counter). Do NOT ask separate medication questions.
 
@@ -776,7 +805,8 @@ STEP 1: Analyze the chief complaint "{disease}" and classify EACH condition:
 - Is there a CHRONIC condition (diabetes, asthma, hypertension, etc.)? → YES, ask family history and monitoring
 - Is there an ACUTE condition (fever, cough, cold, infection)? → DO NOT ask family history or monitoring
 - Is there a PAIN condition (headache, abdominal pain, etc.)? → DO NOT ask family history or monitoring
-- Is there a WOMEN'S HEALTH condition AND patient is FEMALE? → YES, ask family history
+- Is there a WOMEN'S HEALTH condition AND patient is FEMALE AND age 12-60? → YES, ask family history and menstrual questions
+- Is there a WOMEN'S HEALTH condition AND patient is FEMALE AND age <12 or >60? → YES, ask family history but NOT menstrual questions
 - Is there a WOMEN'S HEALTH condition AND patient is MALE? → DO NOT ask family history
 - Is there an ALLERGY-RELATED condition (allergic reactions, allergic asthma, etc.)? → YES, ask about allergies
 - Is there a TRAVEL-RELATED condition (infections, exposure)? → YES, ask about travel
@@ -877,111 +907,83 @@ STEP 2: Verify the question hasn't been asked before.
         
         if language == "sp":
             prompt = (
-                "Eres un asistente de documentación clínica que genera resúmenes limpios y estructurados a partir de datos de admisión o pre-consulta del paciente.\n\n"
-                "### Objetivo\n"
-                "Producir un **Resumen Clínico** profesional que incluya **solo las secciones que contienen información real**.\n"
-                "Si cualquier campo, sección o categoría está vacío, nulo o marcado como \"no reportado,\" **omítelo completamente** de la salida.\n\n"
-                "### Reglas de Formato y Comportamiento\n"
-                "1. Mostrar **solo secciones no vacías**.\n"
-                "2. Mantener un estilo narrativo médico consistente.\n"
-                "3. **No** mostrar marcadores de posición como \"no reportado,\" \"ninguno,\" \"N/A,\" o encabezados en blanco.\n"
-                "4. Los títulos de sección deben aparecer **solo cuando esa sección tiene contenido**.\n"
-                "5. Mantener formato profesional con cada sección en **negrita** (estilo Markdown).\n"
-                "6. No alucinar o inferir datos faltantes.\n"
-                "7. El resumen debe leerse suavemente incluso si solo aparecen 1-2 secciones.\n\n"
-                "### Orden Sugerido de Secciones (mostrar solo las que existen)\n"
-                "- Motivo de Consulta\n"
-                "- Historia de la Enfermedad Actual (HPI)\n"
-                "- Síntomas Asociados\n"
-                "- Factores Desencadenantes / Aliviadores\n"
-                "- Autocuidado y Remedios Caseros\n"
-                "- Medicamentos Actuales\n"
-                "- Alergias\n"
-                "- Antecedentes Médicos / Quirúrgicos / Familiares / Sociales / Estilo de Vida\n"
-                "- Revisión de Sistemas\n"
-                "- Hallazgos del Examen Físico\n"
-                "- Evaluación / Impresión\n"
-                "- Plan o Recomendaciones\n\n"
-                "### Ejemplo\n"
-                "**Datos de Entrada (ejemplo)**\n"
-                "{\n"
-                '  "Motivo de Consulta": "Fiebre por 1 semana",\n'
-                '  "HPI": "Fiebre con dolor de cabeza leve, no aliviada por medicamentos de venta libre.",\n'
-                '  "Medicamento Actual": "Dolo y Disprin",\n'
-                '  "Historia Familiar": "",\n'
-                '  "Estilo de Vida": null\n'
-                "}\n\n"
-                "**Salida Esperada**\n\n"
-                "**Resumen Clínico**\n\n"
-                "**Motivo de Consulta:** Fiebre por 1 semana.\n"
-                "**HPI:** Fiebre con dolor de cabeza leve, no aliviada por medicamentos de venta libre.\n"
-                "**Medicamento Actual:** Dolo y Disprin.\n\n"
-                "### Instrucciones\n"
-                "- Detectar dinámicamente e incluir solo campos que tengan contenido válido.\n"
-                "- Ignorar cualquier campo o sección con datos faltantes, nulos o marcadores de posición.\n"
-                "- Salida en texto Markdown limpio (no JSON).\n"
-                "- El idioma debe ser legible para humanos y profesional.\n"
-                "- Usar las propias palabras del paciente cuando estén disponibles para el Motivo de Consulta.\n"
-                "- Para HPI, tejer elementos OLDCARTS naturalmente en prosa si están disponibles.\n"
-                "- Para Historia, combinar elementos médicos/quirúrgicos/familiares/sociales/estilo de vida con punto y coma si están presentes.\n"
-                "- Para medicamentos, incluir nombre, dosis y frecuencia si se proporciona.\n"
-                "- Para alergias, incluir solo si fueron reportadas explícitamente por el paciente.\n\n"
-                f"**Datos de Admisión del Paciente:**\n{self._format_intake_answers(intake_answers)}\n\n"
-                "Genera el resumen clínico ahora:"
+                "Rol y Tarea\n"
+                "Eres un Asistente de Admisión Clínica.\n"
+                "Tu tarea es generar un Resumen Pre-Consulta conciso y clínicamente útil (~180-200 palabras) basado estrictamente en las respuestas de admisión proporcionadas.\n\n"
+                "Reglas Críticas\n"
+                "- No inventes, adivines o expandas más allá de la entrada proporcionada.\n"
+                "- La salida debe ser texto plano con encabezados de sección, una sección por línea (sin líneas en blanco adicionales).\n"
+                "- Usa solo los encabezados exactos listados a continuación. No agregues, renombres o reordenes encabezados.\n"
+                "- Sin viñetas, numeración o formato markdown.\n"
+                "- Escribe en un tono de entrega clínica: corto, factual, sin duplicados y neutral.\n"
+                "- Incluye una sección solo si contiene contenido; omite secciones sin datos.\n"
+                "- No uses marcadores de posición como \"N/A\" o \"No proporcionado\".\n"
+                "- Usa frases orientadas al paciente: \"El paciente reporta...\", \"Niega...\", \"En medicamentos:...\".\n"
+                "- No incluyas observaciones clínicas, diagnósticos, planes, signos vitales o hallazgos del examen (la pre-consulta es solo lo reportado por el paciente).\n"
+                "- Normaliza pronunciaciones médicas obvias a términos correctos sin agregar nueva información.\n\n"
+                "Encabezados (usa MAYÚSCULAS EXACTAS; incluye solo si tienes datos)\n"
+                "Motivo de Consulta:\n"
+                "HPI:\n"
+                "Historia:\n"
+                "Medicación Actual:\n\n"
+                "Pautas de Contenido por Sección\n"
+                "- Motivo de Consulta: Una línea en las propias palabras del paciente si está disponible.\n"
+                "- HPI: UN párrafo legible tejiendo OLDCARTS en prosa:\n"
+                "  Inicio, Localización, Duración, Caracterización/calidad, Factores agravantes, Factores aliviadores, Radiación,\n"
+                "  Patrón temporal, Severidad (1-10), Síntomas asociados, Negativos relevantes.\n"
+                "  Manténlo natural y coherente (ej., \"El paciente reporta...\"). Si algunos elementos OLDCARTS son desconocidos, simplemente omítelos.\n"
+                "- Historia: Una línea combinando cualquier elemento reportado por el paciente usando punto y coma en este orden si está presente:\n"
+                "  Médica: ...; Quirúrgica: ...; Familiar: ...; Estilo de vida: ...\n"
+                "  (Incluye solo las partes proporcionadas por el paciente; omite las partes ausentes completamente).\n"
+                "- Revisión de Sistemas: Una línea narrativa resumiendo positivos/negativos basados en sistemas mencionados explícitamente por el paciente. Mantén como prosa, no como lista.\n"
+                "- Medicación Actual: Una línea narrativa con medicamentos/suplementos realmente declarados por el paciente (nombre/dosis/frecuencia si se proporciona). Incluye declaraciones de alergia solo si el paciente las reportó explícitamente.\n\n"
+                "Ejemplo de Formato\n"
+                "(Estructura y tono solamente—el contenido será diferente; cada sección en una sola línea.)\n"
+                "Motivo de Consulta: El paciente reporta dolor de cabeza severo por 3 días.\n"
+                "HPI: El paciente describe una semana de dolores de cabeza persistentes que comienzan en la mañana y empeoran durante el día, llegando hasta 8/10 en los últimos 3 días. El dolor es sobre ambas sienes y se siente diferente de migrañas previas; la fatiga es prominente y se niega náusea. Los episodios se agravan por estrés y más tarde en el día, con alivio mínimo de analgésicos de venta libre y algo de alivio usando compresas frías.\n"
+                "Historia: Médica: hipertensión; Quirúrgica: colecistectomía hace cinco años; Familiar: no reportada; Estilo de vida: no fumador, alcohol ocasional, trabajo de alto estrés.\n"
+                "Medicación Actual: En medicamentos: lisinopril 10 mg diario e ibuprofeno según necesidad; alergias incluidas solo si el paciente las declaró explícitamente.\n\n"
+                f"Respuestas de Admisión:\n{self._format_intake_answers(intake_answers)}"
             )
         else:
             prompt = (
-                "You are a clinical documentation assistant that generates clean, structured summaries from patient intake or pre-visit data.\n\n"
-                "### Objective\n"
-                "Produce a professional **Clinical Summary** that includes **only the sections that contain actual information**.\n"
-                "If any field, section, or category is empty, null, or marked as \"not reported,\" **omit it entirely** from the output.\n\n"
-                "### Formatting & Behavior Rules\n"
-                "1. Display **only non-empty** sections.\n"
-                "2. Maintain a consistent medical narrative style.\n"
-                "3. Do **not** show placeholders like \"not reported,\" \"none,\" \"N/A,\" or blank headings.\n"
-                "4. Section titles should appear **only when that section has content**.\n"
-                "5. Maintain professional formatting with each section in **bold** (Markdown style).\n"
-                "6. Do not hallucinate or infer missing data.\n"
-                "7. The summary should still read smoothly even if only 1–2 sections appear.\n\n"
-                "### Suggested Section Order (show only those that exist)\n"
-                "- Chief Complaint\n"
-                "- History of Present Illness (HPI)\n"
-                "- Associated Symptoms\n"
-                "- Triggers / Relieving Factors\n"
-                "- Self-care & Home Remedies\n"
-                "- Current Medications\n"
-                "- Allergies\n"
-                "- Past Medical / Surgical / Family / Social / Lifestyle History\n"
-                "- Review of Systems\n"
-                "- Physical Exam Findings\n"
-                "- Assessment / Impression\n"
-                "- Plan or Recommendations\n\n"
-                "### Example\n"
-                "**Input Data (example)**\n"
-                "{\n"
-                '  "Chief Complaint": "Fever for 1 week",\n'
-                '  "HPI": "Fever with mild headache, not relieved by OTC medicines.",\n'
-                '  "Current Medication": "Dolo and Disprin",\n'
-                '  "Family History": "",\n'
-                '  "Lifestyle": null\n'
-                "}\n\n"
-                "**Expected Output**\n\n"
-                "**Clinical Summary**\n\n"
-                "**Chief Complaint:** Fever for 1 week.\n"
-                "**HPI:** Fever with mild headache, not relieved by OTC medicines.\n"
-                "**Current Medication:** Dolo and Disprin.\n\n"
-                "### Instructions\n"
-                "- Dynamically detect and include only fields that have valid content.\n"
-                "- Ignore any field or section with missing, null, or placeholder data.\n"
-                "- Output in clean Markdown text (not JSON).\n"
-                "- Language should be human readable and professional.\n"
-                "- Use patient's own words when available for Chief Complaint.\n"
-                "- For HPI, weave OLDCARTS elements naturally into prose if available.\n"
-                "- For History, combine medical/surgical/family/social/lifestyle items with semicolons if present.\n"
-                "- For medications, include name, dose, and frequency if provided.\n"
-                "- For allergies, only include if explicitly reported by patient.\n\n"
-                f"**Patient Intake Data:**\n{self._format_intake_answers(intake_answers)}\n\n"
-                "Generate the clinical summary now:"
+                "Role & Task\n"
+                "You are a Clinical Intake Assistant.\n"
+                "Your task is to generate a concise, clinically useful Pre-Visit Summary (~180–200 words) based strictly on the provided intake responses.\n\n"
+                "Critical Rules\n"
+                "- Do not invent, guess, or expand beyond the provided input.\n"
+                "- Output must be plain text with section headings, one section per line (no extra blank lines).\n"
+                "- Use only the exact headings listed below. Do not add, rename, or reorder headings.\n"
+                "- No bullets, numbering, or markdown formatting.\n"
+                "- Write in a clinical handover tone: short, factual, deduplicated, and neutral.\n"
+                "- Include a section only if it contains content; omit sections with no data.\n"
+                "- Do not use placeholders like \"N/A\" or \"Not provided\".\n"
+                "- Use patient-facing phrasing: \"Patient reports …\", \"Denies …\", \"On meds: …\".\n"
+                "- Do not include clinician observations, diagnoses, plans, vitals, or exam findings (previsit is patient-reported only).\n"
+                '- Normalize obvious medical mispronunciations to correct terms (e.g., "diabetes mellitus" -> "diabetes mellitus") without adding new information.\n\n'
+                "Headings (use EXACT casing; include only if you have data)\n"
+                "Chief Complaint:\n"
+                "HPI:\n"
+                "History:\n"
+                "Current Medication:\n\n"
+                "Content Guidelines per Section\n"
+                "- Chief Complaint: One line in the patient's own words if available.\n"
+                "- HPI: ONE readable paragraph weaving OLDCARTS into prose:\n"
+                "  Onset, Location, Duration, Characterization/quality, Aggravating factors, Relieving factors, Radiation,\n"
+                "  Temporal pattern, Severity (1–10), Associated symptoms, Relevant negatives.\n"
+                "  Keep it natural and coherent (e.g., \"The patient reports …\"). If some OLDCARTS elements are unknown, simply omit them (do not write placeholders).\n"
+                "- History: One line combining any patient-reported items using semicolons in this order if present:\n"
+                "  Medical: …; Surgical: …; Family: …; Lifestyle: …\n"
+                "  (Include only parts provided by the patient; omit absent parts entirely.)\n"
+                "- Review of Systems: One narrative line summarizing system-based positives/negatives explicitly mentioned by the patient (e.g., General, Neuro, Eyes, Resp, GI). Keep as prose, not a list.\n"
+                "- Current Medication: One narrative line with meds/supplements actually stated by the patient (name/dose/frequency if provided). Include allergy statements only if the patient explicitly reported them.\n\n"
+                "Example Format\n"
+                "(Structure and tone only—content will differ; each section on a single line.)\n"
+                "Chief Complaint: Patient reports severe headache for 3 days.\n"
+                "HPI: The patient describes a week of persistent headaches that begin in the morning and worsen through the day, reaching up to 8/10 over the last 3 days. Pain is over both temples and feels different from prior migraines; fatigue is prominent and nausea is denied. Episodes are aggravated by stress and later in the day, with minimal relief from over-the-counter analgesics and some relief using cold compresses. No radiation is reported, evenings are typically worse, and there have been no recent changes in medications or lifestyle.\n"
+                "History: Medical: hypertension; Surgical: cholecystectomy five years ago; Family: not reported; Lifestyle: non-smoker, occasional alcohol, high-stress job.\n"
+                "Current Medication: On meds: lisinopril 10 mg daily and ibuprofen as needed; allergies included only if the patient explicitly stated them.\n\n"
+                f"Intake Responses:\n{self._format_intake_answers(intake_answers)}"
             )
 
         try:

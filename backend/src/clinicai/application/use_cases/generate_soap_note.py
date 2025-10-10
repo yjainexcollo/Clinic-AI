@@ -62,7 +62,6 @@ class GenerateSoapNoteUseCase:
                 intake_data=intake_data,
                 pre_visit_summary=pre_visit_summary,
                 vitals=vitals,
-                language=patient.language,
             )
 
             # Validate SOAP structure

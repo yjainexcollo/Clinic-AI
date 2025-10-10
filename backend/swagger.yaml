@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: Clinic-AI Intake Assistant API
+  title: Clinic-AI Backend API
   description: |
     A comprehensive medical consultation platform that provides AI-powered patient intake, 
     audio transcription, SOAP note generation, and prescription analysis.
@@ -13,9 +13,6 @@ info:
     - **Prescription Analysis**: Extract structured data from prescription images using Mistral AI
     - **Multi-language Support**: English and Spanish language support
     - **Doctor Preferences**: Configurable intake session parameters
-    - **Vitals Management**: Store and retrieve patient vital signs
-    - **Ad-hoc Transcription**: Standalone audio transcription services
-    - **Action Plans**: Generate treatment plans from transcripts
     
     ## Architecture
     This API follows Clean Architecture principles with:
@@ -62,49 +59,15 @@ paths:
                 properties:
                   service:
                     type: string
-                    example: "Clinic-AI Intake Assistant"
+                    example: "Clinic-AI Backend"
                   version:
                     type: string
                     example: "1.0.0"
-                  environment:
-                    type: string
-                    example: "development"
-                  status:
-                    type: string
-                    example: "running"
-                  docs:
-                    type: string
-                    example: "/docs"
                   endpoints:
-                    type: object
-                    properties:
-                      health:
-                        type: string
-                        example: "/health"
-                      register_patient:
-                        type: string
-                        example: "POST /patients/"
-                      answer_intake:
-                        type: string
-                        example: "POST /patients/consultations/answer"
-                      transcribe_audio:
-                        type: string
-                        example: "POST /notes/transcribe"
-                      generate_soap:
-                        type: string
-                        example: "POST /notes/soap/generate"
-                      upload_prescriptions:
-                        type: string
-                        example: "POST /prescriptions/upload"
-                      doctor_preferences:
-                        type: string
-                        example: "GET /doctor/preferences"
-                      intake_session:
-                        type: string
-                        example: "POST /intake/start"
-                      audio_management:
-                        type: string
-                        example: "GET /audio/"
+                    type: array
+                    items:
+                      type: string
+                    example: ["/health", "/patients", "/notes", "/prescriptions", "/transcription", "/doctor", "/audio", "/intake"]
 
   /health:
     get:
@@ -751,101 +714,51 @@ paths:
           application/json:
             schema:
               type: object
-              required:
-                - patient_id
-                - visit_id
-                - vitals
               properties:
                 patient_id:
                   type: string
                   description: Opaque patient ID
-                  example: "pat_abc123def456"
                 visit_id:
                   type: string
                   description: Visit ID
-                  example: "vis_xyz789uvw012"
                 vitals:
                   type: object
                   properties:
-                    systolic:
+                    blood_pressure_systolic:
                       type: integer
-                      example: 120
-                    diastolic:
+                      description: Systolic blood pressure
+                    blood_pressure_diastolic:
                       type: integer
-                      example: 80
-                    bpArm:
-                      type: string
-                      example: "Left"
-                    bpPosition:
-                      type: string
-                      example: "Sitting"
-                    heartRate:
+                      description: Diastolic blood pressure
+                    heart_rate:
                       type: integer
-                      example: 72
-                    rhythm:
-                      type: string
-                      example: "Regular"
-                    respiratoryRate:
-                      type: integer
-                      example: 16
+                      description: Heart rate (BPM)
                     temperature:
                       type: number
-                      example: 98.6
-                    tempUnit:
-                      type: string
-                      example: "F"
-                    tempMethod:
-                      type: string
-                      example: "Oral"
-                    oxygenSaturation:
-                      type: integer
-                      example: 98
-                    height:
-                      type: number
-                      example: 175.0
-                    heightUnit:
-                      type: string
-                      example: "cm"
+                      format: float
+                      description: Body temperature
                     weight:
                       type: number
-                      example: 70.0
-                    weightUnit:
-                      type: string
-                      example: "kg"
-                    painScore:
+                      format: float
+                      description: Weight
+                    height:
+                      type: number
+                      format: float
+                      description: Height
+                    oxygen_saturation:
                       type: integer
-                      example: 3
-                    notes:
-                      type: string
-                      example: "Patient appears comfortable"
-              example:
-                patient_id: "pat_abc123def456"
-                visit_id: "vis_xyz789uvw012"
-                vitals:
-                  systolic: 120
-                  diastolic: 80
-                  bpArm: "Left"
-                  bpPosition: "Sitting"
-                  heartRate: 72
-                  rhythm: "Regular"
-                  respiratoryRate: 16
-                  temperature: 98.6
-                  tempUnit: "F"
-                  tempMethod: "Oral"
-                  oxygenSaturation: 98
-                  height: 175.0
-                  heightUnit: "cm"
-                  weight: 70.0
-                  weightUnit: "kg"
-                  painScore: 3
-                  notes: "Patient appears comfortable"
+                      description: Oxygen saturation percentage
       responses:
         '200':
           description: Vitals stored successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/VitalsResponse'
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Vitals stored successfully"
         '400':
           description: Invalid request data
           content:
@@ -859,7 +772,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /notes/{patient_id}/visits/{visit_id}/vitals:
+  /patients/{patient_id}/visits/{visit_id}/vitals:
     get:
       summary: Get Vitals
       description: Retrieve stored vitals data for a visit
@@ -885,7 +798,31 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/VitalsData'
+                type: object
+                properties:
+                  vitals:
+                    type: object
+                    properties:
+                      blood_pressure_systolic:
+                        type: integer
+                      blood_pressure_diastolic:
+                        type: integer
+                      heart_rate:
+                        type: integer
+                      temperature:
+                        type: number
+                        format: float
+                      weight:
+                        type: number
+                        format: float
+                      height:
+                        type: number
+                        format: float
+                      oxygen_saturation:
+                        type: integer
+                  recorded_at:
+                    type: string
+                    format: date-time
         '404':
           description: Patient, visit, or vitals not found
           content:
@@ -893,7 +830,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /notes/{patient_id}/visits/{visit_id}/transcript:
+  /patients/{patient_id}/visits/{visit_id}/transcript:
     get:
       summary: Get Transcript
       description: Retrieve the stored transcript for a visit, including structured dialogue
@@ -919,9 +856,28 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TranscriptionSessionDTO'
-        '202':
-          description: Transcript processing; client should retry after delay
+                type: object
+                properties:
+                  transcript:
+                    type: string
+                    description: Raw transcript text
+                  structured_dialogue:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        speaker:
+                          type: string
+                          enum: [Doctor, Patient]
+                        text:
+                          type: string
+                  language:
+                    type: string
+                  word_count:
+                    type: integer
+                  duration:
+                    type: number
+                    format: float
         '404':
           description: Patient, visit, or transcript not found
           content:
@@ -929,7 +885,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /notes/{patient_id}/visits/{visit_id}/soap:
+  /patients/{patient_id}/visits/{visit_id}/soap:
     get:
       summary: Get SOAP Note
       description: Retrieve the stored SOAP note for a visit
@@ -955,7 +911,24 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SoapNoteDTO'
+                type: object
+                properties:
+                  soap_note:
+                    type: object
+                    properties:
+                      subjective:
+                        type: string
+                      objective:
+                        type: string
+                      assessment:
+                        type: string
+                      plan:
+                        type: string
+                  language:
+                    type: string
+                  generated_at:
+                    type: string
+                    format: date-time
         '404':
           description: Patient, visit, or SOAP note not found
           content:
@@ -963,7 +936,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /notes/{patient_id}/visits/{visit_id}/dialogue/structure:
+  /patients/{patient_id}/visits/{visit_id}/dialogue/structure:
     post:
       summary: Structure Dialogue
       description: Clean PII and structure a transcript into alternating Doctor/Patient JSON using an LLM
@@ -1006,28 +979,18 @@ paths:
               schema:
                 type: object
                 properties:
-                  dialogue:
+                  structured_dialogue:
                     type: array
                     items:
-                      oneOf:
-                        - type: object
-                          properties:
-                            Doctor:
-                              type: string
-                              description: Doctor's statement
-                              example: "Can you describe the chest pain you're experiencing?"
-                        - type: object
-                          properties:
-                            Patient:
-                              type: string
-                              description: Patient's response
-                              example: "It's a sharp pain in the center of my chest that started about 2 hours ago."
-                    description: Array of dialogue turns, each containing either a Doctor or Patient key
-                    example:
-                      - Doctor: "Can you describe the chest pain you're experiencing?"
-                      - Patient: "It's a sharp pain in the center of my chest that started about 2 hours ago."
-                      - Doctor: "Have you taken any medications for this pain?"
-                      - Patient: "No, I haven't taken anything yet."
+                      type: object
+                      properties:
+                        speaker:
+                          type: string
+                          enum: [Doctor, Patient]
+                        text:
+                          type: string
+                  language:
+                    type: string
         '400':
           description: Invalid request data
           content:
@@ -1099,26 +1062,17 @@ paths:
           description: Filter by visit ID
           schema:
             type: string
-        - name: audio_type
-          in: query
-          description: Filter by audio type (adhoc, visit)
-          schema:
-            type: string
-            enum: [adhoc, visit]
         - name: limit
           in: query
           description: Maximum number of results
           schema:
             type: integer
-            minimum: 1
-            maximum: 100
             default: 50
         - name: offset
           in: query
           description: Number of results to skip
           schema:
             type: integer
-            minimum: 0
             default: 0
       responses:
         '200':
@@ -1128,7 +1082,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  files:
+                  audio_files:
                     type: array
                     items:
                       type: object
@@ -1137,27 +1091,20 @@ paths:
                           type: string
                         filename:
                           type: string
-                        content_type:
-                          type: string
-                        file_size:
-                          type: integer
-                        duration_seconds:
-                          type: number
-                          format: float
                         patient_id:
                           type: string
                         visit_id:
                           type: string
-                        adhoc_id:
-                          type: string
-                        audio_type:
-                          type: string
-                        created_at:
-                          type: string
-                          format: date-time
-                        updated_at:
+                        file_size:
+                          type: integer
+                        duration:
+                          type: number
+                          format: float
+                        upload_date:
                           type: string
                           format: date-time
+                        has_transcript:
+                          type: boolean
                   total_count:
                     type: integer
                   limit:
@@ -1191,27 +1138,23 @@ paths:
                     type: string
                   filename:
                     type: string
-                  content_type:
-                    type: string
-                  file_size:
-                    type: integer
-                  duration_seconds:
-                    type: number
-                    format: float
                   patient_id:
                     type: string
                   visit_id:
                     type: string
-                  adhoc_id:
-                    type: string
-                  audio_type:
-                    type: string
-                  created_at:
-                    type: string
-                    format: date-time
-                  updated_at:
+                  file_size:
+                    type: integer
+                  duration:
+                    type: number
+                    format: float
+                  upload_date:
                     type: string
                     format: date-time
+                  has_transcript:
+                    type: boolean
+                  transcript_status:
+                    type: string
+                    enum: [pending, completed, failed]
         '404':
           description: Audio file not found
           content:
@@ -1325,16 +1268,16 @@ paths:
                 properties:
                   total_files:
                     type: integer
-                    description: Total number of audio files
-                  adhoc_files:
+                  total_size_bytes:
                     type: integer
-                    description: Number of ad-hoc audio files
-                  visit_files:
+                  total_duration_seconds:
+                    type: number
+                    format: float
+                  average_file_size_bytes:
                     type: integer
-                    description: Number of visit audio files
-                  other_files:
-                    type: integer
-                    description: Number of other audio files
+                  average_duration_seconds:
+                    type: number
+                    format: float
 
   /doctor/preferences:
     get:
@@ -1722,14 +1665,51 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/IntakeStartRequest'
+              type: object
+              properties:
+                patient_id:
+                  type: string
+                  description: Opaque patient ID
+                visit_id:
+                  type: string
+                  description: Visit ID
+                patient_data:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    age:
+                      type: integer
+                    gender:
+                      type: string
+                    chief_complaint:
+                      type: string
       responses:
         '200':
           description: Intake session started successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/IntakeStartResponse'
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                    description: Intake session ID
+                  first_question:
+                    type: object
+                    properties:
+                      question_id:
+                        type: string
+                      question:
+                        type: string
+                      category:
+                        type: string
+                      allows_images:
+                        type: boolean
+                  language:
+                    type: string
+                  max_questions:
+                    type: integer
         '400':
           description: Invalid request data
           content:
@@ -1749,14 +1729,62 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/NextQuestionRequest'
+              type: object
+              properties:
+                session_id:
+                  type: string
+                  description: Intake session ID
+                patient_id:
+                  type: string
+                  description: Opaque patient ID
+                visit_id:
+                  type: string
+                  description: Visit ID
+                previous_answers:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      question_id:
+                        type: string
+                      answer:
+                        type: string
+                        description: Patient's answer
+                      category:
+                        type: string
+                        description: Question category
       responses:
         '200':
           description: Next question generated successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NextQuestionResponse'
+                type: object
+                properties:
+                  question:
+                    type: object
+                    properties:
+                      question_id:
+                        type: string
+                      question:
+                        type: string
+                      category:
+                        type: string
+                      allows_images:
+                        type: boolean
+                  is_complete:
+                    type: boolean
+                    description: Whether the intake session is complete
+                  progress:
+                    type: object
+                    properties:
+                      questions_asked:
+                        type: integer
+                      max_questions:
+                        type: integer
+                      completion_percentage:
+                        type: number
+                        format: float
         '400':
           description: Invalid request data
           content:
@@ -1765,159 +1793,6 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Session not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /transcription:
-    post:
-      summary: Ad-hoc Transcription
-      description: Perform ad-hoc audio transcription, save the audio to the database, and persist the transcript
-      operationId: transcribe_audio_adhoc
-      tags:
-        - Transcription
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              properties:
-                audio_file:
-                  type: string
-                  format: binary
-                  description: Audio file to transcribe
-                language:
-                  type: string
-                  enum: [en, sp]
-                  default: en
-                  description: Audio language
-      responses:
-        '200':
-          description: Transcription completed successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AdhocTranscriptionResponse'
-        '400':
-          description: Invalid request data
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /transcription/structure:
-    post:
-      summary: Structure Transcript Text
-      description: Structure raw transcript text into a Doctor/Patient dialogue using an LLM
-      operationId: structure_transcript_text
-      tags:
-        - Transcription
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/StructureTextRequest'
-      responses:
-        '200':
-          description: Transcript structured successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/StructureTextResponse'
-        '400':
-          description: Invalid request data
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /transcription/adhoc/action-plan:
-    post:
-      summary: Generate Action Plan
-      description: Queue the generation of an action plan for an ad-hoc transcript as a background task
-      operationId: generate_action_plan
-      tags:
-        - Transcription
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ActionPlanRequest'
-      responses:
-        '202':
-          description: Action plan generation queued successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ActionPlanResponse'
-        '400':
-          description: Invalid request data
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Ad-hoc record not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /transcription/adhoc/{adhoc_id}/action-plan/status:
-    get:
-      summary: Get Action Plan Status
-      description: Retrieve the status of action plan generation
-      operationId: get_action_plan_status
-      tags:
-        - Transcription
-      parameters:
-        - name: adhoc_id
-          in: path
-          required: true
-          description: Ad-hoc record ID
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Action plan status
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ActionPlanStatusResponse'
-        '404':
-          description: Ad-hoc record not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  /transcription/adhoc/{adhoc_id}/action-plan:
-    get:
-      summary: Get Action Plan
-      description: Retrieve the generated action plan
-      operationId: get_action_plan
-      tags:
-        - Transcription
-      parameters:
-        - name: adhoc_id
-          in: path
-          required: true
-          description: Ad-hoc record ID
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Action plan
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ActionPlanData'
-        '404':
-          description: Ad-hoc record or action plan not found
           content:
             application/json:
               schema:
@@ -2325,572 +2200,6 @@ components:
           description: Duration of treatment
           example: "Long-term"
 
-    VitalsData:
-      type: object
-      required:
-        - systolic
-        - diastolic
-        - heartRate
-        - respiratoryRate
-        - temperature
-        - oxygenSaturation
-        - weight
-      properties:
-        systolic:
-          type: integer
-          description: Systolic blood pressure
-          example: 120
-        diastolic:
-          type: integer
-          description: Diastolic blood pressure
-          example: 80
-        bpArm:
-          type: string
-          description: Blood pressure arm (Left/Right)
-          example: "Left"
-          default: ""
-        bpPosition:
-          type: string
-          description: Blood pressure position (Sitting/Standing/Lying)
-          example: "Sitting"
-          default: ""
-        heartRate:
-          type: integer
-          description: Heart rate in BPM
-          example: 72
-        rhythm:
-          type: string
-          description: Heart rhythm
-          example: "Regular"
-          default: ""
-        respiratoryRate:
-          type: integer
-          description: Respiratory rate per minute
-          example: 16
-        temperature:
-          type: number
-          format: float
-          description: Body temperature
-          example: 98.6
-        tempUnit:
-          type: string
-          enum: [C, F]
-          description: Temperature unit
-          example: "F"
-          default: "C"
-        tempMethod:
-          type: string
-          description: Temperature measurement method
-          example: "Oral"
-          default: ""
-        oxygenSaturation:
-          type: integer
-          description: Oxygen saturation percentage
-          example: 98
-        height:
-          type: number
-          format: float
-          description: Height in cm
-          example: 175.0
-        heightUnit:
-          type: string
-          description: Height unit
-          example: "cm"
-          default: "cm"
-        weight:
-          type: number
-          format: float
-          description: Weight in kg
-          example: 70.0
-        weightUnit:
-          type: string
-          description: Weight unit
-          example: "kg"
-          default: "kg"
-        painScore:
-          type: integer
-          minimum: 0
-          maximum: 10
-          description: Pain score (0-10)
-          example: 3
-        notes:
-          type: string
-          description: Additional notes
-          example: "Patient appears comfortable"
-          default: ""
-
-    VitalsRequest:
-      type: object
-      required:
-        - patient_id
-        - visit_id
-        - vitals
-      properties:
-        patient_id:
-          type: string
-          description: Opaque patient ID
-          example: "pat_abc123def456"
-        visit_id:
-          type: string
-          description: Visit ID
-          example: "vis_xyz789uvw012"
-        vitals:
-          type: object
-          required:
-            - systolic
-            - diastolic
-            - heartRate
-            - respiratoryRate
-            - temperature
-            - oxygenSaturation
-            - weight
-          properties:
-            systolic:
-              type: integer
-              description: Systolic blood pressure
-              example: 120
-            diastolic:
-              type: integer
-              description: Diastolic blood pressure
-              example: 80
-            bpArm:
-              type: string
-              description: Blood pressure arm (Left/Right)
-              example: "Left"
-              default: ""
-            bpPosition:
-              type: string
-              description: Blood pressure position (Sitting/Standing/Lying)
-              example: "Sitting"
-              default: ""
-            heartRate:
-              type: integer
-              description: Heart rate in BPM
-              example: 72
-            rhythm:
-              type: string
-              description: Heart rhythm
-              example: "Regular"
-              default: ""
-            respiratoryRate:
-              type: integer
-              description: Respiratory rate per minute
-              example: 16
-            temperature:
-              type: number
-              format: float
-              description: Body temperature
-              example: 98.6
-            tempUnit:
-              type: string
-              enum: [C, F]
-              description: Temperature unit
-              example: "F"
-              default: "C"
-            tempMethod:
-              type: string
-              description: Temperature measurement method
-              example: "Oral"
-              default: ""
-            oxygenSaturation:
-              type: integer
-              description: Oxygen saturation percentage
-              example: 98
-            height:
-              type: number
-              format: float
-              description: Height in cm
-              example: 175.0
-            heightUnit:
-              type: string
-              description: Height unit
-              example: "cm"
-              default: "cm"
-            weight:
-              type: number
-              format: float
-              description: Weight in kg
-              example: 70.0
-            weightUnit:
-              type: string
-              description: Weight unit
-              example: "kg"
-              default: "kg"
-            painScore:
-              type: integer
-              minimum: 0
-              maximum: 10
-              description: Pain score (0-10)
-              example: 3
-            notes:
-              type: string
-              description: Additional notes
-              example: "Patient appears comfortable"
-              default: ""
-      example:
-        patient_id: "pat_abc123def456"
-        visit_id: "vis_xyz789uvw012"
-        vitals:
-          systolic: 120
-          diastolic: 80
-          bpArm: "Left"
-          bpPosition: "Sitting"
-          heartRate: 72
-          rhythm: "Regular"
-          respiratoryRate: 16
-          temperature: 98.6
-          tempUnit: "F"
-          tempMethod: "Oral"
-          oxygenSaturation: 98
-          height: 175.0
-          heightUnit: "cm"
-          weight: 70.0
-          weightUnit: "kg"
-          painScore: 3
-          notes: "Patient appears comfortable"
-
-    VitalsResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-          example: true
-        message:
-          type: string
-          example: "Vitals stored successfully"
-        vitals_id:
-          type: string
-          example: "vis_xyz789uvw012:vitals"
-
-    TranscriptionSessionDTO:
-      type: object
-      properties:
-        audio_file_path:
-          type: string
-          description: Path to audio file
-        transcript:
-          type: string
-          description: Transcribed text
-        transcription_status:
-          type: string
-          enum: [queued, processing, completed, failed]
-          description: Status of transcription
-        started_at:
-          type: string
-          format: date-time
-          description: When transcription started
-        completed_at:
-          type: string
-          format: date-time
-          description: When transcription completed
-        error_message:
-          type: string
-          description: Error message if failed
-        audio_duration_seconds:
-          type: number
-          format: float
-          description: Audio duration in seconds
-        word_count:
-          type: integer
-          description: Number of words in transcript
-        structured_dialogue:
-          type: array
-          items:
-            oneOf:
-              - type: object
-                properties:
-                  Doctor:
-                    type: string
-                    description: Doctor's statement
-              - type: object
-                properties:
-                  Patient:
-                    type: string
-                    description: Patient's response
-          description: Structured dialogue between doctor and patient, each turn contains either Doctor or Patient key
-
-    SoapNoteDTO:
-      type: object
-      properties:
-        subjective:
-          type: string
-          description: Patient's subjective complaints
-        objective:
-          type: string
-          description: Objective findings
-        assessment:
-          type: string
-          description: Clinical assessment
-        plan:
-          type: string
-          description: Treatment plan
-        highlights:
-          type: string
-          description: Key highlights
-        red_flags:
-          type: string
-          description: Red flags or concerns
-        generated_at:
-          type: string
-          format: date-time
-          description: When SOAP note was generated
-        model_info:
-          type: string
-          description: AI model information
-        confidence_score:
-          type: number
-          format: float
-          description: Confidence score (0-1)
-
-    IntakeStartRequest:
-      type: object
-      required:
-        - patient_id
-        - doctor_id
-      properties:
-        patient_id:
-          type: string
-          description: Patient ID
-          example: "pat_abc123def456"
-        doctor_id:
-          type: string
-          description: Doctor ID
-          example: "D123"
-
-    IntakeStartResponse:
-      type: object
-      properties:
-        patient_id:
-          type: string
-          description: Patient ID
-        doctor_id:
-          type: string
-          description: Doctor ID
-        categories:
-          type: array
-          items:
-            type: string
-          description: Selected categories
-        max_questions:
-          type: integer
-          description: Maximum questions
-        asked_count:
-          type: integer
-          description: Questions asked so far
-        created_at:
-          type: string
-          format: date-time
-          description: Session creation time
-
-    NextQuestionRequest:
-      type: object
-      required:
-        - patient_id
-      properties:
-        patient_id:
-          type: string
-          description: Patient ID
-          example: "pat_abc123def456"
-        last_answer:
-          type: string
-          description: Last answer provided
-          example: "I have chest pain"
-
-    NextQuestionResponse:
-      type: object
-      properties:
-        question:
-          type: string
-          description: Generated question
-          example: "Can you describe the chest pain?"
-        asked_count:
-          type: integer
-          description: Questions asked so far
-        max_questions:
-          type: integer
-          description: Maximum questions allowed
-
-    AdhocTranscriptionResponse:
-      type: object
-      properties:
-        transcript:
-          type: string
-          description: Transcribed text
-        language:
-          type: string
-          description: Language of transcript
-        confidence:
-          type: number
-          format: float
-          description: Confidence score
-        duration:
-          type: number
-          format: float
-          description: Audio duration in seconds
-        word_count:
-          type: integer
-          description: Number of words
-        filename:
-          type: string
-          description: Original filename
-        adhoc_id:
-          type: string
-          description: Ad-hoc record ID
-
-    StructureTextRequest:
-      type: object
-      required:
-        - transcript
-      properties:
-        transcript:
-          type: string
-          description: Raw transcript text
-        language:
-          type: string
-          enum: [en, sp]
-          default: en
-          description: Language of transcript
-        adhoc_id:
-          type: string
-          description: Optional ad-hoc record ID
-
-    StructureTextResponse:
-      type: object
-      properties:
-        structured_dialogue:
-          type: array
-          items:
-            oneOf:
-              - type: object
-                properties:
-                  Doctor:
-                    type: string
-                    description: Doctor's statement
-              - type: object
-                properties:
-                  Patient:
-                    type: string
-                    description: Patient's response
-          description: Array of dialogue turns, each containing either a Doctor or Patient key
-        language:
-          type: string
-        persisted:
-          type: boolean
-          description: Whether dialogue was persisted
-
-    ActionPlanRequest:
-      type: object
-      required:
-        - adhoc_id
-        - transcript
-      properties:
-        adhoc_id:
-          type: string
-          description: Ad-hoc record ID
-        transcript:
-          type: string
-          description: Transcript text
-        structured_dialogue:
-          type: array
-          items:
-            type: object
-            properties:
-              Doctor:
-                type: string
-              Patient:
-                type: string
-          description: Optional structured dialogue
-        language:
-          type: string
-          enum: [en, sp]
-          default: en
-          description: Language of transcript
-
-    ActionPlanResponse:
-      type: object
-      properties:
-        adhoc_id:
-          type: string
-          description: Ad-hoc record ID
-        status:
-          type: string
-          enum: [pending, processing, completed, failed]
-          description: Action plan status
-        message:
-          type: string
-          description: Status message
-
-    ActionPlanStatusResponse:
-      type: object
-      properties:
-        status:
-          type: string
-          enum: [pending, processing, completed, failed]
-          description: Action plan status
-        message:
-          type: string
-          description: Status message
-        created_at:
-          type: string
-          format: date-time
-          description: Creation time
-        updated_at:
-          type: string
-          format: date-time
-          description: Last update time
-
-    ActionPlanData:
-      type: object
-      properties:
-        action:
-          type: array
-          items:
-            type: string
-          description: Specific action items
-        plan:
-          type: object
-          properties:
-            immediate_care:
-              type: string
-              description: Immediate care recommendations
-            medications:
-              type: array
-              items:
-                type: object
-                properties:
-                  name:
-                    type: string
-                  dosage:
-                    type: string
-                  duration:
-                    type: string
-                  notes:
-                    type: string
-            follow_up:
-              type: object
-              properties:
-                timeline:
-                  type: string
-                monitoring:
-                  type: string
-                next_steps:
-                  type: string
-            patient_education:
-              type: string
-            lifestyle_modifications:
-              type: string
-        confidence:
-          type: number
-          format: float
-          description: Confidence score (0-1)
-        reasoning:
-          type: string
-          description: Explanation of recommendations
-        generated_at:
-          type: string
-          format: date-time
-          description: Generation time
-
     ErrorResponse:
       type: object
       properties:
@@ -2925,7 +2234,7 @@ tags:
   - name: Patients
     description: Patient management and intake
   - name: Notes
-    description: Medical notes, transcripts, SOAP notes, and vitals
+    description: Medical notes, transcripts, and SOAP notes
   - name: Prescriptions
     description: Prescription image analysis
   - name: Audio
@@ -2933,6 +2242,6 @@ tags:
   - name: Doctor
     description: Doctor preferences and settings
   - name: Transcription
-    description: Ad-hoc transcription services and action plans
+    description: Ad-hoc transcription services
   - name: Intake
     description: Independent intake session management
