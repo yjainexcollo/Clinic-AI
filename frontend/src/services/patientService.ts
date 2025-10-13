@@ -360,7 +360,7 @@ export async function getPatient(
 export async function getPreVisitSummary(
   patientId: string,
   visitId: string
-): Promise<{ patient_id: string; visit_id: string; summary: string; generated_at: string; medication_images?: Array<{ id: string; filename: string; content_type?: string }> }> {
+): Promise<{ patient_id: string; visit_id: string; summary: string; generated_at: string; medication_images?: Array<{ id: string; filename: string; content_type?: string }>; red_flags?: Array<{ type: string; question: string; answer: string; message: string }> }> {
   try {
     const response = await fetch(`${BACKEND_BASE_URL}/patients/${patientId}/visits/${visitId}/summary`, {
       method: "GET",
