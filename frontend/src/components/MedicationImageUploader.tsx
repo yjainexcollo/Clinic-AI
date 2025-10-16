@@ -192,7 +192,7 @@ const MedicationImageUploader: React.FC<Props> = ({ patientId, visitId, title = 
               <div key={img.id} className="flex items-center justify-between bg-gray-50 p-2 rounded text-xs">
                 <div className="flex items-center gap-2 min-w-0">
                   <img
-                    src={`${BACKEND_BASE_URL}/patients/images/${img.id}/content`}
+                    src={`${BACKEND_BASE_URL}/patients/${patientId}/visits/${visitId}/intake-images/${img.id}/content`}
                     alt={img.filename}
                     className="w-8 h-8 object-cover rounded border"
                   />

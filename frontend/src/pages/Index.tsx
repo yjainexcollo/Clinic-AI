@@ -180,30 +180,50 @@ const Index = () => {
       
       // If no localStorage flag, check API
       try {
-        const response = await fetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/transcript`, {
+        const response = await fetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/transcript`, {
           method: 'GET',
           headers: { 'Accept': 'application/json' }
         });
+        
+        console.log(`Transcript check response: ${response.status} for patient ${patientId}, visit ${visitId}`);
+        
         if (response.ok) {
           const data = await response.json();
+          console.log('Transcript data:', data);
           const hasApiTranscript = !!data.transcript || !!data.structured_dialogue;
+          console.log(`Has transcript: ${hasApiTranscript}, transcript length: ${data.transcript?.length || 0}, dialogue turns: ${data.structured_dialogue?.length || 0}`);
           setHasTranscript(hasApiTranscript);
           // If API has transcript but no localStorage flag, set the flag
           if (hasApiTranscript) {
             localStorage.setItem(transcriptKey, '1');
           }
+        } else if (response.status === 202) {
+          // Still processing, keep checking
+          console.log('Transcript still processing, will check again later');
+          setHasTranscript(false);
         } else {
+          console.log(`Transcript check failed with status: ${response.status}`);
           setHasTranscript(false);
         }
       } catch (e) {
+        console.error('Error checking transcript:', e);
         setHasTranscript(false);
       }
     };
 
     if (patientId && visitId && isComplete) {
       checkTranscript();
+      
+      // Set up periodic checking for transcript updates (every 5 seconds)
+      const interval = setInterval(() => {
+        if (!hasTranscript) { // Only check if we don't have transcript yet
+          checkTranscript();
+        }
+      }, 5000);
+      
+      return () => clearInterval(interval);
     }
-  }, [patientId, visitId, isComplete]);
+  }, [patientId, visitId, isComplete, hasTranscript]);
 
   // Check if vitals exist
   useEffect(() => {
