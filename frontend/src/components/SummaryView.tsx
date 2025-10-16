@@ -37,8 +37,25 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
       setLoading(true);
       setError(null);
 
-      const data = await getPreVisitSummary(patientId, visitId);
-      setSummaryData(data);
+      // First try to get existing summary
+      try {
+        const data = await getPreVisitSummary(patientId, visitId);
+        setSummaryData(data);
+      } catch (err) {
+        // If summary doesn't exist, try to generate it
+        console.log('Summary not found, attempting to generate...');
+        try {
+          const { workflowService } = await import('../services/workflowService');
+          await workflowService.generatePreVisitSummary(patientId, visitId);
+          
+          // After generation, fetch the summary
+          const data = await getPreVisitSummary(patientId, visitId);
+          setSummaryData(data);
+        } catch (genErr) {
+          console.error('Error generating summary:', genErr);
+          throw genErr;
+        }
+      }
     } catch (err) {
       console.error('Error loading summary:', err);
       setError(err instanceof Error ? err.message : 'Failed to load summary');
@@ -113,6 +130,23 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
             <div className="flex justify-center mt-6 space-x-3">
               <Button onClick={() => loadSummary()}>
                 {language === 'sp' ? 'Intentar de nuevo' : 'Try Again'}
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={async () => {
+                  try {
+                    setLoading(true);
+                    setError(null);
+                    const { workflowService } = await import('../services/workflowService');
+                    await workflowService.generatePreVisitSummary(patientId, visitId);
+                    await loadSummary();
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : 'Failed to generate summary');
+                    setLoading(false);
+                  }
+                }}
+              >
+                {language === 'sp' ? 'Generar Resumen' : 'Generate Summary'}
               </Button>
               <Button variant="outline" onClick={onClose}>
                 {language === 'sp' ? 'Cerrar' : 'Close'}
@@ -219,7 +253,7 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
                     {summaryData.medication_images.map((img) => (
                       <div key={img.id} className="border rounded p-1 bg-gray-50">
                         <img
-                          src={`${BACKEND_BASE_URL}/patients/images/${img.id}/content`}
+                          src={`${BACKEND_BASE_URL}/patients/${patientId}/visits/${visitId}/intake-images/${img.id}/content`}
                           alt={img.filename}
                           className="w-full h-24 object-cover rounded"
                         />

@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
 
-from .api.routers import health, patients, notes, prescriptions
+from .api.routers import health, patients, notes, workflow
 from .api.routers import doctor as doctor_router
 from .api.routers import transcription as transcription_router
 from .api.routers import audio as audio_router
@@ -160,7 +160,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(patients.router)
     app.include_router(notes.router)
-    app.include_router(prescriptions.router)
+    app.include_router(workflow.router)
     app.include_router(transcription_router.router)
     app.include_router(doctor_router.router)
     app.include_router(audio_router.router)
@@ -211,8 +211,7 @@ async def root():
             "get_summary": "GET /patients/{patient_id}/visits/{visit_id}/summary",
             # Image upload endpoints
             "upload_images": "POST /patients/webhook/images",
-            "upload_single_image": "POST /patients/webhook/image",
-            "get_image_content": "GET /patients/images/{image_id}/content",
+            "get_intake_image_content": "GET /patients/{patient_id}/visits/{visit_id}/intake-images/{image_id}/content",
             "list_images": "GET /patients/{patient_id}/visits/{visit_id}/images",
             "delete_image": "DELETE /patients/images/{image_id}",
             # Step-03 endpoints
@@ -223,8 +222,6 @@ async def root():
             # Vitals endpoints
             "store_vitals": "POST /notes/vitals",
             "get_vitals": "GET /notes/{patient_id}/visits/{visit_id}/vitals",
-            # Prescription endpoints
-            "upload_prescriptions": "POST /prescriptions/upload",
             # Doctor preferences
             "get_doctor_preferences": "GET /doctor/preferences",
             "save_doctor_preferences": "POST /doctor/preferences",

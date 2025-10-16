@@ -30,26 +30,79 @@ export interface AudioStats {
   other_files: number;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://clinicai-backend-x7v3qgkqra-uc.a.run.app';
+export interface AudioDialogue {
+  audio_id: string;
+  filename: string;
+  duration_seconds?: number;
+  patient_id?: string;
+  visit_id?: string;
+  adhoc_id?: string;
+  audio_type: string;
+  created_at: string;
+  structured_dialogue?: Array<{ [key: string]: string }>;
+}
+
+export interface AudioDialogueListResponse {
+  dialogues: AudioDialogue[];
+  total_count: number;
+  limit: number;
+  offset: number;
+}
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 class AudioService {
+  private cache = new Map<string, { data: any; timestamp: number }>();
+  private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+  private getCachedData<T>(key: string): T | null {
+    const cached = this.cache.get(key);
+    if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
+      return cached.data as T;
+    }
+    this.cache.delete(key);
+    return null;
+  }
+
+  private setCachedData<T>(key: string, data: T): void {
+    this.cache.set(key, { data, timestamp: Date.now() });
+  }
+
+  private clearCache(): void {
+    this.cache.clear();
+  }
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${API_BASE_URL}${endpoint}`;
     
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    });
+    // Add timeout controller
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+    
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+      });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      }
+
+      return response.json();
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Request timeout - server is taking too long to respond');
+      }
+      throw error;
     }
-
-    return response.json();
   }
 
   private async requestBlob(endpoint: string, options: RequestInit = {}): Promise<Blob> {
@@ -89,16 +142,41 @@ class AudioService {
     if (params.offset) searchParams.append('offset', params.offset.toString());
 
     const queryString = searchParams.toString();
-    const endpoint = `/audio/${queryString ? `?${queryString}` : ''}`;
+    const cacheKey = `listAudioFiles-${queryString}`;
     
-    return this.request<AudioListResponse>(endpoint);
+    // Check cache first
+    const cached = this.getCachedData<AudioListResponse>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const endpoint = `/audio/${queryString ? `?${queryString}` : ''}`;
+    const result = await this.request<AudioListResponse>(endpoint);
+    
+    // Cache the result
+    this.setCachedData(cacheKey, result);
+    
+    return result;
   }
 
   /**
    * Get audio file metadata by ID
    */
   async getAudioMetadata(audioId: string): Promise<AudioFile> {
-    return this.request<AudioFile>(`/audio/${audioId}`);
+    const cacheKey = `getAudioMetadata-${audioId}`;
+    
+    // Check cache first
+    const cached = this.getCachedData<AudioFile>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const result = await this.request<AudioFile>(`/audio/${audioId}`);
+    
+    // Cache the result
+    this.setCachedData(cacheKey, result);
+    
+    return result;
   }
 
   /**
@@ -128,7 +206,83 @@ class AudioService {
    * Get audio storage statistics
    */
   async getAudioStats(): Promise<AudioStats> {
-    return this.request<AudioStats>('/audio/stats/summary');
+    const cacheKey = 'getAudioStats';
+    
+    // Check cache first
+    const cached = this.getCachedData<AudioStats>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const result = await this.request<AudioStats>('/audio/stats/summary');
+    
+    // Cache the result
+    this.setCachedData(cacheKey, result);
+    
+    return result;
+  }
+
+  /**
+   * Get quick list of audio files for fast loading
+   */
+  async getQuickAudioList(limit: number = 5): Promise<AudioListResponse> {
+    const cacheKey = `quickList-${limit}`;
+    
+    // Check cache first
+    const cached = this.getCachedData<AudioListResponse>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const result = await this.request<AudioListResponse>(`/audio/quick-list?limit=${limit}`);
+    
+    // Cache the result
+    this.setCachedData(cacheKey, result);
+    
+    return result;
+  }
+
+  /**
+   * List audio dialogues with optional filtering
+   */
+  async listAudioDialogues(params: {
+    patient_id?: string;
+    visit_id?: string;
+    audio_type?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<AudioDialogueListResponse> {
+    const searchParams = new URLSearchParams();
+    
+    if (params.patient_id) searchParams.append('patient_id', params.patient_id);
+    if (params.visit_id) searchParams.append('visit_id', params.visit_id);
+    if (params.audio_type) searchParams.append('audio_type', params.audio_type);
+    if (params.limit) searchParams.append('limit', params.limit.toString());
+    if (params.offset) searchParams.append('offset', params.offset.toString());
+
+    const queryString = searchParams.toString();
+    const cacheKey = `listAudioDialogues-${queryString}`;
+    
+    // Check cache first
+    const cached = this.getCachedData<AudioDialogueListResponse>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const endpoint = `/audio/dialogue${queryString ? `?${queryString}` : ''}`;
+    const result = await this.request<AudioDialogueListResponse>(endpoint);
+    
+    // Cache the result
+    this.setCachedData(cacheKey, result);
+    
+    return result;
+  }
+
+  /**
+   * Clear all cached data
+   */
+  clearAllCache(): void {
+    this.clearCache();
   }
 
   /**
