@@ -6,8 +6,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 import logging
+import os
+import yaml
 
 from .api.routers import health, patients, notes, workflow
 from .api.routers import doctor as doctor_router
@@ -89,8 +91,8 @@ def create_app() -> FastAPI:
         title="Clinic-AI Intake Assistant",
         description="AI-powered clinical intake system for small and mid-sized clinics",
         version=settings.app_version,
-        docs_url="/docs" if settings.debug else None,
-        redoc_url="/redoc" if settings.debug else None,
+        docs_url="/docs",  # Always enable docs
+        redoc_url="/redoc",  # Always enable redoc
         lifespan=lifespan,
     )
 
@@ -192,6 +194,47 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
+# Global variable to cache the OpenAPI schema
+_cached_openapi_schema = None
+
+def custom_openapi():
+    """Load custom OpenAPI schema from swagger.yaml file (cached for performance)."""
+    global _cached_openapi_schema
+    
+    # Return cached schema if already loaded
+    if _cached_openapi_schema is not None:
+        return _cached_openapi_schema
+    
+    try:
+        # Get the path to swagger.yaml relative to this file
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        swagger_path = os.path.join(current_dir, "..", "..", "..", "swagger.yaml")
+        
+        # Alternative path if the above doesn't work
+        if not os.path.exists(swagger_path):
+            swagger_path = os.path.join(current_dir, "..", "..", "swagger.yaml")
+        
+        if os.path.exists(swagger_path):
+            with open(swagger_path, 'r', encoding='utf-8') as f:
+                _cached_openapi_schema = yaml.safe_load(f)
+                logging.getLogger("clinicai").info("✅ Custom OpenAPI schema loaded and cached successfully")
+                return _cached_openapi_schema
+        else:
+            # Fallback to auto-generated schema if swagger.yaml not found
+            logging.getLogger("clinicai").warning(f"Swagger file not found at {swagger_path}")
+            _cached_openapi_schema = app.openapi()
+            return _cached_openapi_schema
+    except Exception as e:
+        logging.getLogger("clinicai").warning(f"Failed to load custom OpenAPI schema: {e}")
+        # Fallback to auto-generated schema
+        _cached_openapi_schema = app.openapi()
+        return _cached_openapi_schema
+
+
+# Override the default OpenAPI function
+app.openapi = custom_openapi
+
+
 # Root endpoint
 @app.get("/")
 async def root():
@@ -202,7 +245,8 @@ async def root():
         "version": settings.app_version,
         "environment": settings.app_env,
         "status": "running",
-        "docs": "/docs" if settings.debug else "disabled",
+        "docs": "/docs",
+        "swagger_yaml": "/swagger.yaml",
         "endpoints": {
             "health": "/health",
             "register_patient": "POST /patients/",
@@ -237,3 +281,20 @@ async def root():
             "audio_stats": "GET /audio/stats/summary",
         },
     }
+
+
+@app.get("/swagger.yaml")
+async def get_swagger_yaml():
+    """Serve the custom Swagger YAML file."""
+    swagger_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "swagger.yaml")
+    if os.path.exists(swagger_path):
+        return FileResponse(
+            path=swagger_path,
+            media_type="application/x-yaml",
+            filename="swagger.yaml"
+        )
+    else:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "Swagger file not found"}
+        )
