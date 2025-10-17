@@ -73,7 +73,7 @@ const WorkflowSelector: React.FC<WorkflowSelectorProps> = ({ onWorkflowSelected 
               </div>
               <CardTitle className="text-2xl text-gray-900">Walk-in Patient</CardTitle>
               <CardDescription className="text-gray-600">
-                Patient is a walk-in and will skip the intake form
+                Patient is a walk-in and will go directly to consultation workflow
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -82,13 +82,13 @@ const WorkflowSelector: React.FC<WorkflowSelectorProps> = ({ onWorkflowSelected 
                   <div className="w-2 h-2 bg-green-500 rounded-full mr-3"></div>
                   Quick patient registration
                 </div>
-                <div className="flex items-center text-sm text-gray-400 line-through">
-                  <div className="w-2 h-2 bg-gray-300 rounded-full mr-3"></div>
-                  Intake form (skipped)
+                <div className="flex items-center text-sm text-gray-600">
+                  <div className="w-2 h-2 bg-green-500 rounded-full mr-3"></div>
+                  Unified workflow interface
                 </div>
                 <div className="flex items-center text-sm text-gray-400 line-through">
                   <div className="w-2 h-2 bg-gray-300 rounded-full mr-3"></div>
-                  Pre-visit summary (skipped)
+                  Pre-visit summary (not applicable)
                 </div>
                 <div className="flex items-center text-sm text-gray-600">
                   <div className="w-2 h-2 bg-green-500 rounded-full mr-3"></div>

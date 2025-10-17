@@ -13,6 +13,12 @@ const TranscriptUpload: React.FC = () => {
   const [workflowType, setWorkflowType] = useState<string>("scheduled");
   const [availableSteps, setAvailableSteps] = useState<string[]>([]);
   
+  // Transcript processing states (like intake flow)
+  const [showTranscriptProcessing, setShowTranscriptProcessing] = useState<boolean>(false);
+  const [transcriptProcessingStatus, setTranscriptProcessingStatus] = useState<string>("Processing transcript...");
+  const [showTranscript, setShowTranscript] = useState<boolean>(false);
+  const [transcriptText, setTranscriptText] = useState<string>("");
+  
   // Recording state
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -128,62 +134,165 @@ const TranscriptUpload: React.FC = () => {
     if (!file || !patientId || !visitId) return;
     setLoading(true);
     setStatus("");
+    setError("");
+    setShowTranscript(false);
+    setTranscriptText("");
+    
     try {
       const form = new FormData();
       form.append("patient_id", patientId);
       form.append("visit_id", visitId);
       form.append("audio_file", file);
+      
       const res = await fetch(`${BACKEND_BASE_URL}/notes/transcribe`, {
         method: "POST",
         body: form,
       });
+      
       if (!res.ok) {
         const t = await res.text();
         throw new Error(`Transcribe failed ${res.status}: ${t}`);
       }
-      setStatus("Queued. Polling transcript status…");
-      pollStatus();
+      
+      // Start processing with better status updates (like intake flow)
+      setShowTranscriptProcessing(true);
+      setTranscriptProcessingStatus("Transcribing audio...");
+      setStatus("Upload successful. Processing transcript...");
+      
+      // Keep loading state during processing
+      setLoading(true);
+      
+      // Start polling with better status updates
+      pollStatusWithProgress();
+      
     } catch (e: any) {
-      setStatus(e?.message || "Upload failed");
-    } finally {
-      setLoading(false);
+      setError(e?.message || "Upload failed");
+      setStatus("");
+      setLoading(false); // Only stop loading on error
     }
+    // Don't set loading to false in finally - let it stay true during processing
   };
 
-  const pollStatus = async (attempt = 0) => {
-    try {
-      const res = await fetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/transcript`, {
-        headers: { Accept: "application/json" },
-      });
-      if (res.status === 202) {
-        const delay = Math.min(10000, 1000 * Math.pow(1.5, attempt));
-        setTimeout(() => pollStatus(attempt + 1), delay);
-        return;
-      }
-      if (!res.ok) {
-        const t = await res.text();
-        throw new Error(`Status failed ${res.status}: ${t}`);
-      }
-      const data = await res.json();
-      if (data?.transcription_status === "completed" && data?.transcript) {
-        setStatus("Transcription completed.");
-        
-        // Refresh available steps after transcription completion
-        try {
-          const stepsResponse = await workflowService.getAvailableSteps(visitId);
-          setAvailableSteps(stepsResponse.available_steps);
-        } catch (error) {
-          console.error("Error refreshing workflow steps:", error);
+  const pollStatusWithProgress = async (attempt = 0) => {
+    const start = Date.now();
+    const maxMs = 600000; // 10 minutes
+    
+    const poll = async (currentAttempt = 0) => {
+      try {
+        // Update status based on attempt number (like intake flow)
+        if (currentAttempt <= 3) {
+          setTranscriptProcessingStatus("Transcribing audio...");
+        } else if (currentAttempt <= 8) {
+          setTranscriptProcessingStatus("Processing transcript...");
+        } else if (currentAttempt <= 15) {
+          setTranscriptProcessingStatus("Structuring dialogue...");
+        } else {
+          setTranscriptProcessingStatus("Finalizing transcript...");
         }
-      } else if (data?.transcription_status === "failed") {
-        setStatus(`Transcription failed: ${data?.error_message || "Unknown error"}`);
-      } else {
-        const delay = Math.min(10000, 1000 * Math.pow(1.5, attempt));
-        setTimeout(() => pollStatus(attempt + 1), delay);
+        
+        const res = await fetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/transcript`, {
+          headers: { Accept: "application/json" },
+        });
+        
+        if (res.ok) {
+          let data;
+          try {
+            // Check if response has content before trying to parse JSON
+            const responseText = await res.text();
+            if (responseText.trim()) {
+              data = JSON.parse(responseText);
+            } else {
+              // Empty response means still processing, continue polling
+              console.log("Empty response - transcript still processing");
+              const ra = res.headers.get('Retry-After');
+              const retryAfterMs = ra ? Math.max(0, Number(ra) * 1000) : 0;
+              const backoffMs = Math.min(15000, Math.round(1500 * Math.pow(1.6, currentAttempt)));
+              const delay = retryAfterMs || backoffMs;
+              
+              if (Date.now() - start < maxMs) {
+                setTimeout(() => poll(currentAttempt + 1), delay);
+              } else {
+                setShowTranscriptProcessing(false);
+                setError("Transcription timeout. Please try again.");
+                setLoading(false);
+              }
+              return;
+            }
+          } catch (jsonError) {
+            console.error("JSON parsing error:", jsonError);
+            setShowTranscriptProcessing(false);
+            setError("Failed to parse transcript response. Please try again.");
+            setLoading(false);
+            return;
+          }
+          
+          let transcriptContent = data.transcript || '';
+          
+          // Check if transcript appears to be raw (not structured JSON)
+          const isRawTranscript = !transcriptContent.includes('"Doctor"') && !transcriptContent.includes('"Patient"');
+          
+          if (isRawTranscript && transcriptContent.trim()) {
+            // Try to structure the dialogue using the backend endpoint
+            try {
+              const structureResponse = await fetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/dialogue/structure`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+              });
+              if (structureResponse.ok) {
+                const structureData = await structureResponse.json();
+                if (structureData.dialogue && typeof structureData.dialogue === 'object') {
+                  transcriptContent = JSON.stringify(structureData.dialogue, null, 2);
+                }
+              }
+            } catch (e) {
+              console.warn('Failed to structure dialogue:', e);
+            }
+          }
+          
+          // Show transcript automatically (like intake flow)
+          setTranscriptText(transcriptContent);
+          setShowTranscriptProcessing(false);
+          setShowTranscript(true);
+          setStatus("Transcription completed successfully!");
+          setLoading(false); // Stop loading when transcript is complete
+          
+          // Refresh available steps after transcription completion
+          try {
+            const stepsResponse = await workflowService.getAvailableSteps(visitId);
+            setAvailableSteps(stepsResponse.available_steps);
+          } catch (error) {
+            console.error("Error refreshing workflow steps:", error);
+          }
+          return;
+        }
+        
+        // If still processing, backend returns 202 with optional Retry-After
+        if (res.status === 202) {
+          const ra = res.headers.get('Retry-After');
+          const retryAfterMs = ra ? Math.max(0, Number(ra) * 1000) : 0;
+          const backoffMs = Math.min(15000, Math.round(1500 * Math.pow(1.6, currentAttempt)));
+          const delay = retryAfterMs || backoffMs;
+          
+          if (Date.now() - start < maxMs) {
+            setTimeout(() => poll(currentAttempt + 1), delay);
+          } else {
+            setShowTranscriptProcessing(false);
+            setError("Transcription timeout. Please try again.");
+            setLoading(false); // Stop loading on timeout
+          }
+        } else {
+          setShowTranscriptProcessing(false);
+          setError(`Transcription failed: ${res.status}`);
+          setLoading(false); // Stop loading on failure
+        }
+      } catch (e: any) {
+        setShowTranscriptProcessing(false);
+        setError(e?.message || "Polling failed");
+        setLoading(false); // Stop loading on error
       }
-    } catch (e: any) {
-      setStatus(e?.message || "Polling failed");
-    }
+    };
+    
+    poll(attempt);
   };
 
   return (
@@ -298,11 +407,11 @@ const TranscriptUpload: React.FC = () => {
         {/* Upload Button */}
         <div className="flex gap-3">
           <button
-            disabled={!file || loading}
+            disabled={!file || loading || showTranscriptProcessing}
             onClick={upload}
             className="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
           >
-            {loading ? "Uploading & Transcribing..." : "Upload & Transcribe"}
+            {loading || showTranscriptProcessing ? "Processing..." : "Upload & Transcribe"}
           </button>
           
           {/* Show different buttons based on workflow type and available steps */}
@@ -333,15 +442,6 @@ const TranscriptUpload: React.FC = () => {
             </button>
           )}
           
-          {/* Structured Dialogue View Button - Show when transcription is completed */}
-          {status === "Transcription completed." && (
-            <button
-              onClick={() => navigate(`/transcript-view/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`)}
-              className="px-4 py-2 border rounded bg-gray-100 hover:bg-gray-200"
-            >
-              View Structured Dialogue
-            </button>
-          )}
         </div>
         
         {/* Error Message */}
@@ -354,12 +454,44 @@ const TranscriptUpload: React.FC = () => {
         {/* Status Message */}
         {status && <div className="text-sm text-gray-800">{status}</div>}
         
+        
+        {/* Transcript Display */}
+        {showTranscript && transcriptText && (
+          <div className="mt-6">
+            <h3 className="text-lg font-medium text-gray-900 mb-3">Generated Transcript</h3>
+            <div className="bg-gray-50 border border-gray-200 rounded-md p-4 max-h-96 overflow-y-auto">
+              <pre className="text-sm text-gray-800 whitespace-pre-wrap">{transcriptText}</pre>
+            </div>
+            <div className="mt-3 flex gap-3">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(transcriptText);
+                  alert('Transcript copied to clipboard!');
+                }}
+                className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 text-sm"
+              >
+                Copy Transcript
+              </button>
+            </div>
+          </div>
+        )}
+        
         {/* Workflow guidance */}
         {workflowType === "walk_in" && (
           <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md">
             <p className="text-sm text-green-800">
               <strong>Walk-in Workflow:</strong> After transcription, you'll need to complete the Vitals Form before generating the SOAP note.
             </p>
+            {showTranscript && availableSteps.includes("vitals") && (
+              <p className="text-sm text-green-700 mt-2">
+                ✅ Ready for next step: <strong>Vitals Form</strong>
+              </p>
+            )}
+            {showTranscript && availableSteps.includes("soap_generation") && (
+              <p className="text-sm text-green-700 mt-2">
+                ✅ Ready for next step: <strong>SOAP Generation</strong>
+              </p>
+            )}
           </div>
         )}
         
@@ -368,9 +500,31 @@ const TranscriptUpload: React.FC = () => {
             <p className="text-sm text-blue-800">
               <strong>Scheduled Workflow:</strong> After transcription, you can proceed directly to SOAP generation.
             </p>
+            {showTranscript && availableSteps.includes("soap_generation") && (
+              <p className="text-sm text-blue-700 mt-2">
+                ✅ Ready for next step: <strong>SOAP Generation</strong>
+              </p>
+            )}
           </div>
         )}
       </div>
+
+      {/* Transcript Processing Modal */}
+      {showTranscriptProcessing && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 text-center">
+            <div className="w-10 h-10 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">{transcriptProcessingStatus}</h3>
+            <p className="text-sm text-gray-600">
+              {transcriptProcessingStatus === "Transcribing audio..." && "Converting your audio to text..."}
+              {transcriptProcessingStatus === "Processing transcript..." && "Analyzing and cleaning the transcript..."}
+              {transcriptProcessingStatus === "Structuring dialogue..." && "Organizing conversation between doctor and patient..."}
+              {transcriptProcessingStatus === "Finalizing transcript..." && "Preparing the final transcript for review..."}
+              {!transcriptProcessingStatus.includes("...") && "This may take up to 10 minutes for complex audio files. The transcript will open automatically when ready."}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

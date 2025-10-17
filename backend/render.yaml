@@ -20,3 +20,5 @@ services:
         value: mongodb+srv://clinicai:clinicai@cluster0.7j6rzof.mongodb.net/
       - key: MONGO_DB_NAME
         value: clinicai
+      - key: ENCRYPTION_KEY
+        value: f-4POHOQjHFQzaUIL20fCppAMg69aFmLMuaAD9CUuHc=

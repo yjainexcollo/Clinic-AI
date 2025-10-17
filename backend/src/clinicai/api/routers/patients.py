@@ -405,11 +405,9 @@ async def upload_medication_images(
 ):
     try:
         logger.info("[WebhookImages] Incoming upload for patient_id=%s visit_id=%s", patient_id, visit_id)
-        # Normalize/resolve patient id (opaque token from client → internal id)
-        try:
-            internal_patient_id = decode_patient_id(patient_id)
-        except Exception:
-            internal_patient_id = patient_id
+        # Safely resolve patient ID (handles both encrypted and plain text)
+        from ...core.utils.patient_id_resolver import resolve_patient_id
+        internal_patient_id = resolve_patient_id(patient_id, "patient endpoint")
         
         valid_types = {"image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "image/heif"}
         uploaded_images = []
@@ -626,7 +624,7 @@ async def generate_pre_visit_summary(
         result = await use_case.execute(dto_request)
 
         return PreVisitSummaryResponse(
-            patient_id=result.patient_id,
+            patient_id=encode_patient_id(result.patient_id),
             visit_id=result.visit_id,
             summary=result.summary,
             generated_at=result.generated_at,

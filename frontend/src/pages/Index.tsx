@@ -55,6 +55,7 @@ const Index = () => {
   const [showTranscriptProcessing, setShowTranscriptProcessing] = useState<boolean>(false);
   const [transcriptProcessingStatus, setTranscriptProcessingStatus] = useState<string>("Processing transcript...");
   const [showPostVisitProcessing, setShowPostVisitProcessing] = useState<boolean>(false);
+  const [isWalkInPatient, setIsWalkInPatient] = useState<boolean>(false);
 
   // Recording state
   const [recording, setRecording] = useState<boolean>(false);
@@ -100,6 +101,8 @@ const Index = () => {
     const q = params.get("q");
     const v = params.get("v");
     const done = params.get("done");
+    const walkin = params.get("walkin");
+    
     if (q && q.trim()) {
       setCurrentQuestion(q);
       setShowStartScreen(false);
@@ -116,6 +119,16 @@ const Index = () => {
       setIsComplete(true);
       setShowStartScreen(false);
     }
+    
+    // Check if this is a walk-in patient
+    if (walkin === "true") {
+      setIsWalkInPatient(true);
+      // For walk-in patients, skip the intake form and go directly to tabs
+      setIsComplete(true);
+      setShowStartScreen(false);
+      setIsInitialized(true);
+    }
+    
     if (patientId && !v) {
       const storedV = localStorage.getItem(`visit_${patientId}`);
       if (storedV) setVisitId(storedV);
@@ -915,8 +928,13 @@ const Index = () => {
                   </svg>
                 </div>
                 <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                  {COPY.summary.complete}
+                  {isWalkInPatient ? "Walk-in Patient Ready" : COPY.summary.complete}
                 </h2>
+                {isWalkInPatient && (
+                  <p className="text-gray-600 mb-4">
+                    Patient registration complete. You can now proceed with the consultation workflow.
+                  </p>
+                )}
                 
               </div>
 
@@ -932,25 +950,27 @@ const Index = () => {
               )}
 
               <div className="space-y-3">
-                <button
-                  onClick={() => setShowSummaryView(true)}
-                  className="w-full bg-sky-600 text-white py-3 px-4 rounded-md hover:bg-sky-700 transition-colors font-medium flex items-center justify-center gap-2"
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+                {!isWalkInPatient && (
+                  <button
+                    onClick={() => setShowSummaryView(true)}
+                    className="w-full bg-sky-600 text-white py-3 px-4 rounded-md hover:bg-sky-700 transition-colors font-medium flex items-center justify-center gap-2"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                    />
-                  </svg>
-                  1. View Pre-Visit Summary
-                </button>
+                    <svg
+                      className="w-5 h-5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                      />
+                    </svg>
+                    1. View Pre-Visit Summary
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     if (hasTranscript) {
@@ -966,17 +986,20 @@ const Index = () => {
                       : 'bg-indigo-600 text-white hover:bg-indigo-700'
                   }`}
                 >
-                  {hasTranscript ? '2. Transcript Already Uploaded' : '2. Upload Transcript'}
+                  {hasTranscript ? `${isWalkInPatient ? '1' : '2'}. Transcript Already Uploaded` : `${isWalkInPatient ? '1' : '2'}. Upload Transcript`}
                 </button>
                 
                 <button
                   onClick={() => {
                     if (!patientId || !visitId) return;
-                    window.location.href = `/post-visit/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`;
+                    const postVisitRoute = isWalkInPatient 
+                      ? `/walk-in-post-visit/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`
+                      : `/post-visit/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`;
+                    window.location.href = postVisitRoute;
                   }}
                   className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 transition-colors font-medium"
                 >
-                  View Post Visit Summary
+                  {isWalkInPatient ? '5' : '6'}. View Post Visit Summary
                 </button>
                 
                 <button
@@ -1003,7 +1026,7 @@ const Index = () => {
                   }}
                   className="w-full bg-violet-600 text-white py-3 px-4 rounded-md hover:bg-violet-700 transition-colors font-medium"
                 >
-                  3. View Transcript
+                  {isWalkInPatient ? '2' : '3'}. View Transcript
                 </button>
                 
                 <button
@@ -1015,7 +1038,10 @@ const Index = () => {
                     
                     const effectiveVisitId = visitId || (patientId ? localStorage.getItem(`visit_${patientId}`) : null);
                     if (patientId && effectiveVisitId) {
-                      window.location.href = `/vitals/${encodeURIComponent(patientId)}/${encodeURIComponent(effectiveVisitId)}`;
+                      const vitalsRoute = isWalkInPatient 
+                        ? `/walk-in-vitals/${encodeURIComponent(patientId)}/${encodeURIComponent(effectiveVisitId)}`
+                        : `/vitals/${encodeURIComponent(patientId)}/${encodeURIComponent(effectiveVisitId)}`;
+                      window.location.href = vitalsRoute;
                     } else {
                       alert('Missing visit information. Please start intake again.');
                     }
@@ -1027,7 +1053,7 @@ const Index = () => {
                       : 'bg-amber-600 text-white hover:bg-amber-700'
                   }`}
                 >
-                  {hasVitals ? '4. Vitals Already Filled' : '4. Fill Vitals'}
+                  {hasVitals ? `${isWalkInPatient ? '3' : '4'}. Vitals Already Filled` : `${isWalkInPatient ? '3' : '4'}. Fill Vitals`}
                 </button>
                 
                 <button
@@ -1041,14 +1067,17 @@ const Index = () => {
                         body: JSON.stringify({ patient_id: patientId, visit_id: visitId })
                       });
                       // Navigate to SOAP viewer route if available, else fetch and inline show
-                      window.location.href = `/soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`;
+                      const soapRoute = isWalkInPatient 
+                        ? `/walk-in-soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`
+                        : `/soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`;
+                      window.location.href = soapRoute;
                     } catch (e) {
                       alert('Failed to generate SOAP note. Please try again after transcript is ready.');
                     }
                   }}
                   className="w-full bg-rose-600 text-white py-3 px-4 rounded-md hover:bg-rose-700 transition-colors font-medium"
                 >
-                  5. View SOAP Summary
+                  {isWalkInPatient ? '4' : '5'}. View SOAP Summary
                 </button>
 
                 {/* Create Post-Visit Summary */}
@@ -1148,7 +1177,7 @@ const Index = () => {
                 {/* Step 8: Register New Patient */}
                 <button
                   onClick={() =>
-                    (window.location.href = "/patient-registration")
+                    (window.location.href = "/walk-in-registration")
                   }
                   className="w-full bg-slate-700 text-white py-3 px-4 rounded-md hover:bg-slate-800 transition-colors font-medium"
                 >

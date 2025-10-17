@@ -52,7 +52,7 @@ const App: React.FC = () => {
         <Route path="/post-visit/:patientId/:visitId" element={<PostVisitSummary />} />
         
         {/* Walk-in specific routes */}
-        <Route path="/walk-in-vitals/:patientId/:visitId" element={<WalkInVitals />} />
+        <Route path="/walk-in-vitals/:patientId/:visitId" element={<VitalsForm />} />
         <Route path="/walk-in-soap/:patientId/:visitId" element={<WalkInSoap />} />
         <Route path="/walk-in-post-visit/:patientId/:visitId" element={<WalkInPostVisit />} />
         <Route path="/audio" element={<AudioManagement />} />
@@ -90,8 +90,8 @@ const PatientRegistrationPage: React.FC = () => {
 // Walk-in Registration Page Component
 const WalkInRegistrationPage: React.FC = () => {
   const handlePatientCreated = (patientId: string, visitId: string) => {
-    // Navigate to walk-in transcription page with proper URL encoding
-    window.location.href = `/walk-in/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`;
+    // Navigate to unified tabs page with walk-in flag
+    window.location.href = `/intake/${encodeURIComponent(patientId)}?v=${encodeURIComponent(visitId)}&walkin=true`;
   };
 
   const handleBack = () => {

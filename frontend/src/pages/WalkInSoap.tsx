@@ -53,11 +53,15 @@ const WalkInSoap: React.FC = () => {
     setError("");
     
     try {
-      const response = await fetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/soap`, {
+      const response = await fetch(`${BACKEND_BASE_URL}/notes/soap/generate`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
+        body: JSON.stringify({
+          patient_id: patientId,
+          visit_id: visitId
+        })
       });
 
       if (!response.ok) {
@@ -65,8 +69,15 @@ const WalkInSoap: React.FC = () => {
         throw new Error(`Failed to generate SOAP: ${response.status} - ${errorData}`);
       }
 
-      const soap = await response.json();
-      setSoapData(soap);
+      // After generating, fetch the SOAP data
+      const soapResponse = await fetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/soap`, {
+        headers: { Accept: "application/json" },
+      });
+
+      if (soapResponse.ok) {
+        const soap = await soapResponse.json();
+        setSoapData(soap);
+      }
 
       // Refresh workflow steps after generating SOAP
       try {
@@ -84,7 +95,7 @@ const WalkInSoap: React.FC = () => {
   };
 
   const handleBack = () => {
-    navigate(`/vitals/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
+    navigate(`/walk-in-vitals/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
   };
 
   const handleNext = () => {
@@ -96,7 +107,7 @@ const WalkInSoap: React.FC = () => {
   };
 
   const handleViewVitals = () => {
-    navigate(`/vitals/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
+    navigate(`/walk-in-vitals/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
   };
 
   return (

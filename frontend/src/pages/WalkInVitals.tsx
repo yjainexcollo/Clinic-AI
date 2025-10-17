@@ -10,6 +10,8 @@ const WalkInVitals: React.FC = () => {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [workflowInfo, setWorkflowInfo] = useState<any>(null);
+  const [showPostVisitPopup, setShowPostVisitPopup] = useState(false);
+  const [generatingPostVisit, setGeneratingPostVisit] = useState(false);
 
   const [vitals, setVitals] = useState({
     bloodPressure: "",
@@ -86,12 +88,25 @@ const WalkInVitals: React.FC = () => {
     setError("");
     
     try {
+      // Convert vitals to the format expected by the backend
+      const vitalsPayload = {
+        bloodPressure: vitals.bloodPressure,
+        heartRate: vitals.heartRate,
+        temperature: vitals.temperature,
+        respiratoryRate: vitals.respiratoryRate,
+        oxygenSaturation: vitals.oxygenSaturation,
+        weight: vitals.weight,
+        height: vitals.height,
+        bmi: vitals.bmi,
+        notes: vitals.notes
+      };
+
       const response = await fetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/vitals`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(vitals),
+        body: JSON.stringify(vitalsPayload),
       });
 
       if (!response.ok) {
@@ -109,10 +124,24 @@ const WalkInVitals: React.FC = () => {
         console.error("Error refreshing workflow steps:", error);
       }
 
-      // Auto-navigate to SOAP generation after 2 seconds
-      setTimeout(() => {
-        navigate(`/walk-in-soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
-      }, 2000);
+      // Automatically generate SOAP after vitals are submitted
+      try {
+        console.log("Auto-generating SOAP after vitals submission...");
+        const soapResponse = await fetch(`${BACKEND_BASE_URL}/notes/soap/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ patient_id: patientId, visit_id: visitId })
+        });
+        
+        if (soapResponse.ok) {
+          console.log("SOAP generation initiated successfully");
+        } else {
+          console.error("SOAP generation failed:", soapResponse.status, await soapResponse.text());
+        }
+      } catch (soapError) {
+        console.error("Failed to auto-generate SOAP:", soapError);
+        // Don't show error to user, just log it
+      }
 
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save vitals");
@@ -123,6 +152,44 @@ const WalkInVitals: React.FC = () => {
 
   const handleBack = () => {
     navigate(`/transcribe/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
+  };
+
+  const handleGeneratePostVisitSummary = async () => {
+    setGeneratingPostVisit(true);
+    try {
+      const response = await fetch(`${BACKEND_BASE_URL}/patients/summary/postvisit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patient_id: patientId,
+          visit_id: visitId
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to generate post-visit summary: ${response.status}`);
+      }
+
+      // Show success popup
+      setShowPostVisitPopup(true);
+      
+      // Refresh workflow steps
+      try {
+        const stepsResponse = await workflowService.getAvailableSteps(visitId);
+        setWorkflowInfo(stepsResponse);
+      } catch (error) {
+        console.error("Error refreshing workflow steps:", error);
+      }
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to generate post-visit summary");
+    } finally {
+      setGeneratingPostVisit(false);
+    }
+  };
+
+  const handleViewPostVisitSummary = () => {
+    navigate(`/walk-in-post-visit/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
   };
 
   return (
@@ -307,7 +374,7 @@ const WalkInVitals: React.FC = () => {
           {success && (
             <div className="p-3 bg-green-50 border border-green-200 rounded-md">
               <p className="text-sm text-green-800">
-                Vitals saved successfully! Redirecting to SOAP generation...
+                Vitals saved successfully! SOAP summary has been automatically generated.
               </p>
             </div>
           )}
@@ -325,6 +392,31 @@ const WalkInVitals: React.FC = () => {
         </form>
       </div>
 
+      {/* Action Buttons - Show after vitals are saved */}
+      {success && (
+        <div className="mt-6 bg-white p-6 rounded-lg border border-gray-200">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Next Steps</h3>
+          <div className="flex gap-4">
+            <button
+              onClick={handleGeneratePostVisitSummary}
+              disabled={generatingPostVisit}
+              className="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+            >
+              {generatingPostVisit ? "Generating..." : "Generate Post Visit Summary"}
+            </button>
+            
+            {workflowInfo?.available_steps?.includes("post_visit_summary") && (
+              <button
+                onClick={handleViewPostVisitSummary}
+                className="px-6 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 font-medium"
+              >
+                View Post Visit Summary
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Workflow Information */}
       <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
         <h3 className="text-sm font-medium text-blue-800 mb-2">Walk-in Workflow Information</h3>
@@ -333,6 +425,40 @@ const WalkInVitals: React.FC = () => {
           This streamlined process ensures efficient care for walk-in patients.
         </p>
       </div>
+
+      {/* Post Visit Summary Success Popup */}
+      {showPostVisitPopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 text-center">
+            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Post Visit Summary Generated Successfully!</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              The post-visit summary has been created and is ready for review.
+            </p>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={() => setShowPostVisitPopup(false)}
+                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  setShowPostVisitPopup(false);
+                  handleViewPostVisitSummary();
+                }}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+              >
+                View Summary
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

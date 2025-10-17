@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { getSoapNote, generateSoapNote, storeVitals, getVitals, VitalsData } from "../services/patientService";
 import { useLanguage } from "../contexts/LanguageContext";
+import { workflowService } from "../services/workflowService";
 
 // VitalsData interface is imported from patientService
 
@@ -14,6 +15,8 @@ const VitalsForm: React.FC = () => {
   const [generatingSoap, setGeneratingSoap] = useState(false);
   const [bmi, setBmi] = useState<number | null>(null);
   const [alreadySubmitted, setAlreadySubmitted] = useState(false);
+  const [isWalkInPatient, setIsWalkInPatient] = useState(false);
+  const [workflowInfo, setWorkflowInfo] = useState<any>(null);
 
   const [vitals, setVitals] = useState<VitalsData>({
     systolic: "",
@@ -34,6 +37,31 @@ const VitalsForm: React.FC = () => {
     painScore: "",
     notes: "",
   });
+
+  // Detect workflow type and fetch workflow info
+  useEffect(() => {
+    const fetchWorkflowInfo = async () => {
+      if (!visitId) return;
+      
+      try {
+        const stepsResponse = await workflowService.getAvailableSteps(visitId);
+        setWorkflowInfo(stepsResponse);
+        
+        // Determine if this is a walk-in patient based on available steps
+        if (stepsResponse.available_steps.includes("vitals")) {
+          setIsWalkInPatient(true);
+        } else {
+          setIsWalkInPatient(false);
+        }
+      } catch (error) {
+        console.error("Error fetching workflow info:", error);
+        // Default to scheduled workflow if we can't determine
+        setIsWalkInPatient(false);
+      }
+    };
+
+    fetchWorkflowInfo();
+  }, [visitId]);
 
   // Calculate BMI when height and weight change
   useEffect(() => {
@@ -235,7 +263,11 @@ const VitalsForm: React.FC = () => {
           const s = await getSoapNote(patientId, visitId);
           if (s && (s as any).subjective !== undefined) {
             setGeneratingSoap(false);
-            navigate(`/soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
+            // Navigate to correct SOAP route based on workflow type
+            const soapRoute = isWalkInPatient 
+              ? `/walk-in-soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`
+              : `/soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`;
+            navigate(soapRoute);
             return;
           }
         } catch {}
@@ -244,8 +276,11 @@ const VitalsForm: React.FC = () => {
           setTimeout(() => poll(attempt + 1), delay);
         } else {
           setGeneratingSoap(false);
-          // Fall back to intake complete if SOAP not ready
-      navigate(`/intake/${patientId}?v=${visitId}&done=1`);
+          // Navigate to correct SOAP route based on workflow type
+          const soapRoute = isWalkInPatient 
+            ? `/walk-in-soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`
+            : `/soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`;
+          navigate(soapRoute);
         }
       };
       poll();
@@ -257,16 +292,31 @@ const VitalsForm: React.FC = () => {
   };
 
   const handleCancel = () => {
-    navigate(`/intake/${patientId}?v=${visitId}&done=1`);
+    if (isWalkInPatient) {
+      navigate(`/transcribe/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
+    } else {
+      navigate(`/intake/${patientId}?v=${visitId}&done=1`);
+    }
   };
 
   return (
     <div className="max-w-4xl mx-auto p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">{t('vitals.title')}</h1>
-        <p className="text-sm text-gray-600 mt-2">
-          {t('vitals.patient_visit', { patientId, visitId })}
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">
+              {isWalkInPatient ? "Walk-in Vitals Form" : t('vitals.title')}
+            </h1>
+            <p className="text-sm text-gray-600 mt-2">
+              {t('vitals.patient_visit', { patientId, visitId })}
+            </p>
+          </div>
+          {isWalkInPatient && (
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+              Walk-in Workflow
+            </span>
+          )}
+        </div>
         {generatingSoap && (
           <p className="mt-2 text-sm text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-3 py-2 inline-block">
             {t('vitals.generating_soap')}
@@ -278,6 +328,19 @@ const VitalsForm: React.FC = () => {
           </p>
         )}
       </div>
+
+      {/* Workflow Status for Walk-in Patients */}
+      {isWalkInPatient && workflowInfo && (
+        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+          <h3 className="text-sm font-medium text-green-800 mb-2">Current Workflow Status</h3>
+          <p className="text-sm text-green-700">
+            <strong>Current Step:</strong> Vitals Form
+          </p>
+          <p className="text-sm text-green-700">
+            <strong>Next Steps:</strong> SOAP Generation → Post-Visit Summary
+          </p>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-8">
         {/* Blood Pressure Section */}

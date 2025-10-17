@@ -72,8 +72,11 @@ async def create_walk_in_visit(
         use_case = CreateWalkInVisitUseCase(patient_repo, visit_repo)
         response = await use_case.execute(use_case_request)
         
+        # Encrypt patient_id for consistency with scheduled flow
+        from ...core.utils.crypto import encode_patient_id
+        
         return CreateWalkInVisitResponseSchema(
-            patient_id=response.patient_id,
+            patient_id=encode_patient_id(response.patient_id),
             visit_id=response.visit_id,
             workflow_type=response.workflow_type,
             status=response.status,
