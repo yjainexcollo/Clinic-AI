@@ -6,8 +6,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 import logging
+import os
 
 from .api.routers import health, patients, notes, workflow
 from .api.routers import doctor as doctor_router
@@ -89,8 +90,8 @@ def create_app() -> FastAPI:
         title="Clinic-AI Intake Assistant",
         description="AI-powered clinical intake system for small and mid-sized clinics",
         version=settings.app_version,
-        docs_url="/docs" if settings.debug else None,
-        redoc_url="/redoc" if settings.debug else None,
+        docs_url="/docs",  # Always enable docs
+        redoc_url="/redoc",  # Always enable redoc
         lifespan=lifespan,
     )
 
@@ -202,7 +203,8 @@ async def root():
         "version": settings.app_version,
         "environment": settings.app_env,
         "status": "running",
-        "docs": "/docs" if settings.debug else "disabled",
+        "docs": "/docs",
+        "swagger_yaml": "/swagger.yaml",
         "endpoints": {
             "health": "/health",
             "register_patient": "POST /patients/",
@@ -237,3 +239,20 @@ async def root():
             "audio_stats": "GET /audio/stats/summary",
         },
     }
+
+
+@app.get("/swagger.yaml")
+async def get_swagger_yaml():
+    """Serve the custom Swagger YAML file."""
+    swagger_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "swagger.yaml")
+    if os.path.exists(swagger_path):
+        return FileResponse(
+            path=swagger_path,
+            media_type="application/x-yaml",
+            filename="swagger.yaml"
+        )
+    else:
+        return JSONResponse(
+            status_code=404,
+            content={"error": "Swagger file not found"}
+        )
