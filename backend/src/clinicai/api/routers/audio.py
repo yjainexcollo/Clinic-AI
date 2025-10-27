@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query, Response, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
+from datetime import datetime
 import logging
 import io
 
@@ -138,18 +139,22 @@ async def list_audio_dialogues(
     patient_id: Optional[str] = Query(None, description="Filter by patient ID"),
     visit_id: Optional[str] = Query(None, description="Filter by visit ID"),
     audio_type: Optional[str] = Query(None, description="Filter by audio type (adhoc, visit)"),
+    start_date: Optional[datetime] = Query(None, description="Filter by start date (ISO format)"),
+    end_date: Optional[datetime] = Query(None, description="Filter by end date (ISO format)"),
     limit: int = Query(50, ge=1, le=100, description="Number of dialogues to return"),
     offset: int = Query(0, ge=0, description="Number of dialogues to skip"),
 ):
     """List structured dialogues for audio files instead of full metadata."""
     try:
-        logger.info(f"Listing audio dialogues: patient_id={patient_id}, visit_id={visit_id}, audio_type={audio_type}, limit={limit}, offset={offset}")
+        logger.info(f"Listing audio dialogues: patient_id={patient_id}, visit_id={visit_id}, audio_type={audio_type}, start_date={start_date}, end_date={end_date}, limit={limit}, offset={offset}")
         
         # Get dialogue data
         dialogue_data = await audio_repo.get_audio_dialogue_list(
             patient_id=patient_id,
             visit_id=visit_id,
             audio_type=audio_type,
+            start_date=start_date,
+            end_date=end_date,
             limit=limit,
             offset=offset,
         )

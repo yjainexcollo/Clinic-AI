@@ -249,6 +249,8 @@ class AudioService {
     patient_id?: string;
     visit_id?: string;
     audio_type?: string;
+    start_date?: string;
+    end_date?: string;
     limit?: number;
     offset?: number;
   } = {}): Promise<AudioDialogueListResponse> {
@@ -257,6 +259,8 @@ class AudioService {
     if (params.patient_id) searchParams.append('patient_id', params.patient_id);
     if (params.visit_id) searchParams.append('visit_id', params.visit_id);
     if (params.audio_type) searchParams.append('audio_type', params.audio_type);
+    if (params.start_date) searchParams.append('start_date', params.start_date);
+    if (params.end_date) searchParams.append('end_date', params.end_date);
     if (params.limit) searchParams.append('limit', params.limit.toString());
     if (params.offset) searchParams.append('offset', params.offset.toString());
 

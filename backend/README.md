@@ -520,4 +520,7 @@ For support and questions:
 
 ---
 
-**Built with ❤️ for better healthcare through AI**
+**Built with ❤️ for better healthcare through AI**# Azure deployment fix
+
+# Trigger deployment with Service Principal
+# Force fresh deployment

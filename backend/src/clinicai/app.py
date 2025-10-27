@@ -16,6 +16,10 @@ from .api.routers import transcription as transcription_router
 from .api.routers import audio as audio_router
 from .core.config import get_settings
 from .domain.errors import DomainError
+from .core.hipaa_audit import get_audit_logger
+from .middleware.hipaa_middleware import HIPAAAuditMiddleware
+from .middleware.performance_middleware import PerformanceMiddleware
+from .observability.azure_monitor import get_azure_monitor
 import asyncio
 
 
@@ -27,6 +31,15 @@ async def lifespan(app: FastAPI):
     print(f"🚀 Starting Clinic-AI Intake Assistant v{settings.app_version}")
     print(f"📊 Environment: {settings.app_env}")
     print(f"🔧 Debug mode: {settings.debug}")
+    
+    # Initialize Azure Application Insights (before database to catch all events)
+    try:
+        azure_monitor = get_azure_monitor()
+        print("✅ Azure Monitor initialized")
+    except Exception as e:
+        print(f"⚠️  Azure Monitor initialization failed: {e}")
+        logging.error(f"Azure Monitor failed to initialize: {e}")
+    
     # Initialize database connection (MongoDB + Beanie)
     try:
         from beanie import init_beanie  # type: ignore
@@ -73,6 +86,19 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"❌ Database connection failed: {e}")
         raise
+
+    # Initialize HIPAA audit logger
+    try:
+        audit_logger = get_audit_logger()
+        await audit_logger.initialize(
+            mongo_uri=mongo_uri,
+            db_name=db_name
+        )
+        print("✅ HIPAA Audit Logger initialized")
+    except Exception as e:
+        print(f"⚠️  HIPAA Audit Logger initialization failed: {e}")
+        # Don't fail startup, but log the error
+        logging.error(f"HIPAA Audit Logger failed to initialize: {e}")
 
     # Whisper warm-up disabled to reduce startup memory footprint
 
@@ -126,6 +152,12 @@ def create_app() -> FastAPI:
         max_age=600,
         expose_headers=["*"],  # Expose all headers to client
     )
+    
+    # Add HIPAA audit middleware
+    app.add_middleware(HIPAAAuditMiddleware)
+    
+    # Add performance tracking middleware
+    app.add_middleware(PerformanceMiddleware)
     
     # Add request logging middleware for debugging
     @app.middleware("http")

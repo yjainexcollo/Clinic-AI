@@ -40,111 +40,6 @@ servers:
 
 paths:
 
-  /audio/dialogue:
-    get:
-      summary: List Audio Dialogues
-      description: Get structured dialogues for audio files instead of full metadata
-      operationId: list_audio_dialogues
-      tags:
-        - Audio
-      parameters:
-        - name: patient_id
-          in: query
-          required: false
-          description: Filter by patient ID
-          schema:
-            type: string
-        - name: visit_id
-          in: query
-          required: false
-          description: Filter by visit ID
-          schema:
-            type: string
-        - name: audio_type
-          in: query
-          required: false
-          description: Filter by audio type (adhoc, visit)
-          schema:
-            type: string
-            enum: [adhoc, visit]
-        - name: limit
-          in: query
-          required: false
-          description: Number of dialogues to return
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 100
-            default: 50
-        - name: offset
-          in: query
-          required: false
-          description: Number of dialogues to skip
-          schema:
-            type: integer
-            minimum: 0
-            default: 0
-      responses:
-        '200':
-          description: List of audio dialogues with structured conversation data
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  dialogues:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        audio_id:
-                          type: string
-                          description: Unique audio file ID
-                        filename:
-                          type: string
-                          description: Original filename
-                        duration_seconds:
-                          type: number
-                          description: Audio duration in seconds
-                        patient_id:
-                          type: string
-                          description: Patient ID if linked to a patient
-                        visit_id:
-                          type: string
-                          description: Visit ID if linked to a visit
-                        adhoc_id:
-                          type: string
-                          description: Adhoc transcript ID if linked to adhoc transcript
-                        audio_type:
-                          type: string
-                          description: Type of audio (adhoc, visit, or other)
-                        created_at:
-                          type: string
-                          format: date-time
-                          description: Creation timestamp
-                        structured_dialogue:
-                          type: array
-                          description: Structured conversation turns
-                          items:
-                            type: object
-                            additionalProperties:
-                              type: string
-                  total_count:
-                    type: integer
-                    description: Total number of audio files
-                  limit:
-                    type: integer
-                    description: Number of items per page
-                  offset:
-                    type: integer
-                    description: Number of items skipped
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
   /patients/:
     post:
       summary: Register New Patient
@@ -577,6 +472,162 @@ paths:
                 $ref: '#/components/schemas/PostVisitSummaryResponse'
         '404':
           description: Patient, visit, or summary not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /workflow/walk-in/create-visit:
+    post:
+      summary: Create Walk-In Visit
+      description: Create a walk-in visit for patients without intake
+      operationId: create_walk_in_visit
+      tags:
+        - Workflow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWalkInVisitRequest'
+      responses:
+        '201':
+          description: Walk-in visit created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateWalkInVisitResponse'
+        '400':
+          description: Invalid request data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /workflow/visit/{visit_id}/available-steps:
+    get:
+      summary: Get Available Workflow Steps
+      description: Get available workflow steps for a visit based on its workflow type and status
+      operationId: get_available_workflow_steps
+      tags:
+        - Workflow
+      parameters:
+        - name: visit_id
+          in: path
+          required: true
+          description: Visit ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Available workflow steps
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  visit_id:
+                    type: string
+                    description: Visit ID
+                  workflow_type:
+                    type: string
+                    description: Type of workflow
+                  current_status:
+                    type: string
+                    description: Current visit status
+                  available_steps:
+                    type: array
+                    items:
+                      type: string
+                    description: List of available workflow steps
+        '404':
+          description: Visit not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /workflow/visits/walk-in:
+    get:
+      summary: List Walk-In Visits
+      description: List walk-in visits with pagination
+      operationId: list_walk_in_visits
+      tags:
+        - Workflow
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Number of visits to return
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 100
+        - name: offset
+          in: query
+          required: false
+          description: Number of visits to skip
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: List of walk-in visits
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  visits:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        visit_id:
+                          type: string
+                          description: Visit ID
+                        patient_id:
+                          type: string
+                          description: Patient ID
+                        workflow_type:
+                          type: string
+                          description: Workflow type
+                        status:
+                          type: string
+                          description: Visit status
+                        created_at:
+                          type: string
+                          format: date-time
+                          description: Creation timestamp
+                        updated_at:
+                          type: string
+                          format: date-time
+                          description: Last update timestamp
+                  limit:
+                    type: integer
+                    description: Number of items per page
+                  offset:
+                    type: integer
+                    description: Number of items skipped
+                  count:
+                    type: integer
+                    description: Number of items returned
+        '500':
+          description: Internal server error
           content:
             application/json:
               schema:
@@ -1321,6 +1372,52 @@ components:
           type: string
           format: date-time
 
+    CreateWalkInVisitRequest:
+      type: object
+      required:
+        - name
+        - mobile
+      properties:
+        name:
+          type: string
+          description: Patient name
+          example: "John Doe"
+        mobile:
+          type: string
+          description: Patient mobile number
+          example: "+1234567890"
+        age:
+          type: integer
+          description: Patient age
+          example: 35
+        gender:
+          type: string
+          description: Patient gender
+          example: "male"
+
+    CreateWalkInVisitResponse:
+      type: object
+      properties:
+        patient_id:
+          type: string
+          description: Patient ID
+          example: "pat_abc123def456"
+        visit_id:
+          type: string
+          description: Visit ID
+          example: "vis_xyz789uvw012"
+        workflow_type:
+          type: string
+          description: Workflow type
+          example: "walk_in"
+        status:
+          type: string
+          description: Visit status
+          example: "walk_in_patient"
+        message:
+          type: string
+          description: Response message
+          example: "Walk-in visit created successfully"
 
     ErrorResponse:
       type: object
@@ -1353,5 +1450,5 @@ tags:
     description: Patient management and intake
   - name: Notes
     description: Medical notes, transcripts, and SOAP notes
-  - name: Audio
-    description: Audio file management and dialogue retrieval
+  - name: Workflow
+    description: Workflow management for different visit types

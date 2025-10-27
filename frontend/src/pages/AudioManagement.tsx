@@ -220,6 +220,9 @@ const AudioManagement: React.FC = () => {
                               </span>
                             )}
                           </div>
+                          <p className="text-xs text-gray-400 mt-1">
+                            {new Date(dialogue.created_at).toLocaleString()}
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -264,7 +267,7 @@ const AudioManagement: React.FC = () => {
                   <MessageSquare className="h-5 w-5" />
                   {selectedDialogue.filename}
                 </CardTitle>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <Badge variant="secondary">
                     {audioService.getAudioTypeDisplayName(selectedDialogue.audio_type)}
                   </Badge>
@@ -273,6 +276,9 @@ const AudioManagement: React.FC = () => {
                       {audioService.formatDuration(selectedDialogue.duration_seconds)}
                     </span>
                   )}
+                  <span className="text-sm text-gray-400">
+                    {new Date(selectedDialogue.created_at).toLocaleString()}
+                  </span>
                 </div>
               </CardHeader>
               <CardContent>

@@ -254,6 +254,8 @@ class AudioRepository:
         patient_id: Optional[str] = None,
         visit_id: Optional[str] = None,
         audio_type: Optional[str] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
         limit: int = 100,
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
@@ -271,6 +273,15 @@ class AudioRepository:
                 query["visit_id"] = visit_id
             if audio_type:
                 query["audio_type"] = audio_type
+            
+            # Add timestamp filtering
+            if start_date or end_date:
+                date_query = {}
+                if start_date:
+                    date_query["$gte"] = start_date
+                if end_date:
+                    date_query["$lte"] = end_date
+                query["created_at"] = date_query
                 
             audio_files = await AudioFileMongo.find(
                 query,
