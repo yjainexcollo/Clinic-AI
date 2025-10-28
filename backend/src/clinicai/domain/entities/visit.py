@@ -64,7 +64,7 @@ class IntakeSession:
         for qa in self.questions_asked:
             # Exact text match (case-insensitive)
             if qa.question.lower().strip() == question.lower().strip():
-                    raise DuplicateQuestionError(question)
+                raise DuplicateQuestionError(question)
 
         question_id = QuestionId.generate()
         question_answer = QuestionAnswer(
@@ -144,7 +144,7 @@ class IntakeSession:
 @dataclass
 class TranscriptionSession:
     """Transcription session data for Step-03."""
-
+    
     audio_file_path: Optional[str] = None
     transcript: Optional[str] = None
     transcription_status: str = "pending"  # pending, processing, completed, failed
@@ -160,7 +160,7 @@ class TranscriptionSession:
 @dataclass
 class SoapNote:
     """SOAP note data for Step-03."""
-
+    
     subjective: str
     objective: Dict[str, Any]
     assessment: str
@@ -518,14 +518,8 @@ class Visit:
 
     def store_soap_note(self, soap_data: Dict[str, Any]) -> None:
         """Store generated SOAP note."""
-        if self.is_walk_in_workflow():
-            # For walk-in patients, allow storing SOAP when vitals are completed
-            if self.status not in ["vitals_completed", "soap_pending", "soap_generation"]:
-                raise ValueError(f"Cannot store SOAP note. Current status: {self.status}")
-        else:
-            # For scheduled patients, use the original logic
-            if self.status != "soap_generation":
-                raise ValueError(f"Cannot store SOAP note. Current status: {self.status}")
+        if self.status != "soap_generation":
+            raise ValueError(f"Cannot store SOAP note. Current status: {self.status}")
         
         self.soap_note = SoapNote(
             subjective=soap_data.get("subjective", ""),
@@ -576,14 +570,7 @@ class Visit:
 
     def can_generate_soap(self) -> bool:
         """Check if SOAP can be generated."""
-        if self.is_walk_in_workflow():
-            # For walk-in patients, allow SOAP generation if vitals are completed
-            # Transcription is optional for walk-in patients (can be provided later)
-            status_allowed = self.status in ["vitals_completed", "soap_pending", "soap_generation"]
-            return status_allowed
-        else:
-            # For scheduled patients, use the original logic (requires transcription)
-            return self.status == "soap_generation" and self.is_transcription_complete()
+        return self.status == "soap_generation" and self.is_transcription_complete()
 
     def store_vitals(self, vitals_data: Dict[str, Any]) -> None:
         """Store vitals data for the visit."""

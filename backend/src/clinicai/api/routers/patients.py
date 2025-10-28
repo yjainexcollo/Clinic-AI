@@ -262,7 +262,7 @@ async def answer_intake_question(
                     internal_pid = form_patient_id
                 
                 # Store each image in database
-                from ...adapters.db.mongo.models.patient_m import MedicationImageMongo
+                from ....adapters.db.mongo.models.patient_m import MedicationImageMongo
                 for file in files:
                     if isinstance(file, UploadFile) and file.filename:
                         raw_ct = (file.content_type or "").lower()
@@ -431,7 +431,7 @@ async def upload_medication_images(
         
         logger.info("[WebhookImages] Incoming upload for patient_id=%s visit_id=%s", patient_id, visit_id)
         # Safely resolve patient ID (handles both encrypted and plain text)
-        from ...core.utils.patient_id_resolver import resolve_patient_id
+        from ....core.utils.patient_id_resolver import resolve_patient_id
         internal_patient_id = resolve_patient_id(patient_id, "patient endpoint")
         
         valid_types = {"image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "image/heif"}
@@ -463,8 +463,14 @@ async def upload_medication_images(
             except Exception:
                 pass
 
-        # Store each image in database
-        from ...adapters.db.mongo.models.patient_m import MedicationImageMongo
+        # Store each image using blob storage
+        from ....adapters.db.mongo.models.patient_m import MedicationImageMongo
+        from ....adapters.storage.azure_blob_service import get_azure_blob_service
+        from ....adapters.db.mongo.repositories.blob_file_repository import BlobFileRepository
+        
+        blob_service = get_azure_blob_service()
+        blob_repo = BlobFileRepository()
+        
         for i, image in enumerate(file_list):
             try:
                 # Validate content type
@@ -477,20 +483,47 @@ async def upload_medication_images(
                 # Read image data
                 content = await image.read()
                 
-                # Store DB record with image data
+                # Upload to blob storage
+                blob_info = await blob_service.upload_file(
+                    file_data=content,
+                    filename=image.filename or f"image_{i+1}",
+                    content_type=content_type,
+                    file_type="image",
+                    patient_id=str(internal_patient_id),
+                    visit_id=str(visit_id)
+                )
+                
+                # Create blob reference
+                blob_reference = await blob_repo.create_blob_reference(
+                    blob_path=blob_info["blob_path"],
+                    container_name=blob_info["container_name"],
+                    original_filename=image.filename or f"image_{i+1}",
+                    content_type=content_type,
+                    file_size=len(content),
+                    blob_url=blob_info["blob_url"],
+                    file_type="image",
+                    category="medication",
+                    patient_id=str(internal_patient_id),
+                    visit_id=str(visit_id)
+                )
+                
+                # Store DB record with blob reference
                 doc = MedicationImageMongo(
                     patient_id=str(internal_patient_id),
                     visit_id=str(visit_id),
-                    image_data=content,
                     content_type=content_type,
                     filename=image.filename or f"image_{i+1}",
+                    file_size=len(content),
+                    blob_reference_id=blob_reference.file_id,
                 )
                 inserted = await doc.insert()
                 
                 uploaded_images.append({
                     "id": str(getattr(inserted, "id", "")),
                     "filename": image.filename or f"image_{i+1}",
-                    "content_type": content_type
+                    "content_type": content_type,
+                    "blob_url": blob_info["blob_url"],
+                    "file_size": len(content)
                 })
                 logger.info("[WebhookImages] Stored image[%d] id=%s filename=%s", i, str(getattr(inserted, "id", "")), image.filename or f"image_{i+1}")
                 
@@ -786,7 +819,7 @@ async def get_pre_visit_summary(
         summary_data = visit.get_pre_visit_summary()
 
         # Attach any uploaded medication images
-        from ...adapters.db.mongo.models.patient_m import MedicationImageMongo
+        from ....adapters.db.mongo.models.patient_m import MedicationImageMongo
         docs = await MedicationImageMongo.find(
             MedicationImageMongo.patient_id == patient.patient_id.value,
             MedicationImageMongo.visit_id == visit.visit_id.value,

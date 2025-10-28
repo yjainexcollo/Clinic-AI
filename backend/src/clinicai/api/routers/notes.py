@@ -299,10 +299,7 @@ async def transcribe_audio(
         # Schedule background processing
         asyncio.create_task(_run_background())
 
-        # Encrypt patient_id for consistency with other endpoints
-        from ...core.utils.crypto import encode_patient_id
-        
-        return {"status": "queued", "patient_id": encode_patient_id(internal_patient_id), "visit_id": visit_id}
+        return {"status": "queued", "patient_id": internal_patient_id, "visit_id": visit_id}
 
     except HTTPException:
         # Reraise HTTPException directly
@@ -453,11 +450,6 @@ async def store_vitals(
         if not visit:
             raise VisitNotFoundError(payload.visit_id)
         visit.store_vitals(payload.vitals)
-        
-        # Update visit status for walk-in workflow
-        if visit.is_walk_in_workflow():
-            visit.complete_vitals()
-        
         await patient_repo.save(patient)
         return {"success": True, "message": "Vitals stored", "vitals_id": f"{payload.visit_id}:vitals"}
     except PatientNotFoundError as e:
@@ -556,11 +548,45 @@ async def get_transcript(
         from ...domain.value_objects.patient_id import PatientId
         import urllib.parse
         
-        # Safely resolve patient ID (handles both encrypted and plain text)
-        from ...core.utils.patient_id_resolver import resolve_patient_id
+        # Find patient (decode opaque id from client)
+        # URL-decode first to restore any encoded '=' characters in Fernet tokens
+        decoded_path_param = urllib.parse.unquote(patient_id)
         
-        internal_patient_id = resolve_patient_id(patient_id, "transcript status endpoint")
-        patient_id_obj = PatientId(internal_patient_id)
+        # Check if this looks like an internal patient ID (format: name_mobile)
+        # If it contains underscore and the part after underscore is all digits, treat as internal ID
+        if '_' in decoded_path_param:
+            parts = decoded_path_param.split('_', 1)
+            if len(parts) == 2 and parts[1].isdigit():
+                # This looks like an internal patient ID, skip decryption
+                internal_patient_id = decoded_path_param
+                logger.debug(f"Using internal patient ID: {internal_patient_id}")
+            else:
+                # Try to decrypt as opaque token
+                try:
+                    internal_patient_id = decode_patient_id(decoded_path_param)
+                except Exception as e:
+                    logger.warning(f"Failed to decode patient_id '{decoded_path_param}': {e}")
+                    internal_patient_id = decoded_path_param
+        else:
+            # Try to decrypt as opaque token
+            try:
+                internal_patient_id = decode_patient_id(decoded_path_param)
+            except Exception as e:
+                logger.warning(f"Failed to decode patient_id '{decoded_path_param}': {e}")
+                internal_patient_id = decoded_path_param
+        try:
+            patient_id_obj = PatientId(internal_patient_id)
+        except ValueError as ve:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": "INVALID_PATIENT_ID",
+                    "message": str(ve),
+                    "details": {
+                        "hint": "Provide a valid opaque patient_id token or an internal id like {name}_{phone}",
+                    },
+                },
+            )
         patient = await patient_repo.find_by_id(patient_id_obj)
         if not patient:
             raise PatientNotFoundError(patient_id)
@@ -642,10 +668,15 @@ async def get_soap_note(
     """Get SOAP note for a visit."""
     try:
         from ...domain.value_objects.patient_id import PatientId
-        from ...core.utils.patient_id_resolver import resolve_patient_id
+        from ...core.utils.crypto import decode_patient_id
+        import urllib.parse
 
-        # Safely resolve patient ID (handles both encrypted and plain text)
-        internal_patient_id = resolve_patient_id(patient_id, "SOAP endpoint")
+        # Support opaque patient_id tokens from clients
+        decoded_param = urllib.parse.unquote(patient_id)
+        try:
+            internal_patient_id = decode_patient_id(decoded_param)
+        except Exception:
+            internal_patient_id = decoded_param
 
         # Find patient
         patient_id_obj = PatientId(internal_patient_id)
@@ -731,12 +762,27 @@ async def structure_dialogue(
 ) -> Dict[str, Any]:
     """Clean PII and structure transcript into alternating Doctor/Patient JSON using LLM."""
     try:
-        # Safely resolve patient ID (handles both encrypted and plain text)
+        # Resolve patient and transcript
         from ...domain.value_objects.patient_id import PatientId
-        from ...core.utils.patient_id_resolver import resolve_patient_id
+        from urllib.parse import unquote
 
-        internal_patient_id = resolve_patient_id(patient_id, "dialogue structure endpoint")
-        pid = PatientId(internal_patient_id)
+        decoded = unquote(patient_id)
+        try:
+            internal_patient_id = decode_patient_id(decoded)
+        except Exception:
+            internal_patient_id = decoded
+
+        try:
+            pid = PatientId(internal_patient_id)
+        except ValueError as ve:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": "INVALID_PATIENT_ID",
+                    "message": str(ve),
+                    "details": {},
+                },
+            )
 
         patient = await patient_repo.find_by_id(pid)
         if not patient:

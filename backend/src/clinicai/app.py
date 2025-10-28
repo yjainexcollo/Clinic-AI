@@ -19,7 +19,7 @@ from .domain.errors import DomainError
 from .core.hipaa_audit import get_audit_logger
 from .middleware.hipaa_middleware import HIPAAAuditMiddleware
 from .middleware.performance_middleware import PerformanceMiddleware
-from .observability.azure_monitor import get_azure_monitor
+# Azure Monitor removed - was causing issues
 import asyncio
 
 
@@ -32,13 +32,14 @@ async def lifespan(app: FastAPI):
     print(f"📊 Environment: {settings.app_env}")
     print(f"🔧 Debug mode: {settings.debug}")
     
-    # Initialize Azure Application Insights (before database to catch all events)
-    try:
-        azure_monitor = get_azure_monitor()
-        print("✅ Azure Monitor initialized")
-    except Exception as e:
-        print(f"⚠️  Azure Monitor initialization failed: {e}")
-        logging.error(f"Azure Monitor failed to initialize: {e}")
+    # Azure Monitor removed - was causing issues
+    # try:
+    #     azure_monitor = get_azure_monitor()
+    #     print("✅ Azure Monitor initialized")
+    # except Exception as e:
+    #     print(f"⚠️  Azure Monitor initialization failed: {e}")
+    #     logging.error(f"Azure Monitor failed to initialize: {e}")
+    
     
     # Initialize database connection (MongoDB + Beanie)
     try:
@@ -55,6 +56,7 @@ async def lifespan(app: FastAPI):
             DoctorPreferencesMongo,
             AudioFileMongo,
         )
+        from .adapters.db.mongo.models.blob_file_reference import BlobFileReference
 
         # Use configured URI
         mongo_uri = settings.database.uri
@@ -80,12 +82,22 @@ async def lifespan(app: FastAPI):
         db = client[db_name]
         await init_beanie(
             database=db,
-            document_models=[PatientMongo, VisitMongo, MedicationImageMongo, AdhocTranscriptMongo, DoctorPreferencesMongo, AudioFileMongo],
+            document_models=[PatientMongo, VisitMongo, MedicationImageMongo, AdhocTranscriptMongo, DoctorPreferencesMongo, AudioFileMongo, BlobFileReference],
         )
         print("✅ Database connection established")
     except Exception as e:
         print(f"❌ Database connection failed: {e}")
         raise
+
+    # Initialize Azure Blob Storage
+    try:
+        from .adapters.storage.azure_blob_service import get_azure_blob_service
+        blob_service = get_azure_blob_service()
+        await blob_service.ensure_container_exists()
+        print("✅ Azure Blob Storage initialized")
+    except Exception as e:
+        print(f"⚠️  Azure Blob Storage initialization failed: {e}")
+        logging.error(f"Azure Blob Storage failed to initialize: {e}")
 
     # Initialize HIPAA audit logger
     try:

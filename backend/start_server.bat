@@ -3,7 +3,7 @@ echo Starting Clinic-AI Backend Server...
 echo.
 
 REM Set environment variables
-set ENCRYPTION_KEY=f-4POHOQjHFQzaUIL20fCppAMg69aFmLMuaAD9CUuHc=
+set ENCRYPTION_KEY=mZH9wEs_8IGLAkQawgWw31YCDZ6X2LJIWD-w9ZL-iP8=
 set OPENAI_API_KEY=sk-placeholder-key-for-development
 set DEBUG=true
 
