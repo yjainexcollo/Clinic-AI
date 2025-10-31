@@ -33,20 +33,36 @@ const AudioManagement: React.FC = () => {
         offset: page * limit,
       });
       
-      // Filter by search term if provided
+      // Validate response structure
+      if (!response || !Array.isArray(response.dialogues)) {
+        console.error('Invalid response structure:', response);
+        setAudioDialogues([]);
+        setTotalCount(0);
+        return;
+      }
+      
+      // Filter by search term if provided (client-side filtering for now)
+      // NOTE: This only filters the current page results. For proper pagination with search,
+      // search should be implemented on the backend.
       let filteredDialogues = response.dialogues;
       if (search.trim()) {
-        filteredDialogues = response.dialogues.filter(dialogue => 
-          dialogue.filename.toLowerCase().includes(search.toLowerCase()) ||
-          dialogue.audio_id.toLowerCase().includes(search.toLowerCase())
-        );
+        filteredDialogues = response.dialogues.filter(dialogue => {
+          if (!dialogue) return false;
+          const filename = dialogue.filename?.toLowerCase() || '';
+          const audioId = dialogue.audio_id?.toLowerCase() || '';
+          const searchLower = search.toLowerCase();
+          return filename.includes(searchLower) || audioId.includes(searchLower);
+        });
       }
       
       setAudioDialogues(filteredDialogues);
-      setTotalCount(response.total_count);
+      setTotalCount(response.total_count || 0);
       setCurrentPage(page);
     } catch (err) {
+      console.error('Error loading audio dialogues:', err);
       setError(err instanceof Error ? err.message : 'Failed to load audio dialogues');
+      setAudioDialogues([]);
+      setTotalCount(0);
     } finally {
       setLoading(false);
     }
@@ -214,11 +230,11 @@ const AudioManagement: React.FC = () => {
                                 {audioService.formatDuration(dialogue.duration_seconds)}
                               </span>
                             )}
-                            {dialogue.structured_dialogue && (
-                              <span className="text-xs text-green-600">
-                                {dialogue.structured_dialogue.length} turns
-                              </span>
-                            )}
+                             {dialogue.structured_dialogue && Array.isArray(dialogue.structured_dialogue) && dialogue.structured_dialogue.length > 0 && (
+                               <span className="text-xs text-green-600">
+                                 {dialogue.structured_dialogue.length} turns
+                               </span>
+                             )}
                           </div>
                           <p className="text-xs text-gray-400 mt-1">
                             {new Date(dialogue.created_at).toLocaleString()}
@@ -282,9 +298,9 @@ const AudioManagement: React.FC = () => {
                 </div>
               </CardHeader>
               <CardContent>
-                {selectedDialogue.structured_dialogue && selectedDialogue.structured_dialogue.length > 0 ? (
-                  <TranscriptView content={JSON.stringify(selectedDialogue.structured_dialogue)} />
-                ) : (
+                 {selectedDialogue.structured_dialogue && Array.isArray(selectedDialogue.structured_dialogue) && selectedDialogue.structured_dialogue.length > 0 ? (
+                   <TranscriptView content={JSON.stringify(selectedDialogue.structured_dialogue)} />
+                 ) : (
                   <div className="text-center py-8 text-gray-500">
                     <MessageSquare className="h-12 w-12 mx-auto mb-4 text-gray-400" />
                     <p>No structured dialogue available</p>

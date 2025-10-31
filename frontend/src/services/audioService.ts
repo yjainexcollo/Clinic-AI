@@ -2,6 +2,8 @@
  * Audio service for managing audio files
  */
 
+import { extractApiResponse, ApiResponse, isErrorResponse } from '../utils/apiResponse';
+
 export interface AudioFile {
   audio_id: string;
   filename: string;
@@ -90,12 +92,26 @@ class AudioService {
 
       clearTimeout(timeoutId);
 
+      const json = await response.json();
+
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+        // Handle error responses
+        if (isErrorResponse(json)) {
+          throw new Error(json.message || json.error || 'API request failed');
+        }
+        throw new Error(json.message || `HTTP error! status: ${response.status}`);
       }
 
-      return response.json();
+      // If response is ApiResponse wrapped, extract the data
+      if (json && typeof json === 'object' && 'data' in json && 'success' in json) {
+        if (!json.success) {
+          throw new Error(json.message || 'API request failed');
+        }
+        return json.data as T;
+      }
+      
+      // Otherwise return the JSON directly (for non-standardized endpoints)
+      return json as T;
     } catch (error) {
       clearTimeout(timeoutId);
       if (error instanceof Error && error.name === 'AbortError') {
@@ -275,6 +291,19 @@ class AudioService {
 
     const endpoint = `/audio/dialogue${queryString ? `?${queryString}` : ''}`;
     const result = await this.request<AudioDialogueListResponse>(endpoint);
+    
+    // Ensure dialogues is always an array
+    if (!result.dialogues || !Array.isArray(result.dialogues)) {
+      result.dialogues = [];
+    }
+    
+    // Ensure each dialogue has structured_dialogue as an array (never undefined/null)
+    result.dialogues = result.dialogues.map(dialogue => ({
+      ...dialogue,
+      structured_dialogue: Array.isArray(dialogue.structured_dialogue) 
+        ? dialogue.structured_dialogue 
+        : []
+    }));
     
     // Cache the result
     this.setCachedData(cacheKey, result);
