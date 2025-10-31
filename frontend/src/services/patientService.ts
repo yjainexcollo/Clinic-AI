@@ -6,10 +6,19 @@ const API_ENDPOINT =
 function normalizeBaseUrl(input?: string): string {
   let url = (input || "").trim();
   if (!url) return "https://clinicai-backend-x7v3qgkqra-uc.a.run.app";
-  // Add protocol if missing
+  
+  // Add protocol if missing - prefer HTTPS unless localhost
   if (!/^https?:\/\//i.test(url)) {
-    url = `http://${url}`;
+    // Use HTTP only for localhost, HTTPS for everything else
+    const isLocalhost = url.includes('localhost') || url.includes('127.0.0.1');
+    url = isLocalhost ? `http://${url}` : `https://${url}`;
   }
+  
+  // If HTTP is used for non-localhost, upgrade to HTTPS (fixes Mixed Content issues)
+  if (url.startsWith('http://') && !url.includes('localhost') && !url.includes('127.0.0.1')) {
+    url = url.replace('http://', 'https://');
+  }
+  
   // Map 0.0.0.0 to localhost for browser requests
   url = url.replace(/\b0\.0\.0\.0\b/g, "localhost");
   // Drop trailing slashes

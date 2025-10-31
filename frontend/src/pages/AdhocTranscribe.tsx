@@ -3,6 +3,7 @@ import { BACKEND_BASE_URL } from "../services/patientService";
 import { TranscriptView } from "../components/TranscriptView";
 import ActionPlanModal from "../components/ActionPlanModal";
 import { FileText } from "lucide-react";
+import { isErrorResponse } from "../utils/apiResponse";
 
 const AdhocTranscribe: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
@@ -167,61 +168,37 @@ const AdhocTranscribe: React.FC = () => {
       
       console.log("Response status:", res.status, res.statusText);
       
-      if (!res.ok) {
-        let msg = `Transcription failed ${res.status}`;
-        try {
-          const j = await res.json();
-          console.log("Error response:", j);
-          if (j?.detail) {
-            if (typeof j.detail === 'string') msg += `: ${j.detail}`;
-            else if (j.detail?.message) msg += `: ${j.detail.message}`;
-            else msg += `: ${JSON.stringify(j.detail)}`;
-          }
-        } catch {
-          try { 
-            const text = await res.text();
-            console.log("Error text:", text);
-            msg += `: ${text}`; 
-          } catch {}
-        }
-        throw new Error(msg);
+      // Parse standardized API response
+      const responseData = await res.json();
+      
+      if (!res.ok || isErrorResponse(responseData)) {
+        const error = isErrorResponse(responseData) 
+          ? responseData 
+          : { message: responseData.message || `HTTP ${res.status}: ${res.statusText}` };
+        throw new Error(error.message || `Transcription failed ${res.status}`);
       }
-      const data = await res.json();
+      
+      // Extract data from ApiResponse wrapper
+      const data = responseData.data || responseData;
       const text = data?.transcript || "";
       const receivedAdhocId = data?.adhoc_id as string | undefined;
+      const structuredDialogue = data?.structured_dialogue as Array<Record<string, string>> | undefined;
       
       setTranscript(text);
       setAdhocId(receivedAdhocId || "");
 
-      // Structure dialogue via ad-hoc structure endpoint
-      if (text) {
-        setStatus("Structuring dialogue…");
-        try {
-          console.log("Calling structure endpoint with adhoc_id:", receivedAdhocId);
-          const sres = await fetch(`${BACKEND_BASE_URL}/transcription/structure`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ transcript: text, adhoc_id: receivedAdhocId }),
-          });
-          console.log("Structure endpoint response status:", sres.status);
-          if (sres.ok) {
-            const sdata = await sres.json();
-            console.log("Structure endpoint response data:", sdata);
-            const dlg = sdata?.dialogue;
-            if (Array.isArray(dlg)) {
-              console.log("Setting dialogue with", dlg.length, "turns");
-              setDialogue(dlg);
-            } else {
-              console.log("No valid dialogue array in response");
-            }
-          } else {
-            console.error("Structure endpoint failed:", sres.status, await sres.text());
-          }
-        } catch (error) {
-          console.error("Structure endpoint error:", error);
-        }
+      // Structured dialogue is now automatically included in the response (visit-based flow)
+      if (structuredDialogue && Array.isArray(structuredDialogue) && structuredDialogue.length > 0) {
+        console.log("Setting dialogue with", structuredDialogue.length, "turns (automatically processed)");
+        setDialogue(structuredDialogue);
+        setStatus("Completed. Transcript processed and structured automatically.");
+      } else if (text) {
+        // If structured dialogue is not available, show raw transcript
+        console.log("Structured dialogue not available, showing raw transcript");
+        setStatus("Completed. Showing raw transcript (structured dialogue processing may have failed).");
+      } else {
+        setStatus("Completed.");
       }
-      setStatus("Completed.");
     } catch (e: any) {
       setStatus(e?.message || "Upload failed");
     } finally {

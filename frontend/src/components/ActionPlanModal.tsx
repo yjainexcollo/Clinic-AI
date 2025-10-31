@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, FileText, Clock, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { parseApiResponse, isErrorResponse } from '../utils/apiResponse';
+import { BACKEND_BASE_URL } from '../services/patientService';
 
 interface ActionPlan {
   action: string[];
@@ -29,7 +31,8 @@ interface ActionPlanModalProps {
   adhocId: string;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://clinicai-backend-x7v3qgkqra-uc.a.run.app';
+// Use the same BACKEND_BASE_URL as other services to ensure consistency
+const API_BASE_URL = BACKEND_BASE_URL;
 
 // Debug: Log the API base URL
 console.log('ActionPlanModal API_BASE_URL:', API_BASE_URL);
@@ -52,8 +55,12 @@ const ActionPlanModal: React.FC<ActionPlanModalProps> = ({ isOpen, onClose, adho
       const url = `${API_BASE_URL}/transcription/adhoc/${adhocId}/action-plan/status`;
       console.log('ActionPlanModal fetching from URL:', url);
       const response = await fetch(url);
-      if (response.ok) {
-        const data = await response.json();
+      
+      const responseData = await response.json();
+      
+      if (response.ok && !isErrorResponse(responseData)) {
+        // Extract data from ApiResponse wrapper
+        const data = responseData.data || responseData;
         setStatus(data.status);
         
         if (data.status === 'completed' && data.has_action_plan) {
@@ -65,10 +72,15 @@ const ActionPlanModal: React.FC<ActionPlanModalProps> = ({ isOpen, onClose, adho
         } else if (data.status === 'failed') {
           setError(data.error_message || 'Action plan generation failed');
         }
+      } else {
+        const error = isErrorResponse(responseData)
+          ? responseData.message
+          : 'Failed to check action plan status';
+        setError(error);
       }
     } catch (err) {
       console.error('Error checking action plan status:', err);
-      setError('Failed to check action plan status');
+      setError(err instanceof Error ? err.message : 'Failed to check action plan status');
     }
   };
 
@@ -76,8 +88,11 @@ const ActionPlanModal: React.FC<ActionPlanModalProps> = ({ isOpen, onClose, adho
     const poll = async () => {
       try {
         const response = await fetch(`${API_BASE_URL}/transcription/adhoc/${adhocId}/action-plan/status`);
-        if (response.ok) {
-          const data = await response.json();
+        const responseData = await response.json();
+        
+        if (response.ok && !isErrorResponse(responseData)) {
+          // Extract data from ApiResponse wrapper
+          const data = responseData.data || responseData;
           setStatus(data.status);
           
           if (data.status === 'completed' && data.has_action_plan) {
@@ -88,10 +103,15 @@ const ActionPlanModal: React.FC<ActionPlanModalProps> = ({ isOpen, onClose, adho
             // Continue polling
             setTimeout(poll, 2000);
           }
+        } else {
+          const error = isErrorResponse(responseData)
+            ? responseData.message
+            : 'Failed to check action plan status';
+          setError(error);
         }
       } catch (err) {
         console.error('Error polling action plan status:', err);
-        setError('Failed to check action plan status');
+        setError(err instanceof Error ? err.message : 'Failed to check action plan status');
       }
     };
     
@@ -101,8 +121,11 @@ const ActionPlanModal: React.FC<ActionPlanModalProps> = ({ isOpen, onClose, adho
   const fetchActionPlan = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/transcription/adhoc/${adhocId}/action-plan`);
-      if (response.ok) {
-        const data = await response.json();
+      const responseData = await response.json();
+      
+      if (response.ok && !isErrorResponse(responseData)) {
+        // Extract data from ApiResponse wrapper
+        const data = responseData.data || responseData;
         setActionPlan(data.action_plan);
         setStatus('completed');
         setStatusMessage('Action and Plan generated successfully!');
@@ -112,12 +135,14 @@ const ActionPlanModal: React.FC<ActionPlanModalProps> = ({ isOpen, onClose, adho
         setStatusMessage('Generating Action and Plan...');
         setTimeout(pollForCompletion, 2000);
       } else {
-        const errorData = await response.json();
-        setError(errorData.message || 'Failed to fetch action plan');
+        const error = isErrorResponse(responseData)
+          ? responseData.message
+          : responseData.message || 'Failed to fetch action plan';
+        setError(error);
       }
     } catch (err) {
       console.error('Error fetching action plan:', err);
-      setError('Failed to fetch action plan');
+      setError(err instanceof Error ? err.message : 'Failed to fetch action plan');
     }
   };
 
@@ -137,22 +162,27 @@ const ActionPlanModal: React.FC<ActionPlanModalProps> = ({ isOpen, onClose, adho
         body: JSON.stringify({ adhoc_id: adhocId }),
       });
 
-      if (response.ok) {
-        const data = await response.json();
+      const responseData = await response.json();
+
+      if (response.ok && !isErrorResponse(responseData)) {
+        // Extract data from ApiResponse wrapper
+        const data = responseData.data || responseData;
         setStatus(data.status);
-        setStatusMessage(data.message);
+        setStatusMessage(data.message || responseData.message);
         
         if (data.status === 'processing') {
           // Start polling
           pollForCompletion();
         }
       } else {
-        const errorData = await response.json();
-        setError(errorData.message || 'Failed to start action plan generation');
+        const error = isErrorResponse(responseData)
+          ? responseData.message
+          : responseData.message || 'Failed to start action plan generation';
+        setError(error);
       }
     } catch (err) {
       console.error('Error generating action plan:', err);
-      setError('Failed to start action plan generation');
+      setError(err instanceof Error ? err.message : 'Failed to start action plan generation');
     } finally {
       setIsGenerating(false);
     }
