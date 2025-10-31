@@ -27,11 +27,13 @@ from ...domain.errors import (
     PatientNotFoundError,
     VisitNotFoundError,
 )
-from ..deps import PatientRepositoryDep, TranscriptionServiceDep, AudioRepositoryDep, SoapServiceDep
+from ..deps import PatientRepositoryDep, VisitRepositoryDep, TranscriptionServiceDep, AudioRepositoryDep, SoapServiceDep
 from ...core.utils.crypto import decode_patient_id
 from ..schemas import ErrorResponse
 from ...core.config import get_settings
 from ...adapters.db.mongo.models.patient_m import AdhocTranscriptMongo
+from ..schemas.common import ApiResponse, ErrorResponse
+from ..utils.responses import ok, fail
 
 router = APIRouter(prefix="/notes", tags=["notes"])
 logger = logging.getLogger("clinicai")
@@ -97,6 +99,7 @@ async def test_cors():
 async def transcribe_audio(
     request: Request,
     patient_repo: PatientRepositoryDep,
+    visit_repo: VisitRepositoryDep,
     transcription_service: TranscriptionServiceDep,
     audio_repo: AudioRepositoryDep,
     background: BackgroundTasks,
@@ -186,7 +189,11 @@ async def transcribe_audio(
                     detail={"error": "PATIENT_NOT_FOUND", "message": f"Patient {internal_patient_id} not found", "details": {}},
                 )
             
-            visit = patient.get_visit_by_id(visit_id)
+            from ...domain.value_objects.visit_id import VisitId
+            visit_id_obj = VisitId(visit_id)
+            visit = await visit_repo.find_by_patient_and_visit_id(
+                internal_patient_id, visit_id_obj
+            )
             if not visit:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
@@ -199,7 +206,7 @@ async def transcribe_audio(
 
             # Start transcription session (no longer using file path)
             visit.start_transcription(None)  # No file path needed
-            await patient_repo.save(patient)
+            await visit_repo.save(visit)
             logger.info(f"Started transcription session for patient {internal_patient_id}, visit {visit_id}")
             
         except HTTPException:
@@ -254,7 +261,7 @@ async def transcribe_audio(
                         language=language,
                     )
                 
-                use_case = TranscribeAudioUseCase(patient_repo, transcription_service)
+                use_case = TranscribeAudioUseCase(patient_repo, visit_repo, transcription_service)
                 
                 logger.info("Executing transcription use case...")
                 result = await use_case.execute(req)
@@ -275,10 +282,14 @@ async def transcribe_audio(
                     from clinicai.domain.value_objects.patient_id import PatientId
                     patient = await patient_repo.find_by_id(PatientId(internal_patient_id))
                     if patient:
-                        visit = patient.get_visit_by_id(visit_id)
+                        from ...domain.value_objects.visit_id import VisitId
+                        visit_id_obj = VisitId(visit_id)
+                        visit = await visit_repo.find_by_patient_and_visit_id(
+                            internal_patient_id, visit_id_obj
+                        )
                         if visit and visit.transcription_session:
                             visit.fail_transcription(str(e))
-                            await patient_repo.save(patient)
+                            await visit_repo.save(visit)
                             logger.info(f"Marked transcription as failed for patient {internal_patient_id}")
                 except Exception as db_error:
                     logger.error(f"Failed to mark transcription as failed in database: {db_error}")
@@ -326,6 +337,7 @@ async def generate_soap_note(
     http_request: Request,
     request: SoapGenerationRequest,
     patient_repo: PatientRepositoryDep,
+    visit_repo: VisitRepositoryDep,
     soap_service: SoapServiceDep,
 ):
     """
@@ -362,7 +374,7 @@ async def generate_soap_note(
         )
 
         # Execute use case
-        use_case = GenerateSoapNoteUseCase(patient_repo, soap_service)
+        use_case = GenerateSoapNoteUseCase(patient_repo, visit_repo, soap_service)
         result = await use_case.execute(decoded_request)
         
         return result
@@ -429,6 +441,7 @@ async def store_vitals(
     http_request: Request,
     payload: VitalsPayload,
     patient_repo: PatientRepositoryDep,
+    visit_repo: VisitRepositoryDep,
 ):
     """Store objective vitals for a visit."""
     try:
@@ -445,11 +458,15 @@ async def store_vitals(
         patient = await patient_repo.find_by_id(PatientId(internal_patient_id))
         if not patient:
             raise PatientNotFoundError(payload.patient_id)
-        visit = patient.get_visit_by_id(payload.visit_id)
+        from ...domain.value_objects.visit_id import VisitId
+        visit_id_obj = VisitId(payload.visit_id)
+        visit = await visit_repo.find_by_patient_and_visit_id(
+            internal_patient_id, visit_id_obj
+        )
         if not visit:
             raise VisitNotFoundError(payload.visit_id)
         visit.store_vitals(payload.vitals)
-        await patient_repo.save(patient)
+        await visit_repo.save(visit)
         return {"success": True, "message": "Vitals stored", "vitals_id": f"{payload.visit_id}:vitals"}
     except PatientNotFoundError as e:
         raise HTTPException(
@@ -485,6 +502,7 @@ async def get_vitals(
     patient_id: str,
     visit_id: str,
     patient_repo: PatientRepositoryDep,
+    visit_repo: VisitRepositoryDep,
 ) -> Dict[str, Any]:
     try:
         from ...domain.value_objects.patient_id import PatientId
@@ -496,7 +514,11 @@ async def get_vitals(
         patient = await patient_repo.find_by_id(PatientId(internal_patient_id))
         if not patient:
             raise PatientNotFoundError(patient_id)
-        visit = patient.get_visit_by_id(visit_id)
+        from ...domain.value_objects.visit_id import VisitId
+        visit_id_obj = VisitId(visit_id)
+        visit = await visit_repo.find_by_patient_and_visit_id(
+            internal_patient_id, visit_id_obj
+        )
         if not visit:
             raise VisitNotFoundError(visit_id)
         if not visit.vitals:
@@ -529,19 +551,15 @@ async def get_vitals(
 
 @router.get(
     "/{patient_id}/visits/{visit_id}/transcript",
-    response_model=TranscriptionSessionDTO,
+    response_model=ApiResponse[TranscriptionSessionDTO],
     status_code=status.HTTP_200_OK,
     responses={
-        202: {"description": "Transcript processing; client should retry after delay"},
-        404: {"model": ErrorResponse, "description": "Patient or visit not found"},
-        500: {"model": ErrorResponse, "description": "Internal server error"},
+        200: {"description": "Transcript returned"},
+        404: {"model": ErrorResponse, "description": "Transcript not found"},
+        422: {"model": ErrorResponse, "description": "Invalid input"},
     },
 )
-async def get_transcript(
-    patient_id: str,
-    visit_id: str,
-    patient_repo: PatientRepositoryDep,
-):
+async def get_transcript(request: Request, patient_id: str, visit_id: str, patient_repo: PatientRepositoryDep, visit_repo: VisitRepositoryDep):
     """Get transcript for a visit."""
     try:
         from ...domain.value_objects.patient_id import PatientId
@@ -591,7 +609,11 @@ async def get_transcript(
             raise PatientNotFoundError(patient_id)
 
         # Find visit
-        visit = patient.get_visit_by_id(visit_id)
+        from ...domain.value_objects.visit_id import VisitId
+        visit_id_obj = VisitId(visit_id)
+        visit = await visit_repo.find_by_patient_and_visit_id(
+            internal_patient_id, visit_id_obj
+        )
         if not visit:
             raise VisitNotFoundError(visit_id)
 
@@ -608,7 +630,7 @@ async def get_transcript(
         session = visit.transcription_session
 
         # Return transcript data including any stored structured dialogue
-        return TranscriptionSessionDTO(
+        return ok(request, data=TranscriptionSessionDTO(
             audio_file_path=session.audio_file_path,
             transcript=session.transcript,
             transcription_status=session.transcription_status,
@@ -618,7 +640,7 @@ async def get_transcript(
             audio_duration_seconds=session.audio_duration_seconds,
             word_count=session.word_count,
             structured_dialogue=getattr(session, "structured_dialogue", None),  # Return stored structured dialogue from database
-        )
+        ), message="Success")
 
     except PatientNotFoundError as e:
         raise HTTPException(
@@ -652,18 +674,14 @@ async def get_transcript(
 
 @router.get(
     "/{patient_id}/visits/{visit_id}/soap",
-    response_model=SoapNoteDTO,
+    response_model=ApiResponse[SoapNoteDTO],
     status_code=status.HTTP_200_OK,
     responses={
         404: {"model": ErrorResponse, "description": "Patient, visit, or SOAP note not found"},
         500: {"model": ErrorResponse, "description": "Internal server error"},
     },
 )
-async def get_soap_note(
-    patient_id: str,
-    visit_id: str,
-    patient_repo: PatientRepositoryDep,
-):
+async def get_soap_note(request: Request, patient_id: str, visit_id: str, patient_repo: PatientRepositoryDep, visit_repo: VisitRepositoryDep):
     """Get SOAP note for a visit."""
     try:
         from ...domain.value_objects.patient_id import PatientId
@@ -684,7 +702,11 @@ async def get_soap_note(
             raise PatientNotFoundError(internal_patient_id)
 
         # Find visit
-        visit = patient.get_visit_by_id(visit_id)
+        from ...domain.value_objects.visit_id import VisitId
+        visit_id_obj = VisitId(visit_id)
+        visit = await visit_repo.find_by_patient_and_visit_id(
+            internal_patient_id, visit_id_obj
+        )
         if not visit:
             raise VisitNotFoundError(visit_id)
 
@@ -701,7 +723,7 @@ async def get_soap_note(
 
         # Return SOAP note data
         soap = visit.soap_note
-        return SoapNoteDTO(
+        return ok(request, data=SoapNoteDTO(
             subjective=soap.subjective,
             objective=soap.objective,
             assessment=soap.assessment,
@@ -711,7 +733,7 @@ async def get_soap_note(
             generated_at=soap.generated_at.isoformat(),
             model_info=soap.model_info,
             confidence_score=soap.confidence_score
-        )
+        ), message="Success")
 
     except HTTPException:
         # Re-raise HTTPException directly (like 404 for SOAP note not found)
@@ -754,11 +776,7 @@ async def get_soap_note(
         500: {"model": ErrorResponse, "description": "Internal server error"},
     },
 )
-async def structure_dialogue(
-    patient_id: str,
-    visit_id: str,
-    patient_repo: PatientRepositoryDep,
-) -> Dict[str, Any]:
+async def structure_dialogue(request: Request, patient_id: str, visit_id: str, patient_repo: PatientRepositoryDep, visit_repo: VisitRepositoryDep) -> Dict[str, Any]:
     """Clean PII and structure transcript into alternating Doctor/Patient JSON using LLM."""
     try:
         # Resolve patient and transcript
@@ -787,7 +805,11 @@ async def structure_dialogue(
         if not patient:
             raise PatientNotFoundError(internal_patient_id)
 
-        visit = patient.get_visit_by_id(visit_id)
+        from ...domain.value_objects.visit_id import VisitId
+        visit_id_obj = VisitId(visit_id)
+        visit = await visit_repo.find_by_patient_and_visit_id(
+            internal_patient_id, visit_id_obj
+        )
         if not visit:
             raise VisitNotFoundError(visit_id)
         if not visit.transcription_session or not visit.transcription_session.transcript:
@@ -826,7 +848,7 @@ async def structure_dialogue(
                 logger.warning(f"Failed to save structured dialogue to database: {e}")
 
         logger.info(f"Returning dialogue with {len(normalized_dialogue)} turns")
-        return {"dialogue": normalized_dialogue}
+        return ok(request, data={"dialogue": normalized_dialogue}, message="Success")
 
 
     except PatientNotFoundError as e:
