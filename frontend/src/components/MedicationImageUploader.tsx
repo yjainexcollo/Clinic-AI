@@ -54,8 +54,58 @@ const MedicationImageUploader: React.FC<Props> = ({ patientId, visitId, title = 
 
   const onPick = (files: FileList | null) => {
     if (!files || files.length === 0) return;
+    
+    // Strict filtering: only allow specific image MIME types
+    const allowedTypes = [
+      'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 
+      'image/heic', 'image/heif', 'image/gif', 'image/bmp'
+    ];
+    
+    // Also check file extension as fallback (case-insensitive)
+    const allowedExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif', '.gif', '.bmp'];
+    
+    // Track rejected files for better error message
+    const rejectedFiles: string[] = [];
+    
+    const imageFiles = Array.from(files).filter(file => {
+      const fileType = (file.type || '').toLowerCase().trim();
+      const fileName = (file.name || '').toLowerCase();
+      
+      // Check if MIME type is in allowed list
+      const hasValidMimeType = fileType && allowedTypes.includes(fileType);
+      
+      // Check if file extension is in allowed list
+      const hasValidExtension = fileName && allowedExtensions.some(ext => fileName.endsWith(ext.toLowerCase()));
+      
+      // Only accept if MIME type matches allowed types (strict check)
+      // OR if MIME type is empty/missing but extension is valid (fallback for OS that don't set MIME type)
+      const isImage = hasValidMimeType || (hasValidExtension && (!fileType || fileType === ''));
+      
+      if (!isImage) {
+        rejectedFiles.push(file.name);
+      }
+      return isImage;
+    });
+    
+    // Show error if any files were rejected
+    if (rejectedFiles.length > 0) {
+      const fileList = rejectedFiles.length === 1 
+        ? rejectedFiles[0] 
+        : `${rejectedFiles.length} files`;
+      setError(`${fileList} rejected. Only image files (JPEG, PNG, WEBP, HEIC, GIF, BMP) are allowed.`);
+      setTimeout(() => setError(""), 5000);
+    }
+    
+    if (imageFiles.length === 0) {
+      // Clear the input so user can try again
+      if (inputRef.current) {
+        inputRef.current.value = '';
+      }
+      return;
+    }
+    
     // Stage locally; will be uploaded with the answer submission
-    const newItems: QueuedImage[] = Array.from(files).map((file) => ({
+    const newItems: QueuedImage[] = imageFiles.map((file) => ({
       id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2)}`,
       file,
       previewUrl: URL.createObjectURL(file),
@@ -140,9 +190,20 @@ const MedicationImageUploader: React.FC<Props> = ({ patientId, visitId, title = 
       <input
         ref={inputRef}
         type="file"
-        accept="image/*;capture=camera"
+        accept="image/jpeg,image/jpg,image/png,image/webp,image/heic,image/heif,image/gif,image/bmp"
         multiple
-        onChange={(e) => onPick(e.target.files)}
+        onChange={(e) => {
+          if (e.target && e.target.files) {
+            onPick(e.target.files);
+          }
+          // Clear input after processing to allow re-selection of same file
+          // This also ensures validation runs on next selection
+          setTimeout(() => {
+            if (inputRef.current) {
+              inputRef.current.value = '';
+            }
+          }, 100);
+        }}
         className="block w-full text-sm text-gray-700"
       />
 

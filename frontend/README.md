@@ -39,28 +39,20 @@ npm run deploy
 
 ## API Integration
 
-The application integrates with the intake webhook endpoint:
-- **Endpoint**: `https://n8n-excollo.azurewebsites.net/webhook/intake-dynamic-doctor`
-- **Method**: POST
-- **Content-Type**: application/json
+The application integrates with the backend FastAPI service:
+- **Backend URL**: Configured via `VITE_BACKEND_BASE_URL` environment variable
+- **Default**: `https://clinicai-backend-x7v3qgkqra-uc.a.run.app`
+- **All endpoints**: Use the backend FastAPI service directly
 
-### Request Format
-```json
-{
-  "session_id": "<uuid>",
-  "last_question": "<string>",
-  "last_answer": "<string>"
-}
-```
+### Patient Registration
+- **Endpoint**: `POST /patients/`
+- **Response**: Returns `patient_id`, `visit_id`, and `first_question`
 
-### Response Format
-```json
-{
-  "next_question": "<string|COMPLETE>",
-  "summary": "<string|null>",
-  "type": "text"
-}
-```
+### Intake Flow
+- **Endpoint**: `POST /patients/consultations/answer`
+- **Response**: Returns `next_question`, `is_complete`, `completion_percent`, etc.
+
+All n8n webhook integrations have been removed. The system now uses the backend FastAPI service exclusively.
 
 ## Configuration
 

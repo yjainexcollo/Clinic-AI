@@ -209,10 +209,14 @@ const SoapSummary: React.FC = () => {
   if (error) return <div className="p-4 text-red-600">{error}</div>;
   if (!soap) return <div className="p-4">{t('soap.no_data')}</div>;
 
-  const subj = (soap as any).soap?.subjective ?? soap.subjective;
-  const obj = (soap as any).soap?.objective ?? soap.objective;
-  const assess = (soap as any).soap?.assessment ?? soap.assessment;
-  const plan = (soap as any).soap?.plan ?? soap.plan;
+  // Extract SOAP data - handle both direct structure and wrapped in soap_note
+  const soapData = (soap as any).soap_note || (soap as any).soap || soap;
+  const subj = soapData?.subjective ?? soap?.subjective ?? null;
+  const obj = soapData?.objective ?? soap?.objective ?? null;
+  const assess = soapData?.assessment ?? soap?.assessment ?? null;
+  const plan = soapData?.plan ?? soap?.plan ?? null;
+  
+  console.log('SOAP data extracted:', { subj, obj, assess, plan, rawSoap: soap });
 
   return (
     <div className="max-w-4xl mx-auto p-4">

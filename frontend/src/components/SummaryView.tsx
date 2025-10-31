@@ -250,16 +250,53 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
                 <div className="mt-6">
                   <h4 className="text-sm font-semibold text-gray-800 mb-2">{language === 'sp' ? 'Imágenes de prescripción subidas' : 'Uploaded prescription images'}</h4>
                   <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
-                    {summaryData.medication_images.map((img) => (
-                      <div key={img.id} className="border rounded p-1 bg-gray-50">
-                        <img
-                          src={`${BACKEND_BASE_URL}/patients/${patientId}/visits/${visitId}/intake-images/${img.id}/content`}
-                          alt={img.filename}
-                          className="w-full h-24 object-cover rounded"
-                        />
-                        <div className="text-[11px] text-gray-600 mt-1 truncate" title={img.filename}>{img.filename}</div>
-                      </div>
-                    ))}
+                    {summaryData.medication_images.map((img) => {
+                      const imageUrl = `${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/intake-images/${encodeURIComponent(img.id)}/content`;
+                      console.log(`Loading medication image:`, { imgId: img.id, filename: img.filename, url: imageUrl });
+                      return (
+                        <div key={img.id} className="border rounded p-1 bg-gray-50">
+                          <img
+                            src={imageUrl}
+                            alt={img.filename}
+                            className="w-full h-24 object-cover rounded"
+                            onError={async (e) => {
+                              console.error(`Failed to load image ${img.id} (${img.filename})`);
+                              console.error(`Full URL: ${imageUrl}`);
+                              console.error(`Image details:`, img);
+                              
+                              // Try to fetch the image directly to see the actual error
+                              try {
+                                const response = await fetch(imageUrl);
+                                console.error(`Image fetch response:`, {
+                                  status: response.status,
+                                  statusText: response.statusText,
+                                  headers: Object.fromEntries(response.headers.entries())
+                                });
+                                const text = await response.text();
+                                console.error(`Response body (first 500 chars):`, text.substring(0, 500));
+                              } catch (fetchError) {
+                                console.error(`Failed to fetch image URL:`, fetchError);
+                              }
+                              
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                              // Show error placeholder
+                              const parent = target.parentElement;
+                              if (parent) {
+                                const errorDiv = document.createElement('div');
+                                errorDiv.className = 'w-full h-24 flex items-center justify-center bg-red-50 text-red-600 text-xs';
+                                errorDiv.textContent = 'Image not available';
+                                parent.appendChild(errorDiv);
+                              }
+                            }}
+                            onLoad={() => {
+                              console.log(`Successfully loaded image ${img.id}`);
+                            }}
+                          />
+                          <div className="text-[11px] text-gray-600 mt-1 truncate" title={img.filename}>{img.filename}</div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, useLocation } from "react-router-dom";
-import { intakeAPI, IntakeRequest, IntakeResponse } from "../api";
 import { answerIntakeBackend, editAnswerBackend, OCRQualityInfo, BACKEND_BASE_URL, uploadMedicationImages } from "../services/patientService";
 import { SessionManager } from "../utils/session";
 import { COPY } from "../copy";
@@ -11,6 +10,16 @@ import TranscriptView from "../components/TranscriptView";
 import MedicationImageUploader from "../components/MedicationImageUploader";
 import { LanguageToggle } from "../components/LanguageToggle";
 import { useLanguage } from "../contexts/LanguageContext";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../components/ui/alert-dialog";
 
 interface Question {
   text: string;
@@ -56,6 +65,8 @@ const Index = () => {
   const [transcriptProcessingStatus, setTranscriptProcessingStatus] = useState<string>("Processing transcript...");
   const [showPostVisitProcessing, setShowPostVisitProcessing] = useState<boolean>(false);
   const [isWalkInPatient, setIsWalkInPatient] = useState<boolean>(false);
+  const [showRefreshWarning, setShowRefreshWarning] = useState<boolean>(false);
+  const [isResettingSession, setIsResettingSession] = useState<boolean>(false);
 
   // Recording state
   const [recording, setRecording] = useState<boolean>(false);
@@ -94,6 +105,163 @@ const Index = () => {
   };
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const hasShownRefreshWarning = useRef<boolean>(false);
+
+  // Detect hard refresh (page reload) when intake is in progress
+  useEffect(() => {
+    if (!patientId || !visitId || isComplete || hasShownRefreshWarning.current) return;
+    
+    // Check if this is a hard refresh (page reload)
+    const navigationType = (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming)?.type;
+    const isHardRefresh = navigationType === 'reload';
+    
+    // Check if there are questions in progress
+    const hasQuestionsInProgress = questions.length > 0 || currentQuestion.trim() !== "";
+    
+    if (isHardRefresh && hasQuestionsInProgress) {
+      setShowRefreshWarning(true);
+      hasShownRefreshWarning.current = true;
+    }
+  }, [patientId, visitId, questions, currentQuestion, isComplete]);
+
+  // Reset intake session function
+  const resetIntakeSession = async () => {
+    if (!patientId || !visitId) return;
+    
+    setIsResettingSession(true);
+    try {
+      // Reset the intake session in backend
+      const resetResponse = await fetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/intake/reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (!resetResponse.ok) {
+        throw new Error('Failed to reset intake session');
+      }
+      
+      // Clear local state
+      setQuestions([]);
+      setCurrentQuestion("");
+      setCurrentAnswer("");
+      setCompletionPercent(0);
+      setIsComplete(false);
+      setIsInitialized(false);
+      
+      // After reset, fetch the first question from registration or use fallback
+      // Check if we have first_question stored from registration
+      const storedFirstQuestion = localStorage.getItem(`first_question_${patientId}`);
+      if (storedFirstQuestion) {
+        setCurrentQuestion(storedFirstQuestion);
+      } else {
+        // Fallback to a default question (same as registration)
+        const defaultQuestion = language === 'sp' 
+          ? "¿Por qué ha venido hoy? ¿Cuál es la principal preocupación con la que necesita ayuda?"
+          : "Why have you come in today? What is the main concern you want help with?";
+        setCurrentQuestion(defaultQuestion);
+      }
+      
+      // Also try to fetch intake status to see if backend has a pending question
+      try {
+        const statusResponse = await fetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/intake/status`, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' }
+        });
+        
+        if (statusResponse.ok) {
+          const statusData = await statusResponse.json();
+          const data = statusData.data || statusData;
+          
+          // If backend has a pending question, use that instead
+          if (data.pending_question && data.pending_question.trim()) {
+            setCurrentQuestion(data.pending_question);
+          }
+        }
+      } catch (statusError) {
+        // If status fetch fails, continue with the stored/default question
+        console.log('Could not fetch intake status, using stored/default question');
+      }
+      
+      // Mark as initialized and hide start screen
+      setIsInitialized(true);
+      setShowStartScreen(false);
+      setShowRefreshWarning(false);
+    } catch (error) {
+      console.error('Error resetting intake session:', error);
+      setError('Failed to reset intake session. Please try again.');
+    } finally {
+      setIsResettingSession(false);
+      setIsLoading(false);
+    }
+  };
+
+  // Restore intake session from backend when page loads with patientId and visitId
+  useEffect(() => {
+    const restoreIntakeSession = async () => {
+      if (!patientId) return;
+      
+      const params = new URLSearchParams(location.search);
+      const v = params.get("v");
+      const effectiveVisitId = v || localStorage.getItem(`visit_${patientId}`);
+      
+      if (!effectiveVisitId) return;
+      
+      // Don't restore if this is a hard refresh warning scenario (will be handled separately)
+      if (hasShownRefreshWarning.current) return;
+      
+      try {
+        const response = await fetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(effectiveVisitId)}/intake/status`, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' }
+        });
+
+        if (response.ok) {
+          const json = await response.json();
+          const data = json.data || json;
+
+          // Only restore if there's an active intake session with questions
+          if (data.intake_status === "in_progress" && data.questions_asked && data.questions_asked.length > 0) {
+            // Restore questions and answers
+            const restoredQuestions: Question[] = data.questions_asked.map((qa: any) => ({
+              text: qa.question,
+              answer: qa.answer
+            }));
+            setQuestions(restoredQuestions);
+
+            // Restore pending question or use the one from URL
+            const urlQuestion = params.get("q");
+            if (data.pending_question && data.pending_question.trim()) {
+              setCurrentQuestion(data.pending_question);
+            } else if (urlQuestion && urlQuestion.trim()) {
+              setCurrentQuestion(decodeURIComponent(urlQuestion));
+            }
+
+            // Restore completion status
+            if (data.intake_status === "completed") {
+              setIsComplete(true);
+            }
+
+            // Restore question count and completion percent
+            setCompletionPercent(data.total_questions && data.max_questions
+              ? Math.round((data.total_questions / data.max_questions) * 100)
+              : 0);
+
+            setVisitId(effectiveVisitId);
+            setShowStartScreen(false);
+            setIsInitialized(true);
+            
+            console.log(`[Index] Restored intake session: ${data.total_questions}/${data.max_questions} questions, pending: ${data.pending_question || 'none'}`);
+            return; // Early return since we restored from backend
+          }
+        }
+      } catch (e) {
+        console.error('Error restoring intake session:', e);
+        // Fall through to URL param handling
+      }
+    };
+
+    restoreIntakeSession();
+  }, [patientId, location.search]);
 
   // On mount, if q is present in URL, show it immediately and cache visit id
   useEffect(() => {
@@ -102,6 +270,10 @@ const Index = () => {
     const v = params.get("v");
     const done = params.get("done");
     const walkin = params.get("walkin");
+    
+    // Only handle URL params if we haven't already restored from backend
+    // (The restore effect above runs first)
+    if (isInitialized) return;
     
     if (q && q.trim()) {
       setCurrentQuestion(q);
@@ -138,7 +310,7 @@ const Index = () => {
       if (storedName) setPatientName(storedName);
       // Don't pre-select symptoms - let user choose from scratch
     }
-  }, [location.search]);
+  }, [location.search, isInitialized]);
 
   // Also load visitId and patient name when patientId changes (e.g., direct navigation)
   useEffect(() => {
@@ -201,9 +373,11 @@ const Index = () => {
         console.log(`Transcript check response: ${response.status} for patient ${patientId}, visit ${visitId}`);
         
         if (response.ok) {
-          const data = await response.json();
-          console.log('Transcript data:', data);
-          const hasApiTranscript = !!data.transcript || !!data.structured_dialogue;
+          const responseData = await response.json();
+          console.log('Transcript data:', responseData);
+          // Extract data from ApiResponse wrapper
+          const data = responseData.data || responseData;
+          const hasApiTranscript = !!data.transcript || (!!data.structured_dialogue && Array.isArray(data.structured_dialogue) && data.structured_dialogue.length > 0);
           console.log(`Has transcript: ${hasApiTranscript}, transcript length: ${data.transcript?.length || 0}, dialogue turns: ${data.structured_dialogue?.length || 0}`);
           setHasTranscript(hasApiTranscript);
           // If API has transcript but no localStorage flag, set the flag
@@ -286,36 +460,10 @@ const Index = () => {
 
       console.log("Initializing session with patient ID:", patientId);
 
-      // Test connection first
-      const canConnect = await intakeAPI.testConnection();
-      console.log("Connection test result:", canConnect);
-
-      const sessionId = SessionManager.getSessionId();
-      console.log("Session ID:", sessionId);
-
-      // Get symptoms from localStorage if available
-      const symptomsData = patientId ? localStorage.getItem(`symptoms_${patientId}`) : null;
-      let symptoms = null;
-      if (symptomsData) {
-        try {
-          symptoms = JSON.parse(symptomsData);
-        } catch (e) {
-          // Fallback for old string format
-          symptoms = symptomsData;
-        }
-      }
-      console.log("Retrieved symptoms:", symptoms);
-
-      // If we already have first question via q param, skip initialization call
-      if (!currentQuestion) {
-        const request: IntakeRequest = {
-          session_id: sessionId,
-          patient_id: patientId,
-          initial_symptoms: symptoms || undefined,
-        };
-        const response = await intakeAPI.sendIntakeData(request);
-        handleResponse(response);
-      }
+      // NOTE: Removed n8n API calls - intake is now handled entirely by the backend FastAPI service
+      // The backend generates the first question during patient registration, so no separate initialization is needed
+      // If we have a question from URL params, it's already set. Otherwise, the first question comes from backend registration.
+      
       setIsInitialized(true);
       setRetryCount(0); // Reset retry count on success
       setShowStartScreen(false); // Hide start screen after successful initialization
@@ -330,7 +478,7 @@ const Index = () => {
     }
   };
 
-  const handleResponse = (response: IntakeResponse & { completion_percent?: number, allows_image_upload?: boolean }) => {
+  const handleResponse = (response: { next_question?: string | null; summary?: string | null; completion_percent?: number; allows_image_upload?: boolean }) => {
     console.log("Backend response:", response);
     if (typeof response.completion_percent === "number") {
       setCompletionPercent(Math.max(0, Math.min(100, response.completion_percent)));
@@ -429,7 +577,6 @@ const Index = () => {
       handleResponse({
         next_question: response.next_question || "",
         summary: undefined,
-        type: "text",
         completion_percent: response.completion_percent,
         allows_image_upload: response.allows_image_upload,
       });
@@ -478,7 +625,6 @@ const Index = () => {
       handleResponse({
         next_question: response.next_question || "",
         summary: undefined,
-        type: "text",
         completion_percent: response.completion_percent,
       });
     } catch (err) {
@@ -637,7 +783,38 @@ const Index = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-medical-primary-light to-gray-50 flex flex-col">
+    <>
+      {/* Refresh Warning Dialog */}
+      <AlertDialog open={showRefreshWarning} onOpenChange={setShowRefreshWarning}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {language === 'sp' ? '⚠️ Advertencia de Actualización' : '⚠️ Refresh Warning'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {language === 'sp' 
+                ? 'Si continúa con la actualización, todos sus datos de admisión se perderán y el formulario comenzará desde el principio. ¿Está seguro de que desea continuar?'
+                : 'If you continue with refresh, all your intake data will be lost and the form will start from the beginning. Are you sure you want to continue?'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setShowRefreshWarning(false)}>
+              {language === 'sp' ? 'Cancelar' : 'Cancel'}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={resetIntakeSession}
+              disabled={isResettingSession}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {isResettingSession 
+                ? (language === 'sp' ? 'Reiniciando...' : 'Resetting...')
+                : (language === 'sp' ? 'Sí, reiniciar' : 'Yes, Reset')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <div className="min-h-screen bg-gradient-to-br from-medical-primary-light to-gray-50 flex flex-col">
       {/* Header */}
       <header className="bg-white shadow-sm border-b border-gray-100">
         <div className="max-w-4xl mx-auto px-4 py-6">
@@ -971,6 +1148,8 @@ const Index = () => {
                     1. View Pre-Visit Summary
                   </button>
                 )}
+                
+                {/* Step 2: Upload Transcript */}
                 <button
                   onClick={() => {
                     if (hasTranscript) {
@@ -986,22 +1165,10 @@ const Index = () => {
                       : 'bg-indigo-600 text-white hover:bg-indigo-700'
                   }`}
                 >
-                  {hasTranscript ? `${isWalkInPatient ? '1' : '2'}. Transcript Already Uploaded` : `${isWalkInPatient ? '1' : '2'}. Upload Transcript`}
+                  {hasTranscript ? '2. Transcript Already Uploaded' : '2. Upload Transcript'}
                 </button>
                 
-                <button
-                  onClick={() => {
-                    if (!patientId || !visitId) return;
-                    const postVisitRoute = isWalkInPatient 
-                      ? `/walk-in-post-visit/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`
-                      : `/post-visit/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`;
-                    window.location.href = postVisitRoute;
-                  }}
-                  className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 transition-colors font-medium"
-                >
-                  {isWalkInPatient ? '5' : '6'}. View Post Visit Summary
-                </button>
-                
+                {/* Step 3: View Transcript */}
                 <button
                   onClick={async () => {
                     try {
@@ -1011,14 +1178,17 @@ const Index = () => {
                         const txt = await resp.text();
                         throw new Error(`Failed to fetch transcript ${resp.status}: ${txt}`);
                       }
-                      const data = await resp.json();
-                      // Prefer structured dialogue when available
-                      if (data && Array.isArray(data.structured_dialogue)) {
-                        setTranscriptText(JSON.stringify(data.structured_dialogue));
-                        setShowTranscript(true);
-                        return;
+                      const responseData = await resp.json();
+                      // Extract data from ApiResponse wrapper
+                      const data = responseData.data || responseData;
+                      // Prefer structured_dialogue if available
+                      let transcriptContent = '';
+                      if (data.structured_dialogue && Array.isArray(data.structured_dialogue) && data.structured_dialogue.length > 0) {
+                        transcriptContent = JSON.stringify(data.structured_dialogue);
+                      } else if (data.transcript) {
+                        transcriptContent = data.transcript;
                       }
-                      setTranscriptText(data.transcript || '');
+                      setTranscriptText(transcriptContent);
                       setShowTranscript(true);
                     } catch (e) {
                       alert('Transcript not available yet.');
@@ -1026,9 +1196,10 @@ const Index = () => {
                   }}
                   className="w-full bg-violet-600 text-white py-3 px-4 rounded-md hover:bg-violet-700 transition-colors font-medium"
                 >
-                  {isWalkInPatient ? '2' : '3'}. View Transcript
+                  3. View Transcript
                 </button>
                 
+                {/* Step 4: Fill Vitals */}
                 <button
                   onClick={() => {
                     if (hasVitals) {
@@ -1053,9 +1224,10 @@ const Index = () => {
                       : 'bg-amber-600 text-white hover:bg-amber-700'
                   }`}
                 >
-                  {hasVitals ? `${isWalkInPatient ? '3' : '4'}. Vitals Already Filled` : `${isWalkInPatient ? '3' : '4'}. Fill Vitals`}
+                  {hasVitals ? '4. Vitals Already Filled' : '4. Fill Vitals'}
                 </button>
                 
+                {/* Step 5: View SOAP Summary */}
                 <button
                   onClick={async () => {
                     try {
@@ -1077,7 +1249,7 @@ const Index = () => {
                   }}
                   className="w-full bg-rose-600 text-white py-3 px-4 rounded-md hover:bg-rose-700 transition-colors font-medium"
                 >
-                  {isWalkInPatient ? '4' : '5'}. View SOAP Summary
+                  5. View SOAP Summary
                 </button>
 
                 {/* Create Post-Visit Summary */}
@@ -1130,26 +1302,14 @@ const Index = () => {
                 {/* Step 7: View Post Visit Summary */}
                 <button
                   onClick={() => {
-                    console.log('Index: patientId from URL:', patientId);
-                    console.log('Index: visitId from state:', visitId);
-                    
-                    // Try to get visitId from localStorage if not in state
-                    const storedVisitId = patientId ? localStorage.getItem(`visit_${patientId}`) : null;
-                    console.log('Index: visitId from localStorage:', storedVisitId);
-                    
-                    const effectiveVisitId = visitId || storedVisitId;
-                    console.log('Index: effective visitId:', effectiveVisitId);
+                    const effectiveVisitId = visitId || (patientId ? localStorage.getItem(`visit_${patientId}`) : null);
                     
                     if (patientId && effectiveVisitId) {
-                      console.log('Index: Navigating to post-visit summary');
-                      window.location.href = `/post-visit/${patientId}/${effectiveVisitId}`;
+                      const postVisitRoute = isWalkInPatient 
+                        ? `/walk-in-post-visit/${encodeURIComponent(patientId)}/${encodeURIComponent(effectiveVisitId)}`
+                        : `/post-visit/${encodeURIComponent(patientId)}/${encodeURIComponent(effectiveVisitId)}`;
+                      window.location.href = postVisitRoute;
                     } else {
-                      console.error('Index: Missing patientId or visitId:', { 
-                        patientId, 
-                        visitId, 
-                        storedVisitId, 
-                        effectiveVisitId 
-                      });
                       alert(`Missing information: patientId=${patientId}, visitId=${effectiveVisitId}. Please refresh the page or go back to registration.`);
                     }
                   }}
@@ -1295,27 +1455,38 @@ const Index = () => {
                       try {
                         const t = await fetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/transcript`);
                         if (t.ok) {
-                          const data = await t.json();
-                          let transcriptContent = data.transcript || '';
+                          const response = await t.json();
+                          // Extract data from ApiResponse wrapper
+                          const data = response.data || response;
                           
-                          // Check if transcript appears to be raw (not structured JSON)
-                          const isRawTranscript = !transcriptContent.includes('"Doctor"') && !transcriptContent.includes('"Patient"');
-                          
-                          if (isRawTranscript && transcriptContent.trim()) {
-                            // Try to structure the dialogue using the backend endpoint
-                            try {
-                              const structureResponse = await fetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/dialogue/structure`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' }
-                              });
-                              if (structureResponse.ok) {
-                                const structureData = await structureResponse.json();
-                                if (structureData.dialogue && typeof structureData.dialogue === 'object') {
-                                  transcriptContent = JSON.stringify(structureData.dialogue);
+                          // Prefer structured_dialogue if available, otherwise use transcript
+                          let transcriptContent = '';
+                          if (data.structured_dialogue && Array.isArray(data.structured_dialogue) && data.structured_dialogue.length > 0) {
+                            // Convert structured dialogue array to JSON string for TranscriptView
+                            transcriptContent = JSON.stringify(data.structured_dialogue);
+                          } else if (data.transcript) {
+                            transcriptContent = data.transcript;
+                            
+                            // Check if transcript appears to be raw (not structured JSON)
+                            const isRawTranscript = !transcriptContent.includes('"Doctor"') && !transcriptContent.includes('"Patient"');
+                            
+                            if (isRawTranscript && transcriptContent.trim()) {
+                              // Try to structure the dialogue using the backend endpoint
+                              try {
+                                const structureResponse = await fetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/dialogue/structure`, {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' }
+                                });
+                                if (structureResponse.ok) {
+                                  const structureResponseData = await structureResponse.json();
+                                  const structureData = structureResponseData.data || structureResponseData;
+                                  if (structureData.dialogue && typeof structureData.dialogue === 'object') {
+                                    transcriptContent = JSON.stringify(structureData.dialogue);
+                                  }
                                 }
+                              } catch (e) {
+                                console.warn('Failed to structure dialogue:', e);
                               }
-                            } catch (e) {
-                              console.warn('Failed to structure dialogue:', e);
                             }
                           }
                           
@@ -1477,6 +1648,7 @@ const Index = () => {
         </div>
       )}
     </div>
+    </>
   );
 };
 

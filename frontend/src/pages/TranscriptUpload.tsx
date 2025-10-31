@@ -226,7 +226,17 @@ const TranscriptUpload: React.FC = () => {
             return;
           }
           
-          let transcriptContent = data.transcript || '';
+          // Extract data from ApiResponse wrapper
+          const transcriptData = data.data || data;
+          
+          // Prefer structured_dialogue if available, otherwise use transcript
+          let transcriptContent = '';
+          if (transcriptData.structured_dialogue && Array.isArray(transcriptData.structured_dialogue) && transcriptData.structured_dialogue.length > 0) {
+            // Convert structured dialogue array to JSON string for TranscriptView
+            transcriptContent = JSON.stringify(transcriptData.structured_dialogue);
+          } else if (transcriptData.transcript) {
+            transcriptContent = transcriptData.transcript;
+          }
           
           // Check if transcript appears to be raw (not structured JSON)
           const isRawTranscript = !transcriptContent.includes('"Doctor"') && !transcriptContent.includes('"Patient"');

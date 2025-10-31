@@ -250,7 +250,7 @@ const PostVisitSummary: React.FC = () => {
         </Card>
 
         {/* Key Findings */}
-        {summary.key_findings.length > 0 && (
+        {summary.key_findings && summary.key_findings.length > 0 && (
           <Card className="mb-6">
             <CardHeader>
               <CardTitle className="text-lg">{t('postvisit.key_findings')}</CardTitle>
@@ -279,7 +279,7 @@ const PostVisitSummary: React.FC = () => {
         </Card>
 
         {/* Medications */}
-        {summary.medications.length > 0 && (
+        {summary.medications && summary.medications.length > 0 && (
           <Card className="mb-6">
             <CardHeader>
               <CardTitle className="text-lg">{t('postvisit.medications_prescribed')}</CardTitle>
@@ -303,7 +303,7 @@ const PostVisitSummary: React.FC = () => {
         )}
 
         {/* Other Recommendations */}
-        {summary.other_recommendations.length > 0 && (
+        {summary.other_recommendations && summary.other_recommendations.length > 0 && (
           <Card className="mb-6">
             <CardHeader>
               <CardTitle className="text-lg">{t('postvisit.other_recommendations')}</CardTitle>
@@ -322,7 +322,7 @@ const PostVisitSummary: React.FC = () => {
         )}
 
         {/* Tests Ordered */}
-        {summary.tests_ordered.length > 0 && (
+        {summary.tests_ordered && summary.tests_ordered.length > 0 && (
           <Card className="mb-6">
             <CardHeader>
               <CardTitle className="text-lg">{t('postvisit.tests_ordered')}</CardTitle>
@@ -356,7 +356,7 @@ const PostVisitSummary: React.FC = () => {
         )}
 
         {/* Red Flag Symptoms */}
-        {summary.red_flag_symptoms.length > 0 && (
+        {summary.red_flag_symptoms && summary.red_flag_symptoms.length > 0 && (
           <Card className="mb-6 border-red-200">
             <CardHeader className="bg-red-50">
               <CardTitle className="text-lg text-red-800 flex items-center">
@@ -384,21 +384,23 @@ const PostVisitSummary: React.FC = () => {
         )}
 
         {/* Patient Instructions */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="text-lg">{t('postvisit.patient_instructions')}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-2">
-              {summary.patient_instructions.map((instruction, index) => (
-                <li key={index} className="flex items-start">
-                  <span className="text-green-600 mr-2 mt-1">{index + 1}.</span>
-                  <span className="text-gray-700">{instruction}</span>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
+        {summary.patient_instructions && summary.patient_instructions.length > 0 && (
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle className="text-lg">{t('postvisit.patient_instructions')}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-2">
+                {summary.patient_instructions.map((instruction, index) => (
+                  <li key={index} className="flex items-start">
+                    <span className="text-green-600 mr-2 mt-1">{index + 1}.</span>
+                    <span className="text-gray-700">{instruction}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Reassurance Note */}
         <Card className="mb-6 border-blue-200">

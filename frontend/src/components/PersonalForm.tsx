@@ -104,7 +104,9 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
         language: language,
       });
 
-      if (backendResp.patient_id) {
+      console.log("Backend registration response:", backendResp);
+
+      if (backendResp && backendResp.patient_id) {
         // Persist travel history flag for later use if needed
         localStorage.setItem(`travel_${backendResp.patient_id}`, JSON.stringify(form.travelHistory));
         // Persist visit id and patient name for intake
@@ -129,6 +131,8 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
           : "Why have you come in today? What is the main concern you want help with?";
         const q = encodeURIComponent(backendResp.first_question || fallbackQuestion);
         const v = encodeURIComponent(backendResp.visit_id);
+        // Store first question for potential reset/reload scenarios
+        localStorage.setItem(`first_question_${backendResp.patient_id}`, backendResp.first_question || fallbackQuestion);
         window.location.href = `/intake/${backendResp.patient_id}?q=${q}&v=${v}`;
       } else {
         setError("Failed to create patient");

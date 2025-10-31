@@ -36,26 +36,31 @@ const PatientDetailsForm: React.FC<PatientDetailsFormProps> = ({
     try {
       // Convert age to number for proper data type
       const ageNumber = form.age ? Number(form.age) : 0;
-      const formData: PatientData = {
-        fullName: form.fullName,
+      
+      // Extract first and last name from fullName
+      const nameParts = form.fullName.trim().split(/\s+/);
+      const firstName = nameParts[0] || "";
+      const lastName = nameParts.slice(1).join(" ") || firstName;
+
+      const result = await registerPatientBackend({
+        first_name: firstName,
+        last_name: lastName,
+        mobile: form.phone || "",
         age: ageNumber,
-        dob: form.dob,
         gender: form.gender,
-        email: form.email,
-        phone: form.phone || undefined,
-        address: form.address || undefined,
-        emergencyContact: form.emergencyContact || undefined,
-      };
+        recently_travelled: false,
+        consent: true,
+        country: "US",
+        language: "en",
+      });
 
-      const result = await createPatient(formData);
-
-      if (result.success && result.patient_id) {
+      if (result.patient_id) {
         if (onPatientCreated) onPatientCreated(result.patient_id);
       } else {
         setError(result.message || "Failed to create patient");
       }
-    } catch (err) {
-      setError("Failed to create patient. Please try again.");
+    } catch (err: any) {
+      setError(err?.message || "Failed to create patient. Please try again.");
     } finally {
       setLoading(false);
     }

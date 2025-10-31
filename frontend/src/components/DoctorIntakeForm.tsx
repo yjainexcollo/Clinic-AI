@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { postIntake, IntakeResponse } from "../utils/api";
+// NOTE: This component uses n8n API which has been removed
+// If this component is still needed, it should be updated to use the backend FastAPI service instead
 import { getSessionId } from "../utils/uuid";
 import SummaryCard from "./SummaryCard";
 
@@ -50,45 +51,13 @@ const DoctorIntakeForm: React.FC = () => {
       // If this is the first question, send only session_id and the answer
       if (!aiStarted) {
         setHistory([{ question: FIRST_QUESTION, answer }]);
-        // Now call backend to get the first AI question
-        const res: IntakeResponse = await postIntake({
-          session_id: sessionId,
-          last_question: FIRST_QUESTION,
-          last_answer: answer,
-        });
-        setCurrentQuestion(res.next_question);
-        setCurrentType(res.type);
-        setSummary(res.summary);
-        setAiStarted(true);
-        setLastAiQuestion(res.next_question);
+        // NOTE: n8n API removed - this component needs to be updated to use backend FastAPI service
+        // For now, show error that this feature is not available
+        setError("This component needs to be updated to use the backend FastAPI service. The n8n integration has been removed.");
+        setAiStarted(false);
       } else {
-        // AI-driven follow-ups
-        const last_question = lastAiQuestion;
-        const last_answer = answer;
-        const newHistory = [
-          ...history,
-          { question: last_question || "", answer: last_answer },
-        ];
-
-        const res: IntakeResponse = await postIntake({
-          session_id: sessionId,
-          last_question,
-          last_answer,
-        });
-        setHistory(newHistory);
-        setCurrentQuestion(res.next_question);
-        setCurrentType(res.type);
-        setSummary(res.summary);
-        setLastAiQuestion(res.next_question);
-
-        // Check if AI has determined the conversation is complete
-        if (
-          res.next_question === "COMPLETE" ||
-          res.next_question === null ||
-          res.next_question === ""
-        ) {
-          setSubmitted(true);
-        }
+        // NOTE: n8n API removed - this component needs to be updated to use backend FastAPI service
+        setError("This component needs to be updated to use the backend FastAPI service. The n8n integration has been removed.");
       }
     } catch {
       setError("Failed to submit answer. Please try again.");

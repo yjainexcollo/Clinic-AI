@@ -3,6 +3,7 @@
  */
 
 import { extractApiResponse, ApiResponse, isErrorResponse } from '../utils/apiResponse';
+import { BACKEND_BASE_URL } from './patientService';
 
 export interface AudioFile {
   audio_id: string;
@@ -51,7 +52,9 @@ export interface AudioDialogueListResponse {
   offset: number;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+// Use the same BACKEND_BASE_URL as other services to ensure consistency
+// This ensures HTTPS is used for production and HTTP for localhost
+const API_BASE_URL = BACKEND_BASE_URL;
 
 class AudioService {
   private cache = new Map<string, { data: any; timestamp: number }>();
