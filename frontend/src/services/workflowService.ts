@@ -73,8 +73,49 @@ export class WorkflowService {
         }
       );
 
-      console.log("Walk-in visit created:", response.data);
-      return response.data;
+      console.log("Walk-in visit created - full axios response:", response);
+      console.log("Walk-in visit created - response.data:", response.data);
+      console.log("Walk-in visit created - response.data type:", typeof response.data);
+      console.log("Walk-in visit created - response.data keys:", response.data ? Object.keys(response.data) : 'null');
+      
+      // Extract data from ApiResponse wrapper
+      // Backend returns: {success: true, data: {patient_id, visit_id, ...}, message: "..."}
+      const apiResponse: any = response.data;
+      
+      if (!apiResponse || typeof apiResponse !== 'object') {
+        console.error("Walk-in visit created - Invalid apiResponse:", apiResponse);
+        throw new Error(`Invalid response structure: ${typeof apiResponse}`);
+      }
+      
+      console.log("Walk-in visit created - apiResponse keys:", Object.keys(apiResponse));
+      console.log("Walk-in visit created - apiResponse.data:", apiResponse.data);
+      
+      if ('data' in apiResponse && apiResponse.data) {
+        const extractedData = apiResponse.data as CreateWalkInVisitResponse;
+        console.log("Walk-in visit created - extracted data:", extractedData);
+        console.log("Walk-in visit created - extracted patient_id:", extractedData.patient_id);
+        console.log("Walk-in visit created - extracted visit_id:", extractedData.visit_id);
+        
+        // Validate extracted data
+        if (!extractedData.patient_id || !extractedData.visit_id) {
+          console.error("Walk-in visit created - Missing IDs in extracted data:", extractedData);
+          throw new Error(`Missing patient_id or visit_id in response: ${JSON.stringify(extractedData)}`);
+        }
+        
+        return extractedData;
+      }
+      
+      // Fallback: if response is not wrapped, return as-is
+      console.warn("Walk-in visit created - response not wrapped, returning as-is");
+      console.warn("Walk-in visit created - Direct response:", apiResponse);
+      
+      // Even in fallback, validate required fields
+      if (!apiResponse.patient_id || !apiResponse.visit_id) {
+        console.error("Walk-in visit created - Missing IDs in direct response:", apiResponse);
+        throw new Error(`Missing patient_id or visit_id in response: ${JSON.stringify(apiResponse)}`);
+      }
+      
+      return apiResponse as CreateWalkInVisitResponse;
     } catch (error) {
       console.error("Error creating walk-in visit:", error);
       
@@ -99,8 +140,12 @@ export class WorkflowService {
     try {
       console.log("Getting available steps for visit:", visitId);
       
-      const response = await axios.get<AvailableStepsResponse>(
-        buildApiUrl(API_CONFIG.ENDPOINTS.GET_AVAILABLE_STEPS + `/${visitId}/available-steps`),
+      // Build URL correctly: /workflow/visit/{visitId}/available-steps
+      const url = buildApiUrl(`${API_CONFIG.ENDPOINTS.GET_AVAILABLE_STEPS}/${visitId}/available-steps`);
+      console.log("Available steps URL:", url);
+      
+      const response = await axios.get<{data: AvailableStepsResponse} | AvailableStepsResponse>(
+        url,
         {
           headers: {
             Accept: "application/json",
@@ -108,8 +153,14 @@ export class WorkflowService {
         }
       );
 
-      console.log("Available steps:", response.data);
-      return response.data;
+      console.log("Available steps - raw response:", response.data);
+      
+      // Extract data from ApiResponse wrapper if present
+      const responseData = response.data;
+      const data = (responseData as any)?.data || responseData;
+      console.log("Available steps - extracted data:", data);
+      
+      return data as AvailableStepsResponse;
     } catch (error) {
       console.error("Error getting available steps:", error);
       

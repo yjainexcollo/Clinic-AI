@@ -19,7 +19,19 @@ class RegisterPatientRequest(BaseModel):
     recently_travelled: bool = Field(False)
     consent: bool = Field(..., description="Must be true")
     country: str = Field("US", min_length=2, max_length=2)
-    language: str = Field("en", pattern=r"^(en|es)$")
+    language: str = Field("en", pattern=r"^(en|es|sp)$")
+    
+    @validator("language", pre=True)
+    def normalize_language(cls, v):
+        """Normalize language codes: 'es' -> 'sp' for consistency with frontend."""
+        if v and isinstance(v, str):
+            normalized = v.lower().strip()
+            # Map 'es' to 'sp' for consistency with frontend LanguageContext
+            if normalized == "es":
+                return "sp"
+            if normalized in ["en", "sp"]:
+                return normalized
+        return "en"  # Default to English
 
     @validator("first_name", "last_name", pre=True)
     def validate_names(cls, v):

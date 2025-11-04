@@ -121,7 +121,41 @@ const WalkInPatientForm: React.FC<WalkInPatientFormProps> = ({ onPatientCreated,
 
       const response = await workflowService.createWalkInVisit(requestData);
       
-      console.log("Walk-in visit created:", response);
+      console.log("WalkInPatientForm - received response:", response);
+      console.log("WalkInPatientForm - response type:", typeof response);
+      console.log("WalkInPatientForm - response keys:", response ? Object.keys(response) : 'null');
+      console.log("WalkInPatientForm - patient_id:", response?.patient_id);
+      console.log("WalkInPatientForm - visit_id:", response?.visit_id);
+      
+      // Validate response before proceeding
+      if (!response) {
+        console.error("WalkInPatientForm - response is null/undefined");
+        setError("Failed to create walk-in visit: No response from server");
+        setLoading(false);
+        return;
+      }
+      
+      const patientId = response.patient_id;
+      const visitId = response.visit_id;
+      
+      console.log("WalkInPatientForm - extracted IDs:", { patientId, visitId });
+      
+      // Validate IDs are present and not undefined/null/empty
+      if (!patientId || patientId === 'undefined' || patientId === 'null' || patientId.trim() === '') {
+        console.error("WalkInPatientForm - Invalid patient_id:", patientId);
+        setError(`Failed to create walk-in visit: Invalid patient ID received: ${patientId}`);
+        setLoading(false);
+        return;
+      }
+      
+      if (!visitId || visitId === 'undefined' || visitId === 'null' || visitId.trim() === '') {
+        console.error("WalkInPatientForm - Invalid visit_id:", visitId);
+        setError(`Failed to create walk-in visit: Invalid visit ID received: ${visitId}`);
+        setLoading(false);
+        return;
+      }
+      
+      console.log("WalkInPatientForm - All validations passed, navigating with:", { patientId, visitId });
       
       // Show success message briefly before navigating
       setSuccess(true);
@@ -129,7 +163,8 @@ const WalkInPatientForm: React.FC<WalkInPatientFormProps> = ({ onPatientCreated,
       
       // Navigate to transcription page after a short delay
       setTimeout(() => {
-        onPatientCreated(response.patient_id, response.visit_id);
+        console.log("WalkInPatientForm - Calling onPatientCreated with:", { patientId, visitId });
+        onPatientCreated(patientId, visitId);
       }, 1500);
       
     } catch (err) {

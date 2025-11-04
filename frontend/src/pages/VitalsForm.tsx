@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { getSoapNote, generateSoapNote, storeVitals, getVitals, VitalsData } from "../services/patientService";
+import { storeVitals, getVitals, VitalsData } from "../services/patientService";
 import { useLanguage } from "../contexts/LanguageContext";
 import { workflowService } from "../services/workflowService";
 
@@ -12,7 +12,6 @@ const VitalsForm: React.FC = () => {
   const { language, t } = useLanguage();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [generatingSoap, setGeneratingSoap] = useState(false);
   const [bmi, setBmi] = useState<number | null>(null);
   const [alreadySubmitted, setAlreadySubmitted] = useState(false);
   const [isWalkInPatient, setIsWalkInPatient] = useState(false);
@@ -246,44 +245,27 @@ const VitalsForm: React.FC = () => {
       } catch {}
       setAlreadySubmitted(true);
 
-      // Show SOAP generation progress and trigger generation idempotently
-      setGeneratingSoap(true);
-      try {
-        // Ensure we pass the internal id expected by backend: use current patientId as-is
-        await generateSoapNote(patientId, visitId);
-      } catch (e) {
-        // Ignore; we'll still poll for readiness
+      // Redirect to main buttons page after successful vitals submission
+      // This allows user to use the "Generate SOAP Summary" button
+      const effectiveVisitId = visitId || (patientId ? localStorage.getItem(`visit_${patientId}`) : null);
+      if (patientId && effectiveVisitId) {
+        // Check URL params for walkin flag, or use state
+        const urlParams = new URLSearchParams(window.location.search);
+        const isWalkIn = isWalkInPatient || urlParams.get('walkin') === 'true';
+        
+        // For scheduled workflow, use done=1 to show the "Intake Complete" page with all buttons
+        // For walk-in workflow, use walkin=true to show the walk-in specific page
+        const redirectUrl = isWalkIn 
+          ? `/intake/${encodeURIComponent(patientId)}?v=${encodeURIComponent(effectiveVisitId)}&walkin=true`
+          : `/intake/${encodeURIComponent(patientId)}?v=${encodeURIComponent(effectiveVisitId)}&done=1`;
+        
+        // Show brief success message, then redirect
+        setTimeout(() => {
+          window.location.href = redirectUrl;
+        }, 1000);
+      } else {
+        alert('Vitals saved successfully! However, could not determine redirect path.');
       }
-
-      // Poll for SOAP availability, then navigate to SOAP view
-      const start = Date.now();
-      const maxMs = 180000; // 3 minutes
-      const poll = async (attempt = 0): Promise<void> => {
-        try {
-          const s = await getSoapNote(patientId, visitId);
-          if (s && (s as any).subjective !== undefined) {
-            setGeneratingSoap(false);
-            // Navigate to correct SOAP route based on workflow type
-            const soapRoute = isWalkInPatient 
-              ? `/walk-in-soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`
-              : `/soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`;
-            navigate(soapRoute);
-            return;
-          }
-        } catch {}
-        if (Date.now() - start < maxMs) {
-          const delay = Math.min(10000, 1000 * Math.pow(1.5, attempt));
-          setTimeout(() => poll(attempt + 1), delay);
-        } else {
-          setGeneratingSoap(false);
-          // Navigate to correct SOAP route based on workflow type
-          const soapRoute = isWalkInPatient 
-            ? `/walk-in-soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`
-            : `/soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`;
-          navigate(soapRoute);
-        }
-      };
-      poll();
     } catch (err: any) {
       setError(err.message || "Failed to save vitals");
     } finally {
@@ -317,11 +299,6 @@ const VitalsForm: React.FC = () => {
             </span>
           )}
         </div>
-        {generatingSoap && (
-          <p className="mt-2 text-sm text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-3 py-2 inline-block">
-            {t('vitals.generating_soap')}
-          </p>
-        )}
         {alreadySubmitted && (
           <p className="mt-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded px-3 py-2 inline-block">
             {t('vitals.already_submitted')}

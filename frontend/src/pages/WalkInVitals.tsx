@@ -124,24 +124,11 @@ const WalkInVitals: React.FC = () => {
         console.error("Error refreshing workflow steps:", error);
       }
 
-      // Automatically generate SOAP after vitals are submitted
-      try {
-        console.log("Auto-generating SOAP after vitals submission...");
-        const soapResponse = await fetch(`${BACKEND_BASE_URL}/notes/soap/generate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-          body: JSON.stringify({ patient_id: patientId, visit_id: visitId })
-        });
-        
-        if (soapResponse.ok) {
-          console.log("SOAP generation initiated successfully");
-        } else {
-          console.error("SOAP generation failed:", soapResponse.status, await soapResponse.text());
-        }
-      } catch (soapError) {
-        console.error("Failed to auto-generate SOAP:", soapError);
-        // Don't show error to user, just log it
-      }
+      // Redirect to main buttons page after successful vitals submission
+      // Wait a moment to show success message, then redirect
+      setTimeout(() => {
+        navigate(`/intake/${encodeURIComponent(patientId)}?v=${encodeURIComponent(visitId)}&walkin=true`);
+      }, 1500);
 
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save vitals");

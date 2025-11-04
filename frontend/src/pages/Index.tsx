@@ -49,6 +49,7 @@ const Index = () => {
   const [hasPostVisitSummary, setHasPostVisitSummary] = useState<boolean>(false);
   const [hasTranscript, setHasTranscript] = useState<boolean>(false);
   const [hasVitals, setHasVitals] = useState<boolean>(false);
+  const [hasSoap, setHasSoap] = useState<boolean>(false);
   const [editingValue, setEditingValue] = useState<string>("");
   const [ocrQuality, setOcrQuality] = useState<OCRQualityInfo | null>(null);
   const [showOcrFeedback, setShowOcrFeedback] = useState<boolean>(false);
@@ -372,7 +373,14 @@ const Index = () => {
         
         console.log(`Transcript check response: ${response.status} for patient ${patientId}, visit ${visitId}`);
         
-        if (response.ok) {
+        // Check for 202 (Still Processing) BEFORE trying to parse JSON
+        // Backend returns empty body for 202, so we must handle it first
+        if (response.status === 202) {
+          // Still processing, keep checking (no JSON body to parse)
+          console.log('Transcript still processing, will check again later');
+          setHasTranscript(false);
+        } else if (response.ok) {
+          // Only parse JSON if status is OK (200) and not 202
           const responseData = await response.json();
           console.log('Transcript data:', responseData);
           // Extract data from ApiResponse wrapper
@@ -384,10 +392,6 @@ const Index = () => {
           if (hasApiTranscript) {
             localStorage.setItem(transcriptKey, '1');
           }
-        } else if (response.status === 202) {
-          // Still processing, keep checking
-          console.log('Transcript still processing, will check again later');
-          setHasTranscript(false);
         } else {
           console.log(`Transcript check failed with status: ${response.status}`);
           setHasTranscript(false);
@@ -450,6 +454,48 @@ const Index = () => {
 
     if (patientId && visitId && isComplete) {
       checkVitals();
+    }
+  }, [patientId, visitId, isComplete]);
+
+  // Check if SOAP note exists
+  useEffect(() => {
+    const checkSoap = async () => {
+      if (!patientId || !visitId || !isComplete) return;
+      
+      // First check localStorage flag
+      const soapKey = `soap_done_${patientId}_${visitId}`;
+      const localStorageFlag = localStorage.getItem(soapKey) === '1';
+      
+      if (localStorageFlag) {
+        setHasSoap(true);
+        return;
+      }
+      
+      // If no localStorage flag, check API
+      try {
+        const response = await fetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/soap`, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' }
+        });
+        if (response.ok) {
+          const responseData = await response.json();
+          const data = responseData.data || responseData;
+          const hasApiSoap = !!data && (data.subjective || data.assessment || data.plan);
+          setHasSoap(hasApiSoap);
+          // If API has SOAP but no localStorage flag, set the flag
+          if (hasApiSoap) {
+            localStorage.setItem(soapKey, '1');
+          }
+        } else {
+          setHasSoap(false);
+        }
+      } catch (e) {
+        setHasSoap(false);
+      }
+    };
+
+    if (patientId && visitId && isComplete) {
+      checkSoap();
     }
   }, [patientId, visitId, isComplete]);
 
@@ -1149,7 +1195,7 @@ const Index = () => {
                   </button>
                 )}
                 
-                {/* Step 2: Upload Transcript */}
+                {/* Step 1: Upload Transcript (Walk-in) / Step 2: Upload Transcript (Scheduled) */}
                 <button
                   onClick={() => {
                     if (hasTranscript) {
@@ -1165,10 +1211,12 @@ const Index = () => {
                       : 'bg-indigo-600 text-white hover:bg-indigo-700'
                   }`}
                 >
-                  {hasTranscript ? '2. Transcript Already Uploaded' : '2. Upload Transcript'}
+                  {hasTranscript 
+                    ? `${isWalkInPatient ? '1' : '2'}. Transcript Already Uploaded` 
+                    : `${isWalkInPatient ? '1' : '2'}. Upload Transcript`}
                 </button>
                 
-                {/* Step 3: View Transcript */}
+                {/* Step 2: View Transcript (Walk-in) / Step 3: View Transcript (Scheduled) */}
                 <button
                   onClick={async () => {
                     try {
@@ -1196,10 +1244,10 @@ const Index = () => {
                   }}
                   className="w-full bg-violet-600 text-white py-3 px-4 rounded-md hover:bg-violet-700 transition-colors font-medium"
                 >
-                  3. View Transcript
+                  {isWalkInPatient ? '2' : '3'}. View Transcript
                 </button>
                 
-                {/* Step 4: Fill Vitals */}
+                {/* Step 3: Fill Vitals (Walk-in) / Step 4: Fill Vitals (Scheduled) */}
                 <button
                   onClick={() => {
                     if (hasVitals) {
@@ -1224,35 +1272,93 @@ const Index = () => {
                       : 'bg-amber-600 text-white hover:bg-amber-700'
                   }`}
                 >
-                  {hasVitals ? '4. Vitals Already Filled' : '4. Fill Vitals'}
+                  {hasVitals 
+                    ? `${isWalkInPatient ? '3' : '4'}. Vitals Already Filled` 
+                    : `${isWalkInPatient ? '3' : '4'}. Fill Vitals`}
                 </button>
                 
-                {/* Step 5: View SOAP Summary */}
+                {/* Step 4: Generate SOAP Summary (Walk-in) / Step 5: Generate SOAP Summary (Scheduled) */}
                 <button
                   onClick={async () => {
+                    if (hasSoap) {
+                      alert('SOAP summary already generated for this visit. Use "View SOAP Summary" to see it.');
+                      return;
+                    }
+                    
                     try {
                       if (!patientId || !visitId) return;
-                      // Attempt to generate SOAP (idempotent if already exists)
-                      await fetch(`${BACKEND_BASE_URL}/notes/soap/generate`, {
+                      setShowPostVisitProcessing(true); // Reuse loading state
+                      
+                      const response = await fetch(`${BACKEND_BASE_URL}/notes/soap/generate`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                         body: JSON.stringify({ patient_id: patientId, visit_id: visitId })
                       });
-                      // Navigate to SOAP viewer route if available, else fetch and inline show
-                      const soapRoute = isWalkInPatient 
-                        ? `/walk-in-soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`
-                        : `/soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`;
-                      window.location.href = soapRoute;
+                      
+                      if (response.ok) {
+                        // Set localStorage flag and update state
+                        try {
+                          localStorage.setItem(`soap_done_${patientId}_${visitId}`, '1');
+                        } catch {}
+                        setHasSoap(true);
+                        alert('SOAP summary generation started successfully! You can view it using the "View SOAP Summary" button.');
+                      } else {
+                        const errorData = await response.json();
+                        console.error('SOAP generation error - Full response:', JSON.stringify(errorData, null, 2));
+                        // Extract detailed error message
+                        let errorMsg = 'Failed to generate SOAP summary';
+                        if (errorData.detail) {
+                          if (typeof errorData.detail === 'string') {
+                            errorMsg = errorData.detail;
+                          } else if (errorData.detail.message) {
+                            errorMsg = errorData.detail.message;
+                          } else if (errorData.detail.error) {
+                            errorMsg = `${errorData.detail.error}: ${errorData.detail.message || 'Unknown error'}`;
+                          }
+                        } else if (errorData.message) {
+                          errorMsg = errorData.message;
+                        }
+                        // Show detailed error with all available info
+                        const details = errorData.detail?.details ? `\nDetails: ${JSON.stringify(errorData.detail.details)}` : '';
+                        alert(`Error: ${errorMsg}${details}\n\nPlease ensure:\n- Transcript is complete\n- Vitals are filled\n- Visit status is correct`);
+                      }
+                      setShowPostVisitProcessing(false);
                     } catch (e) {
-                      alert('Failed to generate SOAP note. Please try again after transcript is ready.');
+                      setShowPostVisitProcessing(false);
+                      alert('Failed to generate SOAP summary. Please ensure transcript and vitals are complete.');
+                    }
+                  }}
+                  disabled={hasSoap}
+                  className={`w-full py-3 px-4 rounded-md transition-colors font-medium ${
+                    hasSoap 
+                      ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
+                      : 'bg-orange-600 text-white hover:bg-orange-700'
+                  }`}
+                >
+                  {hasSoap 
+                    ? `${isWalkInPatient ? '4' : '5'}. SOAP Summary Already Generated` 
+                    : `${isWalkInPatient ? '4' : '5'}. Generate SOAP Summary`}
+                </button>
+                
+                {/* Step 5: View SOAP Summary (Walk-in) / Step 6: View SOAP Summary (Scheduled) */}
+                <button
+                  onClick={() => {
+                    const effectiveVisitId = visitId || (patientId ? localStorage.getItem(`visit_${patientId}`) : null);
+                    if (patientId && effectiveVisitId) {
+                      const soapRoute = isWalkInPatient 
+                        ? `/walk-in-soap/${encodeURIComponent(patientId)}/${encodeURIComponent(effectiveVisitId)}`
+                        : `/soap/${encodeURIComponent(patientId)}/${encodeURIComponent(effectiveVisitId)}`;
+                      window.location.href = soapRoute;
+                    } else {
+                      alert('Missing visit information. Please refresh the page.');
                     }
                   }}
                   className="w-full bg-rose-600 text-white py-3 px-4 rounded-md hover:bg-rose-700 transition-colors font-medium"
                 >
-                  5. View SOAP Summary
+                  {isWalkInPatient ? '5' : '6'}. View SOAP Summary
                 </button>
 
-                {/* Create Post-Visit Summary */}
+                {/* Step 6: Create Post Visit Summary (Walk-in) / Step 7: Create Post Visit Summary (Scheduled) */}
                 <button
                   onClick={async () => {
                     if (hasPostVisitSummary) {
@@ -1296,10 +1402,12 @@ const Index = () => {
                       : 'bg-cyan-600 text-white hover:bg-cyan-700'
                   }`}
                 >
-                  {hasPostVisitSummary ? '6. Post Visit Summary Already Created' : '6. Create Post Visit Summary'}
+                  {hasPostVisitSummary 
+                    ? `${isWalkInPatient ? '6' : '7'}. Post Visit Summary Already Created` 
+                    : `${isWalkInPatient ? '6' : '7'}. Create Post Visit Summary`}
                 </button>
 
-                {/* Step 7: View Post Visit Summary */}
+                {/* Step 7: View Post Visit Summary (Walk-in) / Step 8: View Post Visit Summary (Scheduled) */}
                 <button
                   onClick={() => {
                     const effectiveVisitId = visitId || (patientId ? localStorage.getItem(`visit_${patientId}`) : null);
@@ -1328,34 +1436,36 @@ const Index = () => {
                       d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
                     />
                   </svg>
-                  7. View Post Visit Summary
+                  {isWalkInPatient ? '7' : '8'}. View Post Visit Summary
                 </button>
 
 
                 {/* Removed "Start New Intake" button per request */}
 
-                {/* Step 8: Register New Patient */}
-                <button
-                  onClick={() =>
-                    (window.location.href = "/walk-in-registration")
-                  }
-                  className="w-full bg-slate-700 text-white py-3 px-4 rounded-md hover:bg-slate-800 transition-colors font-medium"
-                >
-                  <svg
-                    className="w-5 h-5 inline mr-2"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+                {/* Step 8: Register New Patient (Walk-in) / Step 9: Register New Patient (Scheduled) */}
+                {isWalkInPatient && (
+                  <button
+                    onClick={() =>
+                      (window.location.href = "/walk-in-registration")
+                    }
+                    className="w-full bg-slate-700 text-white py-3 px-4 rounded-md hover:bg-slate-800 transition-colors font-medium"
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
-                    />
-                  </svg>
-                  8. Register New Patient
-                </button>
+                    <svg
+                      className="w-5 h-5 inline mr-2"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
+                      />
+                    </svg>
+                    8. Register New Patient
+                  </button>
+                )}
               </div>
             </div>
           )}
