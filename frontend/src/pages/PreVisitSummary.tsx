@@ -1,29 +1,27 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import toast from 'react-hot-toast';
 import { apiClient } from '../lib/api';
-import { useAppStore } from '../lib/store';
-import { Button } from '../components/ui/Button';
-import { Loading } from '../components/ui/Loading';
+import { Button } from '../components/ui/button';
 import { FileText, AlertTriangle, ArrowRight, ArrowLeft, Image as ImageIcon } from 'lucide-react';
 
 export const PreVisitSummary: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { currentPatient, currentVisit } = useAppStore();
+  const [error, setError] = useState<string | null>(null);
 
-  const patientId = currentPatient?.patient_id || location.state?.patient_id;
-  const visitId = currentVisit?.visit_id || location.state?.visit_id;
+  const patientId = location.state?.patient_id;
+  const visitId = location.state?.visit_id;
 
   // Generate or get pre-visit summary
   const generateSummaryMutation = useMutation({
     mutationFn: () => apiClient.generatePreVisitSummary(patientId!, visitId!),
     onSuccess: () => {
       refetchSummary();
+      setError(null);
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.message || 'Failed to generate summary');
+      setError(error.response?.data?.message || 'Failed to generate summary');
     },
   });
 
@@ -46,7 +44,8 @@ export const PreVisitSummary: React.FC = () => {
   }, [patientId, visitId, navigate, isLoading, summaryData, generateSummaryMutation.isPending]);
 
   const handleContinue = () => {
-    navigate('/transcription', {
+    // Navigate to vitals form after pre-visit summary (scheduled flow)
+    navigate(`/vitals/${encodeURIComponent(patientId!)}/${encodeURIComponent(visitId!)}`, {
       state: { patient_id: patientId, visit_id: visitId },
     });
   };
@@ -59,7 +58,10 @@ export const PreVisitSummary: React.FC = () => {
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#e6f3f8] to-gray-50 py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-4xl mx-auto">
-          <Loading message="Generating pre-visit summary..." />
+          <div className="flex flex-col items-center justify-center py-12">
+            <div className="w-12 h-12 border-4 border-[#2E86AB] border-t-transparent rounded-full animate-spin mb-4"></div>
+            <p className="text-gray-600 text-lg">Generating pre-visit summary...</p>
+          </div>
         </div>
       </div>
     );
@@ -92,6 +94,16 @@ export const PreVisitSummary: React.FC = () => {
         </div>
 
         <div className="medical-card space-y-8">
+          {/* Error Message */}
+          {error && (
+            <div className="bg-red-50 border-2 border-red-300 rounded-xl p-4 mb-6">
+              <div className="flex items-center space-x-3">
+                <AlertTriangle className="h-5 w-5 text-red-600" />
+                <p className="text-red-800">{error}</p>
+              </div>
+            </div>
+          )}
+
           {summary ? (
             <>
               {/* Summary */}
@@ -159,7 +171,10 @@ export const PreVisitSummary: React.FC = () => {
             <div className="text-center py-12">
               <FileText className="h-16 w-16 text-gray-400 mx-auto mb-4" />
               <p className="text-gray-600 mb-6">No summary available. Generating...</p>
-              <Loading message="Generating summary..." />
+              <div className="flex flex-col items-center justify-center mt-4">
+                <div className="w-12 h-12 border-4 border-[#2E86AB] border-t-transparent rounded-full animate-spin mb-4"></div>
+                <p className="text-gray-600">Generating summary...</p>
+              </div>
             </div>
           )}
 
@@ -170,7 +185,7 @@ export const PreVisitSummary: React.FC = () => {
               className="flex-1" 
               size="lg"
             >
-              Continue to Transcription
+              Continue to Vitals Form
               <ArrowRight className="h-5 w-5 ml-2" />
             </Button>
             <Button
@@ -186,3 +201,5 @@ export const PreVisitSummary: React.FC = () => {
     </div>
   );
 };
+
+export default PreVisitSummary;

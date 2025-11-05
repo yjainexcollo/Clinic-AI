@@ -102,6 +102,7 @@ const PostVisitSummary: React.FC = () => {
   };
 
   const handleGoBack = () => {
+    // Navigate back to the main workflow page (intake page with all buttons)
     navigate(`/intake/${patientId}?v=${visitId}&done=1`);
   };
 

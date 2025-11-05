@@ -245,16 +245,16 @@ const VitalsForm: React.FC = () => {
       } catch {}
       setAlreadySubmitted(true);
 
-      // Redirect to main buttons page after successful vitals submission
-      // This allows user to use the "Generate SOAP Summary" button
+      // Redirect back to intake page after vitals submission (scheduled flow)
+      // The intake page has transcription upload functionality built-in
       const effectiveVisitId = visitId || (patientId ? localStorage.getItem(`visit_${patientId}`) : null);
       if (patientId && effectiveVisitId) {
         // Check URL params for walkin flag, or use state
         const urlParams = new URLSearchParams(window.location.search);
         const isWalkIn = isWalkInPatient || urlParams.get('walkin') === 'true';
         
-        // For scheduled workflow, use done=1 to show the "Intake Complete" page with all buttons
-        // For walk-in workflow, use walkin=true to show the walk-in specific page
+        // For scheduled workflow: go back to intake page (which has transcription buttons)
+        // For walk-in workflow: go back to intake page with walkin flag
         const redirectUrl = isWalkIn 
           ? `/intake/${encodeURIComponent(patientId)}?v=${encodeURIComponent(effectiveVisitId)}&walkin=true`
           : `/intake/${encodeURIComponent(patientId)}?v=${encodeURIComponent(effectiveVisitId)}&done=1`;
@@ -275,9 +275,13 @@ const VitalsForm: React.FC = () => {
 
   const handleCancel = () => {
     if (isWalkInPatient) {
-      navigate(`/transcribe/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
+      // For walk-in, go back to workflow selector
+      navigate('/workflow-selector');
     } else {
-      navigate(`/intake/${patientId}?v=${visitId}&done=1`);
+      // For scheduled, go back to pre-visit summary
+      navigate('/pre-visit-summary', {
+        state: { patient_id: patientId, visit_id: visitId },
+      });
     }
   };
 

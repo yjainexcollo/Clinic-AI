@@ -80,7 +80,7 @@ async def transcribe_audio_options():
     return {"message": "OK"}
 
 
-@router.get("/test-cors")
+@router.get("/test-cors", include_in_schema=False)
 async def test_cors():
     """Test endpoint to verify CORS is working."""
     return {"message": "CORS is working", "timestamp": "2024-01-01T00:00:00Z"}
@@ -449,6 +449,7 @@ class VitalsPayload(BaseModel):
         404: {"model": ErrorResponse, "description": "Patient or visit not found"},
         500: {"model": ErrorResponse, "description": "Internal server error"},
     },
+    include_in_schema=False
 )
 async def store_vitals(
     http_request: Request,
@@ -484,8 +485,13 @@ async def store_vitals(
         if visit.is_walk_in_workflow():
             visit.complete_vitals()  # Sets status to "vitals_completed" for walk-in
         elif visit.is_scheduled_workflow():
-            # For scheduled visits, if transcript exists and status isn't already soap_generation, update it
-            if visit.is_transcription_complete():
+            # For scheduled visits: after vitals, allow transcription
+            # If status is pre_visit_summary_generated, keep it - transcription can proceed
+            if visit.status == "pre_visit_summary_generated":
+                # Keep status as is - can_proceed_to_transcription will allow it
+                pass
+            elif visit.is_transcription_complete():
+                # If transcript exists, update to soap_generation
                 if visit.status not in ["soap_generation", "prescription_analysis", "completed"]:
                     visit.status = "soap_generation"
         
@@ -520,6 +526,7 @@ async def store_vitals(
         404: {"model": ErrorResponse, "description": "Patient or visit not found"},
         500: {"model": ErrorResponse, "description": "Internal server error"},
     },
+    include_in_schema=False
 )
 async def get_vitals(
     patient_id: str,

@@ -24,7 +24,9 @@ const WalkInSoap: React.FC = () => {
         });
 
         if (soapResponse.ok) {
-          const soap = await soapResponse.json();
+          const response = await soapResponse.json();
+          // Extract data from ApiResponse wrapper (backend returns {success, data, message})
+          const soap = response.data || response.soap_note || response;
           setSoapData(soap);
         } else if (soapResponse.status === 404) {
           // SOAP not generated yet, that's okay
@@ -75,7 +77,9 @@ const WalkInSoap: React.FC = () => {
       });
 
       if (soapResponse.ok) {
-        const soap = await soapResponse.json();
+        const response = await soapResponse.json();
+        // Extract data from ApiResponse wrapper (backend returns {success, data, message})
+        const soap = response.data || response.soap_note || response;
         setSoapData(soap);
       }
 
@@ -95,20 +99,11 @@ const WalkInSoap: React.FC = () => {
   };
 
   const handleBack = () => {
-    navigate(`/walk-in-vitals/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
+    // Navigate back to the main workflow page (intake page with all buttons)
+    navigate(`/intake/${encodeURIComponent(patientId)}?v=${encodeURIComponent(visitId)}&walkin=true`);
   };
 
-  const handleNext = () => {
-    navigate(`/walk-in-post-visit/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
-  };
 
-  const handleViewTranscript = () => {
-    navigate(`/transcript-view/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
-  };
-
-  const handleViewVitals = () => {
-    navigate(`/walk-in-vitals/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
-  };
 
   return (
     <div className="max-w-6xl mx-auto p-6">
@@ -125,9 +120,9 @@ const WalkInSoap: React.FC = () => {
           </span>
           <button
             onClick={handleBack}
-            className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+            className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
           >
-            Back to Vitals
+            Back
           </button>
         </div>
       </div>
@@ -145,21 +140,6 @@ const WalkInSoap: React.FC = () => {
         </div>
       )}
 
-      {/* Quick Navigation */}
-      <div className="mb-6 flex gap-3">
-        <button
-          onClick={handleViewTranscript}
-          className="px-4 py-2 bg-blue-100 text-blue-800 rounded-md hover:bg-blue-200 text-sm"
-        >
-          View Transcript
-        </button>
-        <button
-          onClick={handleViewVitals}
-          className="px-4 py-2 bg-gray-100 text-gray-800 rounded-md hover:bg-gray-200 text-sm"
-        >
-          View Vitals
-        </button>
-      </div>
 
       {/* Error Message */}
       {error && (
@@ -195,21 +175,6 @@ const WalkInSoap: React.FC = () => {
           <div className="p-6">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-semibold text-gray-900">SOAP Note</h2>
-              <div className="flex gap-2">
-                <button
-                  onClick={generateSoap}
-                  disabled={loading}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm"
-                >
-                  {loading ? "Regenerating..." : "Regenerate"}
-                </button>
-                <button
-                  onClick={handleNext}
-                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm"
-                >
-                  Continue to Post-Visit Summary
-                </button>
-              </div>
             </div>
 
             {/* SOAP Sections */}

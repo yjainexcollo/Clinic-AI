@@ -13,10 +13,10 @@ import WalkInPatientForm from "./components/WalkInPatientForm";
 import Index from "./pages/Index";
 import SoapSummary from "./pages/SoapSummary";
 import VitalsForm from "./pages/VitalsForm";
-import TranscriptUpload from "./pages/TranscriptUpload";
 import AdhocTranscribe from "./pages/AdhocTranscribe";
 import DoctorPreferences from "./pages/DoctorPreferences";
 import PostVisitSummary from "./pages/PostVisitSummary";
+import PreVisitSummary from "./pages/PreVisitSummary";
 import AudioManagement from "./pages/AudioManagement";
 import WalkInTranscription from "./pages/WalkInTranscription";
 import WalkInVitals from "./pages/WalkInVitals";
@@ -44,9 +44,9 @@ const App: React.FC = () => {
         <Route path="/walk-in-registration" element={<WalkInRegistrationPage />} />
         <Route path="/walk-in/:patientId/:visitId" element={<WalkInTranscription />} />
         <Route path="/intake/:patientId" element={<IntakePage />} />
+        <Route path="/pre-visit-summary" element={<PreVisitSummary />} />
         <Route path="/soap/:patientId/:visitId" element={<SoapSummary />} />
         <Route path="/vitals/:patientId/:visitId" element={<VitalsForm />} />
-        <Route path="/transcribe/:patientId/:visitId" element={<TranscriptUpload />} />
         <Route path="/transcribe/adhoc" element={<AdhocTranscribe />} />
         <Route path="/doctor/preferences" element={<DoctorPreferences />} />
         <Route path="/post-visit/:patientId/:visitId" element={<PostVisitSummary />} />
@@ -90,8 +90,8 @@ const PatientRegistrationPage: React.FC = () => {
 // Walk-in Registration Page Component
 const WalkInRegistrationPage: React.FC = () => {
   const handlePatientCreated = (patientId: string, visitId: string) => {
-    // Navigate to unified tabs page with walk-in flag
-    window.location.href = `/intake/${encodeURIComponent(patientId)}?v=${encodeURIComponent(visitId)}&walkin=true`;
+    // Navigate directly to vitals form after walk-in registration
+    window.location.href = `/walk-in-vitals/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`;
   };
 
   const handleBack = () => {

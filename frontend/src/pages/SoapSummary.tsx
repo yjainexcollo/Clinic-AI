@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { generateSoapNote, getSoapNote } from "../services/patientService";
 import { useLanguage } from "../contexts/LanguageContext";
 
@@ -246,14 +246,6 @@ const SoapSummary: React.FC = () => {
       <Block title={t('soap.plan')} t={t}>{render(plan, t)}</Block>
 
 
-      <div className="flex gap-2 flex-wrap">
-        <Link
-          to={`/intake/${patientId}?v=${visitId}&done=1`}
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-        >
-          {t('soap.back_to_main')}
-        </Link>
-      </div>
     </div>
   );
 };

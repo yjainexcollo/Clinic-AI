@@ -264,6 +264,43 @@ const Index = () => {
     restoreIntakeSession();
   }, [patientId, location.search]);
 
+  // Check walk-in status from URL params and backend whenever location/visitId changes
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const walkin = params.get("walkin");
+    const effectiveVisitId = visitId || (patientId ? localStorage.getItem(`visit_${patientId}`) : null);
+    
+    // Always check walk-in status from URL first (highest priority)
+    if (walkin === "true") {
+      setIsWalkInPatient(true);
+      return; // Don't check backend if URL explicitly says walkin
+    }
+    
+    // Also check workflow type from backend if we have a visitId and URL doesn't have walkin param
+    // This ensures walk-in status persists even if URL param is missing
+    if (effectiveVisitId && walkin !== "true") {
+      const checkWorkflowType = async () => {
+        try {
+          const { workflowService } = await import("../services/workflowService");
+          const stepsResponse = await workflowService.getAvailableSteps(effectiveVisitId);
+          // Check if workflow_type is walk_in
+          if (stepsResponse.workflow_type === "walk_in" || stepsResponse.workflow_type === "WALK_IN") {
+            setIsWalkInPatient(true);
+          } else if (stepsResponse.workflow_type === "scheduled" || stepsResponse.workflow_type === "SCHEDULED") {
+            // Only set to false if explicitly scheduled, to avoid overriding if we're unsure
+            if (walkin === "false") {
+              setIsWalkInPatient(false);
+            }
+          }
+        } catch (error) {
+          console.error("Error checking workflow type:", error);
+          // Don't change state on error - preserve current state
+        }
+      };
+      checkWorkflowType();
+    }
+  }, [location.search, visitId, patientId]);
+
   // On mount, if q is present in URL, show it immediately and cache visit id
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -1195,6 +1232,34 @@ const Index = () => {
                   </button>
                 )}
                 
+                {/* Step 1: Fill Vitals (Walk-in) - Must be first for walk-in flow */}
+                {isWalkInPatient && (
+                  <button
+                    onClick={() => {
+                      if (hasVitals) {
+                        alert('Vitals already filled for this visit. Use "View Vitals" to see them.');
+                        return;
+                      }
+                      
+                      const effectiveVisitId = visitId || (patientId ? localStorage.getItem(`visit_${patientId}`) : null);
+                      if (patientId && effectiveVisitId) {
+                        const vitalsRoute = `/walk-in-vitals/${encodeURIComponent(patientId)}/${encodeURIComponent(effectiveVisitId)}`;
+                        window.location.href = vitalsRoute;
+                      } else {
+                        alert('Missing visit information. Please start intake again.');
+                      }
+                    }}
+                    disabled={hasVitals}
+                    className={`w-full py-3 px-4 rounded-md transition-colors font-medium ${
+                      hasVitals 
+                        ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
+                        : 'bg-amber-600 text-white hover:bg-amber-700'
+                    }`}
+                  >
+                    1. {hasVitals ? 'Vitals Already Filled' : 'Fill Vitals'}
+                  </button>
+                )}
+                
                 {/* Step 1: Upload Transcript (Walk-in) / Step 2: Upload Transcript (Scheduled) */}
                 <button
                   onClick={() => {
@@ -1211,9 +1276,9 @@ const Index = () => {
                       : 'bg-indigo-600 text-white hover:bg-indigo-700'
                   }`}
                 >
-                  {hasTranscript 
-                    ? `${isWalkInPatient ? '1' : '2'}. Transcript Already Uploaded` 
-                    : `${isWalkInPatient ? '1' : '2'}. Upload Transcript`}
+                  {isWalkInPatient 
+                    ? (hasTranscript ? '2. Transcript Already Uploaded' : '2. Upload Transcript')
+                    : (hasTranscript ? '2. Transcript Already Uploaded' : '2. Upload Transcript')}
                 </button>
                 
                 {/* Step 2: View Transcript (Walk-in) / Step 3: View Transcript (Scheduled) */}
@@ -1244,38 +1309,38 @@ const Index = () => {
                   }}
                   className="w-full bg-violet-600 text-white py-3 px-4 rounded-md hover:bg-violet-700 transition-colors font-medium"
                 >
-                  {isWalkInPatient ? '2' : '3'}. View Transcript
+                  {isWalkInPatient ? '3. View Transcript' : '3. View Transcript'}
                 </button>
                 
-                {/* Step 3: Fill Vitals (Walk-in) / Step 4: Fill Vitals (Scheduled) */}
-                <button
-                  onClick={() => {
-                    if (hasVitals) {
-                      alert('Vitals already filled for this visit. Use "View Vitals" to see them.');
-                      return;
-                    }
-                    
-                    const effectiveVisitId = visitId || (patientId ? localStorage.getItem(`visit_${patientId}`) : null);
-                    if (patientId && effectiveVisitId) {
-                      const vitalsRoute = isWalkInPatient 
-                        ? `/walk-in-vitals/${encodeURIComponent(patientId)}/${encodeURIComponent(effectiveVisitId)}`
-                        : `/vitals/${encodeURIComponent(patientId)}/${encodeURIComponent(effectiveVisitId)}`;
-                      window.location.href = vitalsRoute;
-                    } else {
-                      alert('Missing visit information. Please start intake again.');
-                    }
-                  }}
-                  disabled={hasVitals}
-                  className={`w-full py-3 px-4 rounded-md transition-colors font-medium ${
-                    hasVitals 
-                      ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
-                      : 'bg-amber-600 text-white hover:bg-amber-700'
-                  }`}
-                >
-                  {hasVitals 
-                    ? `${isWalkInPatient ? '3' : '4'}. Vitals Already Filled` 
-                    : `${isWalkInPatient ? '3' : '4'}. Fill Vitals`}
-                </button>
+                {/* Step 4: Fill Vitals (Scheduled only - already shown above for walk-in) */}
+                {!isWalkInPatient && (
+                  <button
+                    onClick={() => {
+                      if (hasVitals) {
+                        alert('Vitals already filled for this visit. Use "View Vitals" to see them.');
+                        return;
+                      }
+                      
+                      const effectiveVisitId = visitId || (patientId ? localStorage.getItem(`visit_${patientId}`) : null);
+                      if (patientId && effectiveVisitId) {
+                        const vitalsRoute = `/vitals/${encodeURIComponent(patientId)}/${encodeURIComponent(effectiveVisitId)}`;
+                        window.location.href = vitalsRoute;
+                      } else {
+                        alert('Missing visit information. Please start intake again.');
+                      }
+                    }}
+                    disabled={hasVitals}
+                    className={`w-full py-3 px-4 rounded-md transition-colors font-medium ${
+                      hasVitals 
+                        ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
+                        : 'bg-amber-600 text-white hover:bg-amber-700'
+                    }`}
+                  >
+                    {hasVitals 
+                      ? '4. Vitals Already Filled' 
+                      : '4. Fill Vitals'}
+                  </button>
+                )}
                 
                 {/* Step 4: Generate SOAP Summary (Walk-in) / Step 5: Generate SOAP Summary (Scheduled) */}
                 <button

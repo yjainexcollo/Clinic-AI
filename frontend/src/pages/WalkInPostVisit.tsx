@@ -18,13 +18,15 @@ const WalkInPostVisit: React.FC = () => {
       
       setLoading(true);
       try {
-        // Fetch post-visit summary
-        const summaryResponse = await fetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/post-visit-summary`, {
+        // Fetch post-visit summary (correct endpoint path)
+        const summaryResponse = await fetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/summary/postvisit`, {
           headers: { Accept: "application/json" },
         });
 
         if (summaryResponse.ok) {
-          const summary = await summaryResponse.json();
+          const response = await summaryResponse.json();
+          // Extract data from ApiResponse wrapper (backend returns {success, data, message})
+          const summary = response.data || response;
           setSummaryData(summary);
         } else if (summaryResponse.status === 404) {
           // Summary not generated yet, that's okay
@@ -53,11 +55,15 @@ const WalkInPostVisit: React.FC = () => {
     setError("");
     
     try {
-      const response = await fetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/post-visit-summary`, {
+      const response = await fetch(`${BACKEND_BASE_URL}/patients/summary/postvisit`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
+        body: JSON.stringify({
+          patient_id: patientId,
+          visit_id: visitId
+        })
       });
 
       if (!response.ok) {
@@ -65,7 +71,9 @@ const WalkInPostVisit: React.FC = () => {
         throw new Error(`Failed to generate post-visit summary: ${response.status} - ${errorData}`);
       }
 
-      const summary = await response.json();
+      const responseData = await response.json();
+      // Extract data from ApiResponse wrapper (backend returns {success, data, message})
+      const summary = responseData.data || responseData;
       setSummaryData(summary);
 
       // Refresh workflow steps after generating summary
@@ -84,24 +92,8 @@ const WalkInPostVisit: React.FC = () => {
   };
 
   const handleBack = () => {
-    navigate(`/walk-in-soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
-  };
-
-  const handleComplete = () => {
-    // Navigate back to workflow selector or show completion message
-    navigate("/workflow-selector");
-  };
-
-  const handleViewTranscript = () => {
-    navigate(`/transcript-view/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
-  };
-
-  const handleViewVitals = () => {
-    navigate(`/vitals/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
-  };
-
-  const handleViewSoap = () => {
-    navigate(`/walk-in-soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
+    // Navigate back to the main workflow page (intake page with all buttons)
+    navigate(`/intake/${encodeURIComponent(patientId)}?v=${encodeURIComponent(visitId)}&walkin=true`);
   };
 
   return (
@@ -119,9 +111,9 @@ const WalkInPostVisit: React.FC = () => {
           </span>
           <button
             onClick={handleBack}
-            className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+            className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
           >
-            Back to SOAP
+            Back
           </button>
         </div>
       </div>
@@ -139,27 +131,6 @@ const WalkInPostVisit: React.FC = () => {
         </div>
       )}
 
-      {/* Quick Navigation */}
-      <div className="mb-6 flex gap-3 flex-wrap">
-        <button
-          onClick={handleViewTranscript}
-          className="px-4 py-2 bg-blue-100 text-blue-800 rounded-md hover:bg-blue-200 text-sm"
-        >
-          View Transcript
-        </button>
-        <button
-          onClick={handleViewVitals}
-          className="px-4 py-2 bg-gray-100 text-gray-800 rounded-md hover:bg-gray-200 text-sm"
-        >
-          View Vitals
-        </button>
-        <button
-          onClick={handleViewSoap}
-          className="px-4 py-2 bg-purple-100 text-purple-800 rounded-md hover:bg-purple-200 text-sm"
-        >
-          View SOAP Note
-        </button>
-      </div>
 
       {/* Error Message */}
       {error && (
@@ -193,23 +164,8 @@ const WalkInPostVisit: React.FC = () => {
           </div>
         ) : (
           <div className="p-6">
-            <div className="flex items-center justify-between mb-6">
+            <div className="mb-6">
               <h2 className="text-xl font-semibold text-gray-900">Post-Visit Summary</h2>
-              <div className="flex gap-2">
-                <button
-                  onClick={generateSummary}
-                  disabled={loading}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm"
-                >
-                  {loading ? "Regenerating..." : "Regenerate"}
-                </button>
-                <button
-                  onClick={handleComplete}
-                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm"
-                >
-                  Complete Visit
-                </button>
-              </div>
             </div>
 
             {/* Summary Sections */}
@@ -232,22 +188,27 @@ const WalkInPostVisit: React.FC = () => {
                 </div>
               )}
 
-              {/* Assessment */}
-              {summaryData.assessment && (
+              {/* Key Findings */}
+              {summaryData.key_findings && summaryData.key_findings.length > 0 && (
                 <div className="border-l-4 border-yellow-500 pl-4">
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">Assessment</h3>
-                  <div className="prose max-w-none">
-                    <p className="text-gray-700 whitespace-pre-wrap">{summaryData.assessment}</p>
-                  </div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Key Findings</h3>
+                  <ul className="space-y-2">
+                    {summaryData.key_findings.map((finding: string, index: number) => (
+                      <li key={index} className="flex items-start">
+                        <span className="text-yellow-600 mr-2 mt-1">•</span>
+                        <span className="text-gray-700">{finding}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
 
-              {/* Treatment Plan */}
-              {summaryData.treatment_plan && (
+              {/* Diagnosis */}
+              {summaryData.diagnosis && (
                 <div className="border-l-4 border-green-500 pl-4">
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">Treatment Plan</h3>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Diagnosis</h3>
                   <div className="prose max-w-none">
-                    <p className="text-gray-700 whitespace-pre-wrap">{summaryData.treatment_plan}</p>
+                    <p className="text-gray-700 whitespace-pre-wrap">{summaryData.diagnosis}</p>
                   </div>
                 </div>
               )}
@@ -261,39 +222,92 @@ const WalkInPostVisit: React.FC = () => {
                       <div key={index} className="bg-gray-50 p-3 rounded">
                         <p className="font-medium">{med.name}</p>
                         {med.dosage && <p className="text-sm text-gray-600">Dosage: {med.dosage}</p>}
-                        {med.instructions && <p className="text-sm text-gray-600">Instructions: {med.instructions}</p>}
+                        {med.frequency && <p className="text-sm text-gray-600">Frequency: {med.frequency}</p>}
+                        {med.duration && <p className="text-sm text-gray-600">Duration: {med.duration}</p>}
+                        {med.purpose && <p className="text-sm text-gray-600">Purpose: {med.purpose}</p>}
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* Follow-up Instructions */}
-              {summaryData.follow_up && (
+              {/* Other Recommendations */}
+              {summaryData.other_recommendations && summaryData.other_recommendations.length > 0 && (
                 <div className="border-l-4 border-blue-500 pl-4">
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">Follow-up Instructions</h3>
-                  <div className="prose max-w-none">
-                    <p className="text-gray-700 whitespace-pre-wrap">{summaryData.follow_up}</p>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Recommendations</h3>
+                  <ul className="space-y-2">
+                    {summaryData.other_recommendations.map((rec: string, index: number) => (
+                      <li key={index} className="flex items-start">
+                        <span className="text-blue-600 mr-2 mt-1">•</span>
+                        <span className="text-gray-700">{rec}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Tests Ordered */}
+              {summaryData.tests_ordered && summaryData.tests_ordered.length > 0 && (
+                <div className="border-l-4 border-indigo-500 pl-4">
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Tests Ordered</h3>
+                  <div className="space-y-2">
+                    {summaryData.tests_ordered.map((test: any, index: number) => (
+                      <div key={index} className="bg-gray-50 p-3 rounded">
+                        {test.name && <p className="font-medium">{test.name}</p>}
+                        {test.purpose && <p className="text-sm text-gray-600">Purpose: {test.purpose}</p>}
+                        {test.instructions && <p className="text-sm text-gray-600">Instructions: {test.instructions}</p>}
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
 
-              {/* Important Notes */}
-              {summaryData.important_notes && (
-                <div className="bg-yellow-50 p-4 rounded-lg">
-                  <h3 className="text-lg font-medium text-yellow-900 mb-2">Important Notes</h3>
+              {/* Next Appointment */}
+              {summaryData.next_appointment && (
+                <div className="border-l-4 border-teal-500 pl-4">
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Next Appointment</h3>
                   <div className="prose max-w-none">
-                    <p className="text-yellow-800 whitespace-pre-wrap">{summaryData.important_notes}</p>
+                    <p className="text-gray-700 whitespace-pre-wrap">{summaryData.next_appointment}</p>
                   </div>
                 </div>
               )}
 
-              {/* Emergency Instructions */}
-              {summaryData.emergency_instructions && (
+              {/* Red Flag Symptoms */}
+              {summaryData.red_flag_symptoms && summaryData.red_flag_symptoms.length > 0 && (
                 <div className="bg-red-50 p-4 rounded-lg">
-                  <h3 className="text-lg font-medium text-red-900 mb-2">Emergency Instructions</h3>
+                  <h3 className="text-lg font-medium text-red-900 mb-2">Warning Signs</h3>
+                  <ul className="space-y-2">
+                    {summaryData.red_flag_symptoms.map((symptom: string, index: number) => (
+                      <li key={index} className="flex items-start">
+                        <span className="text-red-600 mr-2 mt-1">⚠</span>
+                        <span className="text-red-800">{symptom}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Patient Instructions */}
+              {summaryData.patient_instructions && summaryData.patient_instructions.length > 0 && (
+                <div className="bg-yellow-50 p-4 rounded-lg">
+                  <h3 className="text-lg font-medium text-yellow-900 mb-2">Patient Instructions</h3>
+                  <ul className="space-y-2">
+                    {summaryData.patient_instructions.map((instruction: string, index: number) => (
+                      <li key={index} className="flex items-start">
+                        <span className="text-yellow-600 mr-2 mt-1">•</span>
+                        <span className="text-yellow-800">{instruction}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Reassurance Note */}
+              {summaryData.reassurance_note && (
+                <div className="bg-green-50 p-4 rounded-lg">
+                  <h3 className="text-lg font-medium text-green-900 mb-2">Reassurance Note</h3>
                   <div className="prose max-w-none">
-                    <p className="text-red-800 whitespace-pre-wrap">{summaryData.emergency_instructions}</p>
+                    <p className="text-green-800 whitespace-pre-wrap">{summaryData.reassurance_note}</p>
                   </div>
                 </div>
               )}

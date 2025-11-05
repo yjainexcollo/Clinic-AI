@@ -138,7 +138,8 @@ const WalkInVitals: React.FC = () => {
   };
 
   const handleBack = () => {
-    navigate(`/transcribe/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
+    // Navigate back to intake page (which has transcription functionality)
+    navigate(`/intake/${encodeURIComponent(patientId)}?v=${encodeURIComponent(visitId)}&walkin=true`);
   };
 
   const handleGeneratePostVisitSummary = async () => {

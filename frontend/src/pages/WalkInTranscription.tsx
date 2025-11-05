@@ -49,8 +49,8 @@ const WalkInTranscription: React.FC = () => {
 
     switch (step) {
       case "transcription":
-        // Navigate to transcription page
-        navigate(`/transcribe/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
+        // Navigate to intake page (which has transcription functionality built-in)
+        navigate(`/intake/${encodeURIComponent(patientId)}?v=${encodeURIComponent(visitId)}&walkin=true`);
         break;
       case "vitals":
         // Navigate to vitals form page
