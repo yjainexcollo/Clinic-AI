@@ -1260,7 +1260,37 @@ const Index = () => {
                   </button>
                 )}
                 
-                {/* Step 1: Upload Transcript (Walk-in) / Step 2: Upload Transcript (Scheduled) */}
+                {/* Step 2: Fill Vitals (Scheduled) - Comes after pre-visit summary, before transcript */}
+                {!isWalkInPatient && (
+                  <button
+                    onClick={() => {
+                      if (hasVitals) {
+                        alert('Vitals already filled for this visit. Use "View Vitals" to see them.');
+                        return;
+                      }
+                      
+                      const effectiveVisitId = visitId || (patientId ? localStorage.getItem(`visit_${patientId}`) : null);
+                      if (patientId && effectiveVisitId) {
+                        const vitalsRoute = `/vitals/${encodeURIComponent(patientId)}/${encodeURIComponent(effectiveVisitId)}`;
+                        window.location.href = vitalsRoute;
+                      } else {
+                        alert('Missing visit information. Please start intake again.');
+                      }
+                    }}
+                    disabled={hasVitals}
+                    className={`w-full py-3 px-4 rounded-md transition-colors font-medium ${
+                      hasVitals 
+                        ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
+                        : 'bg-amber-600 text-white hover:bg-amber-700'
+                    }`}
+                  >
+                    {hasVitals 
+                      ? '2. Vitals Already Filled' 
+                      : '2. Fill Vitals'}
+                  </button>
+                )}
+                
+                {/* Step 2: Upload Transcript (Walk-in) / Step 3: Upload Transcript (Scheduled) */}
                 <button
                   onClick={() => {
                     if (hasTranscript) {
@@ -1278,10 +1308,10 @@ const Index = () => {
                 >
                   {isWalkInPatient 
                     ? (hasTranscript ? '2. Transcript Already Uploaded' : '2. Upload Transcript')
-                    : (hasTranscript ? '2. Transcript Already Uploaded' : '2. Upload Transcript')}
+                    : (hasTranscript ? '3. Transcript Already Uploaded' : '3. Upload Transcript')}
                 </button>
                 
-                {/* Step 2: View Transcript (Walk-in) / Step 3: View Transcript (Scheduled) */}
+                {/* Step 3: View Transcript (Walk-in) / Step 4: View Transcript (Scheduled) */}
                 <button
                   onClick={async () => {
                     try {
@@ -1309,38 +1339,8 @@ const Index = () => {
                   }}
                   className="w-full bg-violet-600 text-white py-3 px-4 rounded-md hover:bg-violet-700 transition-colors font-medium"
                 >
-                  {isWalkInPatient ? '3. View Transcript' : '3. View Transcript'}
+                  {isWalkInPatient ? '3. View Transcript' : '4. View Transcript'}
                 </button>
-                
-                {/* Step 4: Fill Vitals (Scheduled only - already shown above for walk-in) */}
-                {!isWalkInPatient && (
-                  <button
-                    onClick={() => {
-                      if (hasVitals) {
-                        alert('Vitals already filled for this visit. Use "View Vitals" to see them.');
-                        return;
-                      }
-                      
-                      const effectiveVisitId = visitId || (patientId ? localStorage.getItem(`visit_${patientId}`) : null);
-                      if (patientId && effectiveVisitId) {
-                        const vitalsRoute = `/vitals/${encodeURIComponent(patientId)}/${encodeURIComponent(effectiveVisitId)}`;
-                        window.location.href = vitalsRoute;
-                      } else {
-                        alert('Missing visit information. Please start intake again.');
-                      }
-                    }}
-                    disabled={hasVitals}
-                    className={`w-full py-3 px-4 rounded-md transition-colors font-medium ${
-                      hasVitals 
-                        ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
-                        : 'bg-amber-600 text-white hover:bg-amber-700'
-                    }`}
-                  >
-                    {hasVitals 
-                      ? '4. Vitals Already Filled' 
-                      : '4. Fill Vitals'}
-                  </button>
-                )}
                 
                 {/* Step 4: Generate SOAP Summary (Walk-in) / Step 5: Generate SOAP Summary (Scheduled) */}
                 <button

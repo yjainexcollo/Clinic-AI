@@ -33,6 +33,7 @@ from ...domain.errors import (
     VisitNotFoundError,
     PatientAlreadyExistsError,
 )
+from ...domain.enums.workflow import VisitWorkflowType
 
 from ..deps import PatientRepositoryDep, VisitRepositoryDep, QuestionServiceDep, SoapServiceDep
 from ...core.utils.crypto import encode_patient_id, decode_patient_id
@@ -47,7 +48,10 @@ from ..schemas import (
     EditAnswerRequest as EditAnswerRequestSchema,
     EditAnswerResponse as EditAnswerResponseSchema,
     RegisterPatientRequest as RegisterPatientRequestSchema,
-    IntakeSummarySchema
+    IntakeSummarySchema,
+    PatientWithVisitsSchema,
+    PatientListResponse,
+    LatestVisitInfo
 )
 from fastapi import UploadFile, File, Form
 from fastapi.responses import Response
@@ -58,7 +62,7 @@ from beanie import PydanticObjectId
 from ..schemas.common import ApiResponse, ErrorResponse
 from ..utils.responses import ok, fail
 
-router = APIRouter(prefix="/patients", tags=["patients"])
+router = APIRouter(prefix="/patients")
 logger = logging.getLogger("clinicai")
 
 
@@ -66,6 +70,7 @@ logger = logging.getLogger("clinicai")
     "/",
     response_model=ApiResponse[RegisterPatientResponse],
     status_code=status.HTTP_201_CREATED,
+    tags=["Patient Registration"],
     summary="Register a new patient and start intake session",
     responses={
         201: {"description": "Patient registered successfully"},
@@ -132,10 +137,132 @@ async def register_patient(
         return fail(http_request, error="INTERNAL_ERROR", message="Internal error occurred.")
 
 
+@router.get(
+    "/",
+    response_model=ApiResponse[PatientListResponse],
+    status_code=status.HTTP_200_OK,
+    tags=["Patient Management"],
+    summary="Get all patients with visit information",
+    responses={
+        200: {"description": "List of patients retrieved successfully"},
+        500: {"model": ErrorResponse, "description": "Internal server error"},
+    },
+)
+async def list_patients(
+    request: Request,
+    visit_repo: VisitRepositoryDep,
+    workflow_type: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+    sort_by: str = "created_at",
+    sort_order: str = "desc",
+):
+    """
+    Get all patients with aggregated visit information, sorted by workflow type.
+    
+    This endpoint:
+    1. Retrieves patients with their visit statistics
+    2. Filters by workflow type if specified (scheduled or walk_in)
+    3. Sorts by latest visit date or patient name
+    4. Returns paginated results with visit counts
+    
+    Query Parameters:
+    - workflow_type: Optional filter by "scheduled" or "walk_in"
+    - limit: Number of results per page (default: 100)
+    - offset: Number of results to skip (default: 0)
+    - sort_by: Sort field - "created_at" or "name" (default: "created_at")
+    - sort_order: Sort direction - "asc" or "desc" (default: "desc")
+    """
+    try:
+        # Parse workflow_type if provided
+        workflow_type_enum = None
+        if workflow_type:
+            workflow_type_lower = workflow_type.lower()
+            if workflow_type_lower == "scheduled":
+                workflow_type_enum = VisitWorkflowType.SCHEDULED
+            elif workflow_type_lower == "walk_in" or workflow_type_lower == "walk-in":
+                workflow_type_enum = VisitWorkflowType.WALK_IN
+            else:
+                return fail(
+                    request,
+                    error="INVALID_WORKFLOW_TYPE",
+                    message=f"Invalid workflow_type: {workflow_type}. Must be 'scheduled' or 'walk_in'"
+                )
+        
+        # Validate sort parameters
+        if sort_by not in ["created_at", "name"]:
+            sort_by = "created_at"
+        if sort_order not in ["asc", "desc"]:
+            sort_order = "desc"
+        
+        # Get patients with visits
+        patients_data = await visit_repo.find_patients_with_visits(
+            workflow_type=workflow_type_enum,
+            limit=limit,
+            offset=offset,
+            sort_by=sort_by,
+            sort_order=sort_order
+        )
+        
+        # Encode patient IDs and format response
+        formatted_patients = []
+        for patient_data in patients_data:
+            # Encode patient_id for client
+            encoded_patient_id = encode_patient_id(patient_data["patient_id"])
+            
+            # Format latest visit if present
+            latest_visit_info = None
+            if patient_data.get("latest_visit"):
+                latest_visit = patient_data["latest_visit"]
+                latest_visit_info = LatestVisitInfo(
+                    visit_id=latest_visit.get("visit_id", ""),
+                    workflow_type=latest_visit.get("workflow_type", ""),
+                    status=latest_visit.get("status", ""),
+                    created_at=latest_visit.get("created_at", datetime.utcnow())
+                )
+            
+            formatted_patients.append(PatientWithVisitsSchema(
+                patient_id=encoded_patient_id,
+                name=patient_data.get("name", "Unknown"),
+                mobile=patient_data.get("mobile", ""),
+                age=patient_data.get("age", 0),
+                gender=patient_data.get("gender"),
+                latest_visit=latest_visit_info,
+                total_visits=patient_data.get("total_visits", 0),
+                scheduled_visits_count=patient_data.get("scheduled_visits_count", 0),
+                walk_in_visits_count=patient_data.get("walk_in_visits_count", 0)
+            ))
+        
+        # Calculate total count (approximate - for pagination)
+        # Note: For accurate total count, we'd need a separate aggregation
+        # For now, we'll use the returned count as an indicator
+        total_count = len(formatted_patients)
+        has_more = len(formatted_patients) == limit  # If we got full limit, there might be more
+        
+        return ok(
+            request,
+            data=PatientListResponse(
+                patients=formatted_patients,
+                pagination={
+                    "limit": limit,
+                    "offset": offset,
+                    "count": total_count,
+                    "has_more": has_more
+                }
+            ),
+            message="Patients retrieved successfully"
+        )
+        
+    except Exception as e:
+        logger.error("Error listing patients", exc_info=True)
+        return fail(request, error="INTERNAL_ERROR", message="An unexpected error occurred")
+
+
 @router.post(
     "/consultations/answer",
     response_model=AnswerIntakeResponse,
     status_code=status.HTTP_200_OK,
+    tags=["Intake + Pre-Visit Summary"],
     responses={
         400: {"model": ErrorResponse, "description": "Validation error"},
         404: {"model": ErrorResponse, "description": "Patient or visit not found"},
@@ -152,11 +279,10 @@ async def answer_intake_question(
     patient_repo: PatientRepositoryDep,
     visit_repo: VisitRepositoryDep,
     question_service: QuestionServiceDep,
-    # Optional multipart fields (to enable Swagger file upload UI)
+    # Optional multipart fields (to enable Swagger form UI)
     form_patient_id: Optional[str] = Form(None),
     form_visit_id: Optional[str] = Form(None),
     form_answer: Optional[str] = Form(None),
-    medication_images: Optional[List[UploadFile]] = File(None),
 ):
     """
     Answer an intake question and get the next question.
@@ -221,90 +347,7 @@ async def answer_intake_question(
                     },
                 )
 
-            files: List[UploadFile] = medication_images or []
-            if not files:
-                # Fallback to reading via form in case Swagger binds differently
-                try:
-                    form = await request.form()
-                    # Try multiple common field names
-                    candidates: List[UploadFile] = []
-                    for key in ["medication_images", "medication_image", "image", "file", "photo"]:
-                        try:
-                            candidates.extend([f for f in form.getlist(key) if isinstance(f, UploadFile)])
-                        except Exception:
-                            pass
-                    files = [f for f in candidates if getattr(f, "filename", None)]
-                except Exception:
-                    files = []
-            
-            # Store images directly in database if any
-            if files:
-                logger.info("[AnswerIntake] Received %d file(s) for upload", len(files))
-                try:
-                    for i, f in enumerate(files):
-                        logger.info("[AnswerIntake] File[%d]: name=%s type=%s", i, getattr(f, "filename", None), getattr(f, "content_type", None))
-                except Exception:
-                    pass
-                try:
-                    internal_pid = decode_patient_id(form_patient_id)
-                except Exception as e:
-                    logger.warning("[AnswerIntake][FORM] Failed to decode patient_id '%s': %s; using raw value", form_patient_id, e)
-                    internal_pid = form_patient_id
-                
-                # Store each image using blob storage (same as webhook endpoint)
-                from ...adapters.db.mongo.models.patient_m import MedicationImageMongo
-                from ...adapters.storage.azure_blob_service import get_azure_blob_service
-                from ...adapters.db.mongo.repositories.blob_file_repository import BlobFileRepository
-                
-                blob_service = get_azure_blob_service()
-                blob_repo = BlobFileRepository()
-                
-                for file in files:
-                    if isinstance(file, UploadFile) and file.filename:
-                        raw_ct = (file.content_type or "").lower()
-                        content_type = raw_ct.split(";")[0].strip().strip(",")
-                        valid_types = {"image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "image/heif"}
-                        if content_type in valid_types:
-                            content = await file.read()
-                            
-                            # Upload to blob storage
-                            blob_info = await blob_service.upload_file(
-                                file_data=content,
-                                filename=file.filename,
-                                content_type=content_type,
-                                file_type="image",
-                                patient_id=str(internal_pid),
-                                visit_id=str(form_visit_id)
-                            )
-                            
-                            # Create blob reference
-                            blob_reference = await blob_repo.create_blob_reference(
-                                blob_path=blob_info["blob_path"],
-                                container_name=blob_info["container_name"],
-                                original_filename=file.filename,
-                                content_type=content_type,
-                                file_size=len(content),
-                                blob_url=blob_info["blob_url"],
-                                file_type="image",
-                                category="medication",
-                                patient_id=str(internal_pid),
-                                visit_id=str(form_visit_id)
-                            )
-                            
-                            # Store DB record with blob reference
-                            doc = MedicationImageMongo(
-                                patient_id=str(internal_pid),
-                                visit_id=str(form_visit_id),
-                                content_type=content_type,
-                                filename=file.filename,
-                                file_size=len(content),
-                                blob_reference_id=blob_reference.file_id,
-                            )
-                            await doc.insert()
-                            logger.info(f"[AnswerIntake] Stored image {file.filename} in blob storage and database")
-                        else:
-                            logger.warning(f"[AnswerIntake] Skipping invalid file type: {content_type}")
-            
+            # Decode patient_id for use case
             try:
                 internal_pid = decode_patient_id(form_patient_id)
             except Exception as e:
@@ -355,6 +398,7 @@ async def answer_intake_question(
     "/consultations/answer",
     response_model=EditAnswerResponseSchema,
     status_code=status.HTTP_200_OK,
+    tags=["Intake + Pre-Visit Summary"],
 )
 async def edit_intake_answer(
     http_request: Request,
@@ -396,7 +440,7 @@ async def edit_intake_answer(
 
 
 # Endpoint for medication image uploads (supports both single and multiple images)
-@router.post("/webhook/images")
+@router.post("/webhook/images", tags=["Intake + Pre-Visit Summary"])
 async def upload_medication_images(
     request: Request,
     patient_id: str = Form(...),
@@ -642,7 +686,7 @@ async def get_intake_medication_image_content(
 
 
 # List uploaded images for a visit
-@router.get("/{patient_id}/visits/{visit_id}/images")
+@router.get("/{patient_id}/visits/{visit_id}/images", tags=["Intake + Pre-Visit Summary"])
 async def list_medication_images(request: Request, patient_id: str, visit_id: str):
     from ...adapters.db.mongo.models.patient_m import MedicationImageMongo
     try:
@@ -673,7 +717,7 @@ async def list_medication_images(request: Request, patient_id: str, visit_id: st
 
 
 # Delete one uploaded image by id
-@router.delete("/images/{image_id}")
+@router.delete("/images/{image_id}", tags=["Intake + Pre-Visit Summary"])
 async def delete_medication_image(request: Request, image_id: str):
     from ...adapters.db.mongo.models.patient_m import MedicationImageMongo
     try:
@@ -693,6 +737,7 @@ async def delete_medication_image(request: Request, image_id: str):
     "/{patient_id}/visits/{visit_id}/intake/reset",
     response_model=ApiResponse[Dict[str, Any]],
     status_code=status.HTTP_200_OK,
+    include_in_schema=False,
     responses={
         400: {"model": ErrorResponse, "description": "Validation error"},
         404: {"model": ErrorResponse, "description": "Patient or visit not found"},
@@ -747,6 +792,7 @@ async def reset_intake_session(
     "/{patient_id}/visits/{visit_id}/intake/status",
     response_model=ApiResponse[IntakeSummarySchema],
     status_code=status.HTTP_200_OK,
+    include_in_schema=False,
     responses={
         404: {"model": ErrorResponse, "description": "Patient or visit not found"},
         500: {"model": ErrorResponse, "description": "Internal server error"},
@@ -816,6 +862,7 @@ async def get_intake_status(
     "/summary/previsit",
     response_model=PreVisitSummaryResponse,
     status_code=status.HTTP_200_OK,
+    tags=["Intake + Pre-Visit Summary"],
     responses={
         400: {"model": ErrorResponse, "description": "Validation error"},
         404: {"model": ErrorResponse, "description": "Patient or visit not found"},
@@ -876,6 +923,7 @@ async def generate_pre_visit_summary(
     "/{patient_id}/visits/{visit_id}/summary",
     response_model=PreVisitSummaryResponse,
     status_code=status.HTTP_200_OK,
+    tags=["Intake + Pre-Visit Summary"],
     responses={
         404: {"model": ErrorResponse, "description": "Patient, visit, or summary not found"},
         500: {"model": ErrorResponse, "description": "Internal server error"},
@@ -1052,6 +1100,7 @@ async def get_pre_visit_summary(
     "/summary/postvisit",
     response_model=ApiResponse[PostVisitSummaryResponse],
     status_code=status.HTTP_200_OK,
+    tags=["Post-Visit Summary"],
     responses={
         400: {"model": ErrorResponse, "description": "Validation error"},
         404: {"model": ErrorResponse, "description": "Patient or visit not found"},
@@ -1126,6 +1175,7 @@ async def generate_post_visit_summary(
     "/{patient_id}/visits/{visit_id}/summary/postvisit",
     response_model=ApiResponse[PostVisitSummaryResponse],
     status_code=status.HTTP_200_OK,
+    tags=["Post-Visit Summary"]
 )
 async def get_post_visit_summary(
     request: Request,
@@ -1191,6 +1241,7 @@ class VitalsPayload(BaseModel):
 @router.post(
     "/{patient_id}/visits/{visit_id}/vitals",
     status_code=status.HTTP_200_OK,
+    tags=["Vitals and Transcript Generation"],
     responses={
         400: {"model": ErrorResponse, "description": "Validation error"},
         404: {"model": ErrorResponse, "description": "Patient or visit not found"},
@@ -1282,6 +1333,7 @@ async def store_vitals(
 @router.get(
     "/{patient_id}/visits/{visit_id}/vitals",
     status_code=status.HTTP_200_OK,
+    tags=["Vitals and Transcript Generation"],
     responses={
         404: {"model": ErrorResponse, "description": "Patient, visit, or vitals not found"},
         500: {"model": ErrorResponse, "description": "Internal server error"},
