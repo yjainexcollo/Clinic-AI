@@ -15,10 +15,26 @@ from clinicai.core.helicone_client import create_helicone_client
 class OpenAITranscriptionService(TranscriptionService):
     def __init__(self) -> None:
         self._settings = get_settings()
-        api_key = self._settings.openai.api_key or os.getenv("OPENAI_API_KEY", "")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY is not set")
-        # Use Helicone client for AI observability
+        
+        # Require Azure OpenAI - no fallback to standard OpenAI
+        azure_openai_configured = (
+            self._settings.azure_openai.endpoint and 
+            self._settings.azure_openai.api_key
+        )
+        
+        if not azure_openai_configured:
+            raise ValueError(
+                "Azure OpenAI is required. Please configure AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY. "
+                "Fallback to standard OpenAI is disabled for data security."
+            )
+        
+        # Verify Whisper deployment name is configured
+        if not self._settings.azure_openai.whisper_deployment_name:
+            raise ValueError(
+                "Azure OpenAI Whisper deployment name is required. Please set AZURE_OPENAI_WHISPER_DEPLOYMENT_NAME."
+            )
+        
+        # Use Azure OpenAI client (no fallback)
         self._client = create_helicone_client()
 
     async def transcribe_audio(
@@ -45,15 +61,38 @@ class OpenAITranscriptionService(TranscriptionService):
         
         try:
             with open(audio_file_path, "rb") as f:
-                # Use Helicone client with tracking
-                resp, metrics = await self._client.transcription(
-                    model="whisper-1",
-                    file=f,
-                    language=whisper_language,
-                    user_id=None,  # Optional: add user tracking if needed
-                    patient_id=None,  # Optional: add patient tracking if needed
-                    session_id=None  # Optional: add session tracking if needed
+                # Determine which model to use based on client type
+                # Azure OpenAI client uses whisper_deployment_name internally, doesn't accept model parameter
+                # Standard OpenAI client accepts model parameter
+                azure_openai_configured = (
+                    self._settings.azure_openai.endpoint and 
+                    self._settings.azure_openai.api_key
                 )
+                
+                # Check if client is Azure OpenAI (has whisper_deployment_name attribute)
+                is_azure_client = hasattr(self._client, 'whisper_deployment_name')
+                
+                if is_azure_client:
+                    # Azure OpenAI client - don't pass model, it uses whisper_deployment_name internally
+                    resp, metrics = await self._client.transcription(
+                        file=f,
+                        language=whisper_language,
+                        user_id=None,  # Optional: add user tracking if needed
+                        patient_id=None,  # Optional: add patient tracking if needed
+                        session_id=None  # Optional: add session tracking if needed
+                    )
+                    model_name = f"azure-{self._client.whisper_deployment_name}"
+                else:
+                    # Standard OpenAI client - pass model parameter
+                    resp, metrics = await self._client.transcription(
+                        model="whisper-1",
+                        file=f,
+                        language=whisper_language,
+                        user_id=None,  # Optional: add user tracking if needed
+                        patient_id=None,  # Optional: add patient tracking if needed
+                        session_id=None  # Optional: add session tracking if needed
+                    )
+                    model_name = "openai-whisper-1"
             
             # Log metrics
             logger.info(f"[TranscriptionService] Transcription metrics: {metrics}")
@@ -65,7 +104,7 @@ class OpenAITranscriptionService(TranscriptionService):
                 "duration": None,    # unknown
                 "word_count": len(text.split()) if text else 0,
                 "language": language,
-                "model": "openai-whisper-1",
+                "model": model_name,
             }
         except Exception as e:
             raise ValueError(f"Transcription failed: {e}")

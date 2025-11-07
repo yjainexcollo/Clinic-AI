@@ -1246,22 +1246,30 @@ class OpenAIQuestionService(QuestionService):
         self._settings = get_settings()
         self._debug_prompts = getattr(self._settings, "debug_prompts", False)
         
-        api_key = self._settings.openai.api_key or os.getenv("OPENAI_API_KEY", "")
+        # Require Azure OpenAI - no fallback to standard OpenAI
+        azure_openai_configured = (
+            self._settings.azure_openai.endpoint and 
+            self._settings.azure_openai.api_key
+        )
         
-        if not api_key and load_dotenv is not None:
-            cwd = Path(os.getcwd()).resolve()
-            for parent in [cwd, *cwd.parents]:
-                candidate = parent / ".env"
-                if candidate.exists():
-                    load_dotenv(dotenv_path=str(candidate), override=False)
-                    api_key = os.getenv("OPENAI_API_KEY", "")
-                    if api_key:
-                        break
+        if not azure_openai_configured:
+            raise ValueError(
+                "Azure OpenAI is required. Please configure AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY. "
+                "Fallback to standard OpenAI is disabled for data security."
+            )
         
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY is not set")
+        # Verify deployment names are configured
+        if not self._settings.azure_openai.deployment_name:
+            raise ValueError(
+                "Azure OpenAI deployment name is required. Please set AZURE_OPENAI_DEPLOYMENT_NAME."
+            )
         
-        # Initialize Helicone client
+        if not self._settings.azure_openai.whisper_deployment_name:
+            raise ValueError(
+                "Azure OpenAI Whisper deployment name is required. Please set AZURE_OPENAI_WHISPER_DEPLOYMENT_NAME."
+            )
+        
+        # Initialize Azure OpenAI client (no fallback)
         self._client = create_helicone_client()
         
         # Initialize agents

@@ -27,7 +27,6 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 import logging
-# Azure Monitor removed - was causing issues
 import asyncio
 
 
@@ -40,14 +39,8 @@ async def lifespan(app: FastAPI):
     print(f"📊 Environment: {settings.app_env}")
     print(f"🔧 Debug mode: {settings.debug}")
     
-    # Azure Monitor removed - was causing issues
-    # try:
-    #     azure_monitor = get_azure_monitor()
-    #     print("✅ Azure Monitor initialized")
-    # except Exception as e:
-    #     print(f"⚠️  Azure Monitor initialization failed: {e}")
-    #     logging.error(f"Azure Monitor failed to initialize: {e}")
-    
+    # Note: Azure Application Insights is initialized in create_app() before middleware
+    # to ensure proper instrumentation order and request capture
     
     # Initialize database connection (MongoDB + Beanie)
     try:
@@ -97,6 +90,20 @@ async def lifespan(app: FastAPI):
         print(f"❌ Database connection failed: {e}")
         raise
 
+    # Initialize Azure Key Vault (if configured)
+    try:
+        from .core.key_vault import get_key_vault_service
+        key_vault = get_key_vault_service()
+        if key_vault and key_vault.is_available:
+            print("✅ Azure Key Vault initialized")
+            logging.info("Azure Key Vault initialized successfully")
+        else:
+            print("⚠️  Azure Key Vault not available (using environment variables)")
+            logging.debug("Azure Key Vault not configured or not accessible")
+    except Exception as e:
+        print(f"⚠️  Azure Key Vault initialization failed: {e}")
+        logging.debug(f"Azure Key Vault initialization skipped: {e}")
+
     # Initialize Azure Blob Storage
     try:
         from .adapters.storage.azure_blob_service import get_azure_blob_service
@@ -120,6 +127,67 @@ async def lifespan(app: FastAPI):
         # Don't fail startup, but log the error
         logging.error(f"HIPAA Audit Logger failed to initialize: {e}")
 
+    # Validate Azure OpenAI configuration
+    try:
+        azure_openai_configured = (
+            settings.azure_openai.endpoint and 
+            settings.azure_openai.api_key
+        )
+        
+        if azure_openai_configured:
+            # Validate endpoint format
+            if not settings.azure_openai.endpoint.startswith("https://") or ".openai.azure.com" not in settings.azure_openai.endpoint:
+                raise ValueError(
+                    f"Invalid Azure OpenAI endpoint format: {settings.azure_openai.endpoint}. "
+                    "Must be: https://xxx.openai.azure.com/"
+                )
+            
+            # Validate deployment names are configured
+            if not settings.azure_openai.deployment_name:
+                raise ValueError(
+                    "Azure OpenAI chat deployment name is required. "
+                    "Please set AZURE_OPENAI_DEPLOYMENT_NAME."
+                )
+            
+            if not settings.azure_openai.whisper_deployment_name:
+                raise ValueError(
+                    "Azure OpenAI Whisper deployment name is required. "
+                    "Please set AZURE_OPENAI_WHISPER_DEPLOYMENT_NAME."
+                )
+            
+            # Validate API key is not empty
+            if not settings.azure_openai.api_key or len(settings.azure_openai.api_key.strip()) == 0:
+                raise ValueError(
+                    "Azure OpenAI API key is required. "
+                    "Please set AZURE_OPENAI_API_KEY."
+                )
+            
+            print(f"✅ Azure OpenAI configuration validated")
+            print(f"   Endpoint: {settings.azure_openai.endpoint}")
+            print(f"   API Version: {settings.azure_openai.api_version}")
+            print(f"   Chat Deployment: {settings.azure_openai.deployment_name}")
+            print(f"   Whisper Deployment: {settings.azure_openai.whisper_deployment_name}")
+            logging.info(
+                f"Azure OpenAI validated - endpoint={settings.azure_openai.endpoint}, "
+                f"chat_deployment={settings.azure_openai.deployment_name}, "
+                f"whisper_deployment={settings.azure_openai.whisper_deployment_name}"
+            )
+        else:
+            # Azure OpenAI is required - fail startup if not configured
+            raise ValueError(
+                "Azure OpenAI is required but not configured. "
+                "Please set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY. "
+                "Fallback to standard OpenAI is disabled for data security."
+            )
+    except ValueError as e:
+        print(f"❌ Azure OpenAI validation failed: {e}")
+        logging.error(f"Azure OpenAI validation failed: {e}")
+        raise  # Fail startup if Azure OpenAI is misconfigured
+    except Exception as e:
+        print(f"⚠️  Azure OpenAI validation error: {e}")
+        logging.warning(f"Azure OpenAI validation error: {e}")
+        # Don't fail startup for unexpected errors, but log them
+
     # Whisper warm-up disabled to reduce startup memory footprint
 
     yield
@@ -141,6 +209,33 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json", # Restore OpenAPI JSON
         lifespan=lifespan,
     )
+
+    # Initialize Azure Application Insights BEFORE middleware
+    # This must happen early to capture all requests and ensure proper instrumentation order
+    try:
+        app_insights_connection_string = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
+        if app_insights_connection_string:
+            from azure.monitor.opentelemetry import configure_azure_monitor
+            from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+            
+            # Configure Azure Monitor with OpenTelemetry
+            configure_azure_monitor(
+                connection_string=app_insights_connection_string
+            )
+            # Instrument FastAPI app for automatic telemetry
+            # This must be done BEFORE adding middleware to ensure all requests are captured
+            FastAPIInstrumentor.instrument_app(app)
+            print("✅ Azure Application Insights initialized (before middleware)")
+            logging.info("Azure Application Insights initialized successfully")
+        else:
+            print("⚠️  APPLICATIONINSIGHTS_CONNECTION_STRING not set, Application Insights disabled")
+            logging.debug("Application Insights not configured (connection string missing)")
+    except ImportError as e:
+        print(f"⚠️  Application Insights packages not installed: {e}")
+        logging.warning(f"Application Insights not available: {e}")
+    except Exception as e:
+        print(f"⚠️  Azure Application Insights initialization failed: {e}")
+        logging.error(f"Azure Application Insights failed to initialize: {e}", exc_info=True)
 
     # Customize OpenAPI schema to control tag order
     def custom_openapi():

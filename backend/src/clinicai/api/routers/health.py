@@ -42,17 +42,88 @@ async def readiness_check(request: Request):
     Readiness check endpoint.
 
     Returns whether the service is ready to handle requests.
+    Checks database, Azure services, and external dependencies.
     """
-    # In a real implementation, you would check:
-    # - Database connectivity
-    # - External service availability
-    # - Required resources
+    import os
+    from ...core.config import get_settings
+    
+    checks = {}
+    all_ok = True
+    
+    # Check database connectivity
+    try:
+        from motor.motor_asyncio import AsyncIOMotorClient
+        settings = get_settings()
+        client = AsyncIOMotorClient(settings.database.uri, serverSelectionTimeoutMS=5000)
+        await client.admin.command('ping')
+        checks["database"] = "ok"
+    except Exception as e:
+        checks["database"] = f"error: {str(e)[:50]}"
+        all_ok = False
+    
+    # Check Azure Blob Storage
+    try:
+        from ...adapters.storage.azure_blob_service import get_azure_blob_service
+        blob_service = get_azure_blob_service()
+        # Quick check if client can be created
+        _ = blob_service.client
+        checks["azure_blob_storage"] = "ok"
+    except Exception as e:
+        checks["azure_blob_storage"] = f"error: {str(e)[:50]}"
+        all_ok = False
+    
+    # Check Azure Key Vault
+    try:
+        from ...core.key_vault import get_key_vault_service
+        key_vault = get_key_vault_service()
+        if key_vault and key_vault.is_available:
+            checks["azure_key_vault"] = "ok"
+        else:
+            checks["azure_key_vault"] = "not_configured"
+    except Exception as e:
+        checks["azure_key_vault"] = f"error: {str(e)[:50]}"
+    
+    # Check Application Insights
+    app_insights_conn = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
+    if app_insights_conn:
+        checks["application_insights"] = "configured"
+    else:
+        checks["application_insights"] = "not_configured"
+    
+    # Check Azure OpenAI (required - no fallback)
+    settings = get_settings()
+    azure_openai_configured = (
+        settings.azure_openai.endpoint and 
+        settings.azure_openai.api_key
+    )
+    
+    if azure_openai_configured:
+        # Check Azure OpenAI configuration
+        try:
+            # Verify deployment names are configured
+            if settings.azure_openai.deployment_name and settings.azure_openai.whisper_deployment_name:
+                checks["azure_openai"] = "configured"
+                checks["azure_openai_chat_deployment"] = settings.azure_openai.deployment_name
+                checks["azure_openai_whisper_deployment"] = settings.azure_openai.whisper_deployment_name
+                checks["azure_openai_api_version"] = settings.azure_openai.api_version
+            else:
+                checks["azure_openai"] = "partially_configured"
+                all_ok = False
+        except Exception as e:
+            checks["azure_openai"] = f"error: {str(e)[:50]}"
+            all_ok = False
+    else:
+        # Azure OpenAI is required - no fallback
+        checks["azure_openai"] = "not_configured"
+        all_ok = False
+    
+    status = "ready" if all_ok else "degraded"
 
     return ok(request, data={
-        "status": "ready",
+        "status": status,
         "timestamp": datetime.utcnow(),
-        "checks": {"database": "ok", "openai": "ok", "memory": "ok"},
-    }, message="OK")
+        "checks": checks,
+    }, message="OK" if all_ok else "Some services unavailable")
 
 
 @router.get("/live", response_model=ApiResponse[dict])
@@ -63,3 +134,68 @@ async def liveness_check(request: Request):
     Returns whether the service is alive.
     """
     return ok(request, data={"status": "alive", "timestamp": datetime.utcnow()}, message="OK")
+
+
+@router.get("/audit", response_model=ApiResponse[dict])
+async def audit_health_check(request: Request):
+    """
+    HIPAA audit log system health check endpoint.
+
+    Tests audit log write capability and integrity verification.
+    Returns the health status of the HIPAA audit logging system.
+    """
+    from ...core.hipaa_audit import get_audit_logger
+    
+    try:
+        audit_logger = get_audit_logger()
+        
+        # Check if audit logger is initialized (use hasattr to avoid AttributeError)
+        if not hasattr(audit_logger, '_initialized') or not audit_logger._initialized:
+            return ok(request, data={
+                "status": "unhealthy",
+                "error": "Audit logger not initialized",
+                "timestamp": datetime.utcnow()
+            }, message="Audit log system not initialized")
+        
+        # Test audit log write
+        test_audit_id = await audit_logger.log_phi_access(
+            user_id="health_check",
+            action="GET",
+            resource_type="health_check",
+            resource_id="test",
+            patient_id=None,
+            ip_address="127.0.0.1",
+            user_agent="health-check",
+            phi_fields=[],
+            phi_accessed=False,
+            success=True,
+            details={"purpose": "health_check"}
+        )
+        
+        # Verify integrity
+        integrity_ok = await audit_logger.verify_audit_integrity(test_audit_id)
+        
+        # Get audit trail to verify read capability
+        audit_trail = await audit_logger.get_audit_trail(
+            user_id="health_check",
+            limit=1
+        )
+        
+        read_ok = len(audit_trail) > 0
+        
+        status = "healthy" if (integrity_ok and read_ok) else "degraded"
+        
+        return ok(request, data={
+            "status": status,
+            "integrity_check": integrity_ok,
+            "read_check": read_ok,
+            "test_audit_id": test_audit_id,
+            "timestamp": datetime.utcnow()
+        }, message="OK" if status == "healthy" else "Audit log system degraded")
+        
+    except Exception as e:
+        return ok(request, data={
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": datetime.utcnow()
+        }, message="Audit log system unavailable")

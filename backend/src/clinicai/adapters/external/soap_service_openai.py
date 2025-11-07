@@ -18,27 +18,35 @@ class OpenAISoapService(SoapService):
 
     def __init__(self):
         self._settings = get_settings()
-        # Load API key from settings or env (with optional .env fallback)
-        api_key = self._settings.openai.api_key or os.getenv("OPENAI_API_KEY", "")
-        if not api_key:
-            try:
-                from dotenv import load_dotenv  # type: ignore
-                load_dotenv(override=False)
-                api_key = os.getenv("OPENAI_API_KEY", "")
-            except Exception:
-                pass
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY is not set. Please set the OPENAI_API_KEY environment variable or add it to your .env file.")
         
-        # Use Helicone client for AI observability
+        # Require Azure OpenAI - no fallback to standard OpenAI
+        azure_openai_configured = (
+            self._settings.azure_openai.endpoint and 
+            self._settings.azure_openai.api_key
+        )
+        
+        if not azure_openai_configured:
+            raise ValueError(
+                "Azure OpenAI is required. Please configure AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY. "
+                "Fallback to standard OpenAI is disabled for data security."
+            )
+        
+        # Verify deployment name is configured
+        if not self._settings.azure_openai.deployment_name:
+            raise ValueError(
+                "Azure OpenAI deployment name is required. Please set AZURE_OPENAI_DEPLOYMENT_NAME."
+            )
+        
+        # Use Azure OpenAI client (no fallback)
         self._client = create_helicone_client()
-        # Optional: log model and presence of key (masked)
+        # Optional: log initialization
         try:
             logging.getLogger("clinicai").info(
-                "[SoapService] Initialized",
+                "[SoapService] Initialized with Azure OpenAI",
                 extra={
                     "model": self._settings.soap.model,
-                    "has_key": bool(api_key),
+                    "azure_openai_configured": azure_openai_configured,
+                    "deployment_name": self._settings.azure_openai.deployment_name,
                 },
             )
         except Exception:

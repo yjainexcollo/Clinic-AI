@@ -42,16 +42,16 @@ class OpenAISettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="OPENAI_")
 
-    api_key: str = Field(default="", description="OpenAI API key")
-    model: str = Field(default="gpt-4o", description="Default OpenAI model")
-    max_tokens: int = Field(default=16000, description="Maximum tokens for responses")
+    api_key: str = Field(default="", description="OpenAI API key (not used when Azure OpenAI is configured)")
+    model: str = Field(default="gpt-4o-mini", description="Model name for token calculations (defaults to match Azure OpenAI deployment)")
+    max_tokens: int = Field(default=4000, description="Maximum tokens for responses")
     temperature: float = Field(
-        default=0.7, description="Temperature for model responses"
+        default=0.3, description="Temperature for model responses"
     )
 
     @validator("api_key")
     def validate_api_key(cls, v: str) -> str:
-        """Validate OpenAI API key format."""
+        """Validate OpenAI API key format (optional - not used when Azure OpenAI is configured)."""
         if v and not v.startswith("sk-"):
             raise ValueError("OpenAI API key must start with 'sk-'")
         return v
@@ -262,6 +262,28 @@ class AzureBlobSettings(BaseSettings):
         return v
 
 
+class AzureOpenAISettings(BaseSettings):
+    """Azure OpenAI configuration settings."""
+    
+    model_config = SettingsConfigDict(env_prefix="AZURE_OPENAI_")
+    
+    endpoint: str = Field(default="", description="Azure OpenAI endpoint URL")
+    api_key: str = Field(default="", description="Azure OpenAI API key")
+    api_version: str = Field(default="2024-07-18", description="Azure OpenAI API version")
+    deployment_name: str = Field(default="gpt-4o-mini", description="Azure OpenAI chat deployment name")
+    whisper_deployment_name: str = Field(default="whisper", description="Azure OpenAI Whisper deployment name for transcription")
+    
+    @validator("endpoint")
+    def validate_endpoint(cls, v: str) -> str:
+        """Validate Azure OpenAI endpoint format."""
+        if v and not (v.startswith("https://") and ".openai.azure.com" in v):
+            # Allow empty string for optional use
+            if v == "":
+                return v
+            raise ValueError("Invalid Azure OpenAI endpoint format. Must be: https://xxx.openai.azure.com/")
+        return v
+
+
 class Settings(BaseSettings):
     """Main application settings."""
 
@@ -289,9 +311,50 @@ class Settings(BaseSettings):
     mistral: MistralSettings = Field(default_factory=MistralSettings)
     file_storage: FileStorageSettings = Field(default_factory=FileStorageSettings)
     azure_blob: AzureBlobSettings = Field(default_factory=AzureBlobSettings)
+    azure_openai: AzureOpenAISettings = Field(default_factory=AzureOpenAISettings)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        
+        # Try to load secrets from Azure Key Vault if available
+        # This allows secure secret management in production
+        key_vault_secrets = {}
+        try:
+            from .key_vault import get_key_vault_service
+            key_vault = get_key_vault_service()
+            
+            if key_vault and key_vault.is_available:
+                # Load secrets from Key Vault (with fallback to env vars)
+                # Secret names in Key Vault should match these patterns
+                key_vault_secrets = {
+                    "OPENAI_API_KEY": key_vault.get_secret("OPENAI-API-KEY"),
+                    "MONGO_URI": key_vault.get_secret("MONGO-URI"),
+                    "MISTRAL_API_KEY": key_vault.get_secret("MISTRAL-API-KEY"),
+                    "ENCRYPTION_KEY": key_vault.get_secret("ENCRYPTION-KEY"),
+                    "SECURITY_SECRET_KEY": key_vault.get_secret("SECURITY-SECRET-KEY"),
+                    "AZURE_BLOB_CONNECTION_STRING": key_vault.get_secret("AZURE-BLOB-CONNECTION-STRING"),
+                    "AZURE_BLOB_ACCOUNT_NAME": key_vault.get_secret("AZURE-BLOB-ACCOUNT-NAME"),
+                    "AZURE_BLOB_ACCOUNT_KEY": key_vault.get_secret("AZURE-BLOB-ACCOUNT-KEY"),
+                    # Azure OpenAI secrets
+                    "AZURE_OPENAI_ENDPOINT": key_vault.get_secret("AZURE-OPENAI-ENDPOINT"),
+                    "AZURE_OPENAI_API_KEY": key_vault.get_secret("AZURE-OPENAI-API-KEY"),
+                    "AZURE_OPENAI_API_VERSION": key_vault.get_secret("AZURE-OPENAI-API-VERSION"),
+                    "AZURE_OPENAI_DEPLOYMENT_NAME": key_vault.get_secret("AZURE-OPENAI-DEPLOYMENT-NAME"),
+                    "AZURE_OPENAI_WHISPER_DEPLOYMENT_NAME": key_vault.get_secret("AZURE-OPENAI-WHISPER-DEPLOYMENT-NAME"),
+                }
+                # Only use Key Vault values if they exist (don't override env vars that are already set)
+                for key, value in key_vault_secrets.items():
+                    if value and not os.getenv(key):
+                        os.environ[key] = value
+                
+                import logging
+                logger = logging.getLogger("clinicai")
+                logger.info("✅ Loaded secrets from Azure Key Vault")
+        except Exception as e:
+            import logging
+            logger = logging.getLogger("clinicai")
+            logger.debug(f"Key Vault integration skipped (using environment variables): {e}")
+        
         # Override sub-settings with environment variables
         self.database = DatabaseSettings()
         self.openai = OpenAISettings()
