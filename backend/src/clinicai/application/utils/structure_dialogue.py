@@ -113,53 +113,66 @@ Elimina TODOS los identificadores personales para proteger la privacidad:
 
 🔍 REGLAS DE IDENTIFICACIÓN DE HABLANTE (Aplicar en orden de prioridad)
 
-1. ANÁLISIS BASADO EN CONTEXTO (MÁS IMPORTANTE - 95% precisión)
+1. IGNORAR ETIQUETAS INCORRECTAS EN LA ENTRADA (CRÍTICO)
+   • Si la entrada tiene etiquetas "Doctor:" o "Paciente:", pueden estar EQUIVOCADAS - NO las confíes ciegamente
+   • SIEMPRE analiza el CONTENIDO REAL para determinar el hablante correcto
+   • Ejemplo: Si la entrada dice "Paciente: ¿Cuándo comenzó el dolor?" pero es claramente una pregunta, en realidad es el Doctor hablando
+   • Ejemplo: Si la entrada dice "Doctor: He tenido dolor en el pecho" pero es experiencia en primera persona, en realidad es el Paciente hablando
+
+2. ANÁLISIS BASADO EN CONTEXTO (MÁS IMPORTANTE - 95% precisión)
    • SIEMPRE analiza el turno PREVIO para determinar el hablante
    • Si el turno anterior fue Doctor haciendo pregunta → la siguiente respuesta es Paciente
    • Si el turno anterior fue Paciente respondiendo → la siguiente declaración es Doctor
    • Patrón de examen físico: instrucción del Doctor → respuesta del Paciente → observación del Doctor
    • Flujo de conversación: Doctor saluda → Paciente indica razón → Doctor pregunta → Paciente responde → Doctor examina → Paciente responde → Doctor resume → Paciente confirma
+   • Si una línea comienza con una descripción de personaje (ej: "El doctor, Dr. [NAME] un hombre de unos 50 años") → ELIMÍNALA (es narrativa, no diálogo)
 
-2. SEÑALES DEL DOCTOR (99% precisión cuando están presentes)
-   • Preguntas (interrogativas): "¿Cuándo...?", "¿Cuánto tiempo...?", "¿Puedes...?", "¿Qué...?", "¿Alguna...?"
-   • Instrucciones (imperativas): "Déjame...", "Voy a...", "Vamos a...", "Puede mover...", "Levante...", "Resista..."
-   • Evaluaciones clínicas: "Veo...", "No veo...", "Parece...", "Es una buena señal", "Sospecho..."
+3. SEÑALES DEL DOCTOR (99% precisión cuando están presentes)
+   • Preguntas (interrogativas): "¿Cuándo...?", "¿Cuánto tiempo...?", "¿Puedes...?", "¿Qué...?", "¿Alguna...?", "¿Es...?", "¿Estás...?"
+   • Instrucciones (imperativas): "Déjame...", "Voy a...", "Vamos a...", "Puede mover...", "Levante...", "Resista...", "Tome asiento"
+   • Evaluaciones clínicas: "Veo...", "No veo...", "Parece...", "Es una buena señal", "Sospecho...", "Su [condición] está..."
    • Terminología médica: nombres de fármacos, términos anatómicos, diagnósticos, procedimientos
-   • Declaraciones de autoridad: "Recomiendo", "Debe", "Es importante", "Necesitamos"
-   • Plan/prescripción: "Voy a ordenar", "Voy a prescribir", "Voy a referir", "Vamos a programar"
+   • Declaraciones de autoridad: "Recomiendo", "Debe", "Es importante", "Necesitamos", "No [hacer algo]"
+   • Plan/prescripción: "Voy a ordenar", "Voy a prescribir", "Voy a referir", "Vamos a programar", "Quiero que se reúna con..."
    • Comandos de examen: "Mueva su...", "Levante...", "Resista...", "¿Puede sentir...?", "¿Siente algún dolor?"
-   • Saludos/aperturas: "Hola soy el Dr.", "Mucho gusto", "¿En qué puedo ayudarle?"
+   • Saludos/aperturas: "Hola soy el Dr.", "Mucho gusto", "¿En qué puedo ayudarle?", "Ah, [nombre], tome asiento"
+   • Explicando conceptos médicos: "La clave es...", "No se trata de...", "Vamos a comenzar con..."
 
-3. SEÑALES DEL PACIENTE (99% precisión cuando están presentes)
-   • Experiencias en primera persona: "Tengo", "Siento", "He estado", "Tomé", "Fui", "Estoy aquí por"
-   • Respuestas directas: "Sí", "No", "Alrededor de...", "Fue...", "No..."
+4. SEÑALES DEL PACIENTE (99% precisión cuando están presentes)
+   • Experiencias en primera persona: "Tengo", "Siento", "He estado", "Tomé", "Fui", "Estoy aquí por", "Trato", "No entiendo"
+   • Respuestas directas: "Sí", "No", "Alrededor de...", "Fue...", "No...", "Supongo que podría"
    • Descripciones de síntomas: "Me duele", "Es doloroso", "Comenzó...", "Empeora cuando..."
-   • Historia personal: "Usualmente...", "Trato de...", "No he...", "Mi última..."
-   • Respuestas a instrucciones: "Bien", "Sí doctor", "No duele", "Está bien", "De acuerdo" (DESPUÉS del comando del doctor)
-   • Confirmación: "Sí, está bien", "Entiendo", "Comprendo", "Suena bien"
-   • Preguntas al doctor: "¿Qué significa eso?", "¿Es grave?", "¿Cuánto tiempo...?", "¿Necesito...?"
+   • Historia personal: "Usualmente...", "Trato de...", "No he...", "Mi última...", "Mi papá lo tenía"
+   • Respuestas a instrucciones: "Bien", "Sí doctor", "No duele", "Está bien", "De acuerdo", "Gracias, doctor" (DESPUÉS del comando del doctor)
+   • Confirmación: "Sí, está bien", "Entiendo", "Comprendo", "Suena bien", "¿Entonces es oficial?"
+   • Preguntas al doctor: "¿Qué significa eso?", "¿Es grave?", "¿Cuánto tiempo...?", "¿Necesito...?", "¿Qué tipo de cambios?"
+   • Expresiones emocionales: "Tengo tanto miedo", "Simplemente no entiendo", expresando miedo o preocupación
 
-4. SEÑALES DE MIEMBRO DE LA FAMILIA
+5. SEÑALES DE MIEMBRO DE LA FAMILIA
    • Referencias en tercera persona al paciente: "¿Cómo ha estado mamá...?", "Ella mencionó...", "Él dijo..."
    • Auto-identificación: "Soy su hija", "Soy su esposa"
    • Perspectiva externa: "Ella ha tenido problemas...", "Él no duerme bien"
 
-5. ÁRBOL DE DECISIÓN PARA CASOS AMBIGUOS
-   • Contiene signo de interrogación (?) → probablemente Doctor preguntando
+6. ÁRBOL DE DECISIÓN PARA CASOS AMBIGUOS
+   • Contiene signo de interrogación (?) → probablemente Doctor preguntando (a menos que sea el Paciente preguntando al doctor)
    • Empieza con "Yo" + verbo + experiencia personal → Paciente
-   • Contiene términos médicos (diagnóstico, nombres de fármacos) → probablemente Doctor explicando
+   • Contiene términos médicos (diagnóstico, nombres de fármacos) en contexto explicativo → probablemente Doctor explicando
    • Respuesta corta ("Bien", "Excelente", "Sí") DESPUÉS de instrucción del doctor → Paciente
    • Describe lo que el doctor hará ("Voy a...", "Vamos a...") → Doctor
    • Respuestas de una palabra ("Sí", "Bien") → asignar al respondedor lógico basado en la pregunta precedente
    • Si no está seguro → verifica CONTEXTO: ¿qué se dijo antes?
+   • Si la línea describe a una persona ("Está hojeando", "Ella se mueve en su asiento") → ELIMINAR (es narrativa, no diálogo)
 
 ⚠️ CASOS ESPECIALES Y MANEJO DE ERRORES
 • Audio poco claro: Preserva [inaudible] o [poco claro] exactamente, asigna basado en contexto circundante
-• Entrada mal etiquetada: Re-etiqueta basado en análisis de contenido, confía en contenido sobre etiquetas originales
+• Entrada mal etiquetada: Re-etiqueta basado en análisis de contenido, confía en contenido sobre etiquetas originales - IGNORA prefijos incorrectos "Doctor:" o "Paciente:"
+• Contenido duplicado: Si el mismo diálogo aparece dos veces, inclúyelo solo UNA VEZ
 • Discusión administrativa: Asigna a quien inició el tema
 • Múltiples miembros de familia: Usa solo etiqueta "Miembro de la Familia" (sin distinciones como "Miembro de la Familia 1")
 • Interrupciones: Etiqueta la porción de cada hablante por separado
 • Turnos extendidos: Permite monólogos más largos cuando sea contextualmente apropiado (descripciones detalladas de síntomas, explicaciones de tratamiento)
+• Descripciones narrativas: Elimina líneas que describen acciones, sonidos o apariencias sin diálogo hablado
+• Descripciones de personajes: Elimina líneas como "El doctor, Dr. [NAME] un hombre de unos 50 años" - estas no son diálogo hablado
 
 📤 REQUISITOS DE SALIDA
 • Salida SOLO arreglo JSON válido: [{"Doctor": "..."}, {"Paciente": "..."}]
@@ -228,8 +241,31 @@ Rule 1: VERBATIM TEXT PRESERVATION (MOST IMPORTANT)
 • Maintain original capitalization and punctuation
 • Preserve cut-off speech exactly as written (e.g., "I was hav-- having trouble")
 
-Rule 2: PERSONAL IDENTIFIER HANDLING
-Remove ALL personal identifiers to protect privacy:
+Rule 2: REMOVE SOUND EFFECTS AND ENVIRONMENTAL DESCRIPTIONS
+• Remove ALL sound effects: "beep, beep", "thump", "tack, tack, tack", "drip, drip, drip", "scrapes loudly", "vibrates", "buzz", "siren", "bang", "cough", "hack", "squeaks", "click", "scribbling sound", etc.
+• Remove ALL environmental/narrative descriptions that are NOT spoken dialogue:
+  - "The door closes with a gentle thump" → REMOVE
+  - "A faint beep, beep" → REMOVE
+  - "The rustle of the [NAME]" → REMOVE
+  - "The chair scrapes loudly against the floor" → REMOVE
+  - "A phone vibrates on the desk" → REMOVE
+  - "The plastic frame makes a small click" → REMOVE
+  - "The sound of a loud, distant car horn" → REMOVE
+  - "Someone in the waiting room laughs loudly" → REMOVE
+  - "A loud bang from a dropped object outside the door" → REMOVE
+  - "A faint drip, drip, drip from a leaky faucet" → REMOVE
+  - "The distant cough from the waiting room returns" → REMOVE
+  - "The doctor's pen makes a small scribbling sound" → REMOVE
+• Keep ONLY actual spoken dialogue from Doctor, Patient, or Family Member
+• If a line describes an action but contains spoken words, extract ONLY the spoken words
+
+Rule 3: HANDLE ALREADY-REDACTED PLACEHOLDERS
+• If [NAME] or [REDACTED] already exists in the transcript, KEEP IT AS IS
+• Do NOT replace [NAME] with another placeholder
+• Do NOT remove [NAME] - it's already been redacted
+
+Rule 4: PERSONAL IDENTIFIER HANDLING (Only if not already redacted)
+Remove ALL personal identifiers to protect privacy (only if they appear as actual names, not already as [NAME]):
 • ALL names (Doctor names, Patient names, Family names):
   - "Dr. Prasad" → "[NAME]" or "[REDACTED]"
   - "Dr. John Smith" → "[NAME]"
@@ -256,53 +292,66 @@ Remove ALL personal identifiers to protect privacy:
 
 🔍 SPEAKER IDENTIFICATION RULES (Apply in Priority Order)
 
-1. CONTEXT-BASED ANALYSIS (MOST IMPORTANT - 95% accuracy)
+1. IGNORE INCORRECT LABELS IN INPUT (CRITICAL)
+   • If input has "Doctor:" or "Patient:" labels, they may be WRONG - DO NOT trust them blindly
+   • ALWAYS analyze the ACTUAL CONTENT to determine the correct speaker
+   • Example: If input says "Patient: When did the pain start?" but it's clearly a question, it's actually Doctor speaking
+   • Example: If input says "Doctor: I've been having chest pain" but it's first-person experience, it's actually Patient speaking
+
+2. CONTEXT-BASED ANALYSIS (MOST IMPORTANT - 95% accuracy)
    • ALWAYS analyze the PREVIOUS turn to determine speaker
    • If previous turn was Doctor asking question → next response is Patient
    • If previous turn was Patient answering → next statement is Doctor
    • Physical exam pattern: Doctor instruction → Patient response → Doctor observation
    • Conversation flow: Doctor greets → Patient states reason → Doctor asks → Patient answers → Doctor examines → Patient responds → Doctor summarizes → Patient confirms
+   • If a line starts with a character description (e.g., "The doctor, Dr. [NAME] a man in his late 50s") → REMOVE IT (it's narrative, not dialogue)
 
-2. DOCTOR SIGNALS (99% accuracy when present)
-   • Questions (interrogative): "When...?", "How long...?", "Can you...?", "What...?", "Any...?"
-   • Instructions (imperative): "Let me...", "I'll...", "We'll...", "Can you move...", "Raise your...", "Resist against..."
-   • Clinical assessments: "I see...", "I don't see...", "It appears...", "That's a good sign", "I suspect..."
+3. DOCTOR SIGNALS (99% accuracy when present)
+   • Questions (interrogative): "When...?", "How long...?", "Can you...?", "What...?", "Any...?", "Is it...?", "Are you...?"
+   • Instructions (imperative): "Let me...", "I'll...", "We'll...", "Can you move...", "Raise your...", "Resist against...", "Take a seat"
+   • Clinical assessments: "I see...", "I don't see...", "It appears...", "That's a good sign", "I suspect...", "Your [condition] is..."
    • Medical terminology: drug names, anatomical terms, diagnoses, procedures
-   • Authority statements: "I recommend", "You should", "It's important", "We need to"
-   • Plan/prescription: "I'll order", "I'll prescribe", "I'll refer", "We'll schedule"
+   • Authority statements: "I recommend", "You should", "It's important", "We need to", "Let's not [do something]"
+   • Plan/prescription: "I'll order", "I'll prescribe", "I'll refer", "We'll schedule", "I want you to meet with..."
    • Exam commands: "Move your...", "Raise...", "Resist...", "Can you feel...", "Do you feel any pain?"
-   • Greetings/openings: "Hi I'm Dr.", "Nice to meet you", "How can I help?"
+   • Greetings/openings: "Hi I'm Dr.", "Nice to meet you", "How can I help?", "Ah, [name], take a seat"
+   • Explaining medical concepts: "The key is...", "It's not about...", "We're going to start with..."
 
-3. PATIENT SIGNALS (99% accuracy when present)
-   • First-person experiences: "I have", "I feel", "I've been", "I took", "I went", "I'm here for"
-   • Direct answers: "Yes", "No", "About...", "It was...", "I don't..."
+4. PATIENT SIGNALS (99% accuracy when present)
+   • First-person experiences: "I have", "I feel", "I've been", "I took", "I went", "I'm here for", "I try", "I don't understand"
+   • Direct answers: "Yes", "No", "About...", "It was...", "I don't...", "I guess I could"
    • Symptom descriptions: "It hurts", "It's painful", "It started...", "It gets worse when..."
-   • Personal history: "I usually...", "I try to...", "I haven't...", "My last..."
-   • Responses to instructions: "Okay", "Yes doctor", "No pain", "That's fine", "Alright" (AFTER doctor's command)
-   • Confirmation: "Yes, that's okay", "I understand", "Got it", "Sounds good"
-   • Questions to doctor: "What does that mean?", "Is it serious?", "How long...?", "Do I need...?"
+   • Personal history: "I usually...", "I try to...", "I haven't...", "My last...", "My dad had it"
+   • Responses to instructions: "Okay", "Yes doctor", "No pain", "That's fine", "Alright", "Thank you, doctor" (AFTER doctor's command)
+   • Confirmation: "Yes, that's okay", "I understand", "Got it", "Sounds good", "So it's official then?"
+   • Questions to doctor: "What does that mean?", "Is it serious?", "How long...?", "Do I need...?", "What kind of changes?"
+   • Emotional expressions: "I'm so scared", "I just don't understand", expressing fear or concern
 
-4. FAMILY MEMBER SIGNALS
+5. FAMILY MEMBER SIGNALS
    • Third-person references to patient: "How has mom been...?", "She mentioned...", "He said..."
    • Self-identification: "I'm her daughter", "I'm his wife"
    • External perspective: "She's been having trouble...", "He doesn't sleep well"
 
-5. DECISION TREE FOR AMBIGUOUS CASES
-   • Contains question mark (?) → likely Doctor asking
+6. DECISION TREE FOR AMBIGUOUS CASES
+   • Contains question mark (?) → likely Doctor asking (unless it's Patient asking doctor a question)
    • Starts with "I" + verb + personal experience → Patient
-   • Contains medical terms (diagnosis, drug names) → likely Doctor explaining
+   • Contains medical terms (diagnosis, drug names) in explanatory context → likely Doctor explaining
    • Short response ("Okay", "Great", "Yes") AFTER doctor's instruction → Patient
    • Describes what doctor will do ("I'll...", "We'll...") → Doctor
    • Single-word responses ("Yes", "Okay") → assign to logical responder based on preceding question
    • If unsure → check CONTEXT: what was said before?
+   • If line describes a person ("He's flipping through", "She shifts in her seat") → REMOVE (it's narrative, not dialogue)
 
 ⚠️ EDGE CASES & ERROR HANDLING
 • Unclear audio: Preserve [inaudible] or [unclear] exactly, assign based on surrounding context
-• Mislabeled input: Relabel based on content analysis, trust content over original labels
+• Mislabeled input: Relabel based on content analysis, trust content over original labels - IGNORE incorrect "Doctor:" or "Patient:" prefixes
+• Duplicate content: If the same dialogue appears twice, include it only ONCE
 • Administrative discussion: Assign to whoever initiated the topic
 • Multiple family members: Use only "Family Member" label (no distinctions like "Family Member 1")
 • Interruptions: Label each speaker's portion separately
 • Extended turns: Permit longer monologues when contextually appropriate (detailed symptom descriptions, treatment explanations)
+• Narrative descriptions: Remove lines that describe actions, sounds, or appearances without spoken dialogue
+• Character descriptions: Remove lines like "The doctor, Dr. [NAME] a man in his late 50s" - these are not spoken dialogue
 
 📤 OUTPUT REQUIREMENTS
 • Output ONLY valid JSON array: [{"Doctor": "..."}, {"Patient": "..."}]
@@ -341,7 +390,22 @@ Input: Are you on any medications? Yes, metformin and jardiance. Also lisinopril
 Output: [{"Doctor": "Are you on any medications?"}, {"Patient": "Yes, metformin and jardiance. Also lisinopril, 10 milligrams."}]
 Note: Medication names (metformin, jardiance, lisinopril) are NOT removed - they are medical terms, not PII.
 
-Example 5: Family Member
+Example 5: Remove Sound Effects and Narrative
+Input: Doctor: The door closes with a gentle thump. Ah, Sarah, take a seat. Patient: The chair scrapes loudly. Thank you, doctor.
+Output: [{"Doctor": "Ah, [NAME], take a seat."}, {"Patient": "Thank you, doctor."}]
+Note: Sound effects ("thump", "scrapes loudly") and narrative ("The door closes") are removed.
+
+Example 6: Ignore Incorrect Labels
+Input: Patient: When did the pain start? Doctor: I've been having chest pain for three days.
+Output: [{"Doctor": "When did the pain start?"}, {"Patient": "I've been having chest pain for three days."}]
+Note: The input labels were wrong - the question is from Doctor, the first-person experience is from Patient.
+
+Example 7: Handle Already-Redacted Names
+Input: Doctor: Hello, [NAME]. How can I help? Patient: I'm here to see Dr. [NAME].
+Output: [{"Doctor": "Hello, [NAME]. How can I help?"}, {"Patient": "I'm here to see [NAME]."}]
+Note: [NAME] placeholders are kept as-is, but "Dr. [NAME]" becomes just "[NAME]" to avoid redundancy.
+
+Example 8: Family Member
 Input: How has mom been sleeping lately? She tosses and turns all night.
 Output: [{"Family Member": "How has mom been sleeping lately?"}, {"Doctor": "She tosses and turns all night."}]
 

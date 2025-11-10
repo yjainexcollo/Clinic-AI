@@ -46,16 +46,28 @@ const VitalsForm: React.FC = () => {
         const stepsResponse = await workflowService.getAvailableSteps(visitId);
         setWorkflowInfo(stepsResponse);
         
-        // Determine if this is a walk-in patient based on available steps
-        if (stepsResponse.available_steps.includes("vitals")) {
+        // Use workflow_type from backend (source of truth) instead of inferring from steps
+        // Both scheduled and walk-in can have "vitals" in available_steps
+        if (stepsResponse.workflow_type === "walk_in" || stepsResponse.workflow_type === "WALK_IN" || stepsResponse.workflow_type === "walk-in") {
           setIsWalkInPatient(true);
-        } else {
+        } else if (stepsResponse.workflow_type === "scheduled" || stepsResponse.workflow_type === "SCHEDULED") {
           setIsWalkInPatient(false);
+        } else {
+          // Fallback: check URL params if workflow_type is not available
+          const urlParams = new URLSearchParams(window.location.search);
+          const walkin = urlParams.get("walkin");
+          if (walkin === "true") {
+            setIsWalkInPatient(true);
+          } else {
+            setIsWalkInPatient(false);
+          }
         }
       } catch (error) {
         console.error("Error fetching workflow info:", error);
-        // Default to scheduled workflow if we can't determine
-        setIsWalkInPatient(false);
+        // Fallback: check URL params on error
+        const urlParams = new URLSearchParams(window.location.search);
+        const walkin = urlParams.get("walkin");
+        setIsWalkInPatient(walkin === "true");
       }
     };
 
@@ -245,13 +257,24 @@ const VitalsForm: React.FC = () => {
       } catch {}
       setAlreadySubmitted(true);
 
-      // Redirect back to intake page after vitals submission (scheduled flow)
+      // Redirect back to intake page after vitals submission
       // The intake page has transcription upload functionality built-in
       const effectiveVisitId = visitId || (patientId ? localStorage.getItem(`visit_${patientId}`) : null);
       if (patientId && effectiveVisitId) {
-        // Check URL params for walkin flag, or use state
+        // Use workflow_type from backend (workflowInfo) as source of truth
+        // Fallback to isWalkInPatient state or URL params if workflowInfo not available
         const urlParams = new URLSearchParams(window.location.search);
-        const isWalkIn = isWalkInPatient || urlParams.get('walkin') === 'true';
+        let isWalkIn = false;
+        
+        if (workflowInfo?.workflow_type) {
+          // Use backend workflow_type (most reliable)
+          isWalkIn = workflowInfo.workflow_type === "walk_in" || 
+                     workflowInfo.workflow_type === "WALK_IN" || 
+                     workflowInfo.workflow_type === "walk-in";
+        } else {
+          // Fallback to state or URL params
+          isWalkIn = isWalkInPatient || urlParams.get('walkin') === 'true';
+        }
         
         // For scheduled workflow: go back to intake page (which has transcription buttons)
         // For walk-in workflow: go back to intake page with walkin flag

@@ -264,40 +264,38 @@ const Index = () => {
     restoreIntakeSession();
   }, [patientId, location.search]);
 
-  // Check walk-in status from URL params and backend whenever location/visitId changes
+  // Check walk-in status from backend (source of truth) and URL params (fallback)
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const walkin = params.get("walkin");
     const effectiveVisitId = visitId || (patientId ? localStorage.getItem(`visit_${patientId}`) : null);
     
-    // Always check walk-in status from URL first (highest priority)
-    if (walkin === "true") {
-      setIsWalkInPatient(true);
-      return; // Don't check backend if URL explicitly says walkin
-    }
-    
-    // Also check workflow type from backend if we have a visitId and URL doesn't have walkin param
-    // This ensures walk-in status persists even if URL param is missing
-    if (effectiveVisitId && walkin !== "true") {
+    // Backend is the source of truth - always check backend first if we have a visitId
+    if (effectiveVisitId) {
       const checkWorkflowType = async () => {
         try {
           const { workflowService } = await import("../services/workflowService");
           const stepsResponse = await workflowService.getAvailableSteps(effectiveVisitId);
-          // Check if workflow_type is walk_in
-          if (stepsResponse.workflow_type === "walk_in" || stepsResponse.workflow_type === "WALK_IN") {
+          // Backend is the source of truth - use workflow_type from backend
+          if (stepsResponse.workflow_type === "walk_in" || stepsResponse.workflow_type === "WALK_IN" || stepsResponse.workflow_type === "walk-in") {
             setIsWalkInPatient(true);
           } else if (stepsResponse.workflow_type === "scheduled" || stepsResponse.workflow_type === "SCHEDULED") {
-            // Only set to false if explicitly scheduled, to avoid overriding if we're unsure
-            if (walkin === "false") {
-              setIsWalkInPatient(false);
-            }
+            // Always set to false if backend says scheduled (trust backend over URL)
+            setIsWalkInPatient(false);
+          } else {
+            // If workflow_type is not recognized, fall back to URL param
+            setIsWalkInPatient(walkin === "true");
           }
         } catch (error) {
           console.error("Error checking workflow type:", error);
-          // Don't change state on error - preserve current state
+          // On error, fall back to URL param if available
+          setIsWalkInPatient(walkin === "true");
         }
       };
       checkWorkflowType();
+    } else {
+      // If no visitId, use URL param as fallback
+      setIsWalkInPatient(walkin === "true");
     }
   }, [location.search, visitId, patientId]);
 
