@@ -10,14 +10,65 @@ import asyncio
 import re as _re
 
 
-async def structure_dialogue_from_text(raw: str, *, model: str, api_key: str, language: str = "en") -> Optional[List[Dict[str, str]]]:
+async def structure_dialogue_from_text(
+    raw: str, 
+    *, 
+    model: str, 
+    azure_endpoint: Optional[str] = None,
+    azure_api_key: Optional[str] = None,
+    api_key: Optional[str] = None,  # Deprecated - use azure_api_key
+    language: str = "en"
+) -> Optional[List[Dict[str, str]]]:
+    """
+    Structure dialogue from text using Azure OpenAI.
+    
+    Args:
+        raw: Raw transcript text
+        model: Azure OpenAI deployment name (required)
+        azure_endpoint: Azure OpenAI endpoint (required if not in settings)
+        azure_api_key: Azure OpenAI API key (required if not in settings)
+        api_key: Deprecated - ignored, use azure_api_key instead
+        language: Language code (en/sp)
+    
+    Returns:
+        List of dialogue turns or None if processing failed
+    
+    Raises:
+        ValueError: If Azure OpenAI is not configured
+    """
     if not raw:
         return None
     try:
-        # Local import to avoid import cost when unused
-        from openai import OpenAI  # type: ignore
-
-        client = OpenAI(api_key=api_key)
+        # Require Azure OpenAI - no fallback to standard OpenAI
+        from openai import AsyncAzureOpenAI  # type: ignore
+        from clinicai.core.config import get_settings
+        
+        settings = get_settings()
+        
+        # Require Azure OpenAI - no fallback to standard OpenAI
+        if azure_endpoint and azure_api_key:
+            # Use Azure OpenAI from parameters
+            client = AsyncAzureOpenAI(
+                api_key=azure_api_key,
+                api_version=settings.azure_openai.api_version,
+                azure_endpoint=azure_endpoint
+            )
+            deployment_name = model  # model parameter is actually deployment name for Azure
+        elif settings.azure_openai.endpoint and settings.azure_openai.api_key:
+            # Use Azure OpenAI from settings
+            client = AsyncAzureOpenAI(
+                api_key=settings.azure_openai.api_key,
+                api_version=settings.azure_openai.api_version,
+                azure_endpoint=settings.azure_openai.endpoint
+            )
+            deployment_name = settings.azure_openai.deployment_name
+        else:
+            # Azure OpenAI is required - raise error instead of falling back
+            raise ValueError(
+                "Azure OpenAI is required. Please provide azure_endpoint and azure_api_key parameters, "
+                "or configure AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY in settings. "
+                "Fallback to standard OpenAI is disabled for data security."
+            )
 
         # Language-aware system prompt
         if (language or "en").lower() in ["sp", "es", "es-es", "es-mx", "spanish"]:
@@ -309,7 +360,7 @@ Output ONLY the JSON array. Do not include explanatory text, confidence scores, 
 
         import json as _json
         sentences = [_s.strip() for _s in _re.split(r"(?<=[.!?])\s+", raw) if _s.strip()]
-        is_gpt4 = str(model).startswith("gpt-4")
+        is_gpt4 = str(deployment_name).startswith("gpt-4")
         max_chars_per_chunk = 8000 if is_gpt4 else 6000
         overlap_chars = 500
 
@@ -337,10 +388,10 @@ Output ONLY the JSON array. Do not include explanatory text, confidence scores, 
                     "OUTPUT: Valid JSON array starting with [ and ending with ]"
                 )
 
-            def _call_openai() -> str:
+            async def _call_openai() -> str:
                 try:
-                    resp = client.chat.completions.create(
-                        model=model,
+                    resp = await client.chat.completions.create(
+                        model=deployment_name,
                         messages=[
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": user_prompt},
@@ -351,8 +402,8 @@ Output ONLY the JSON array. Do not include explanatory text, confidence scores, 
                     )
                 except Exception:
                     # Fallback without response_format if unsupported
-                    resp = client.chat.completions.create(
-                        model=model,
+                    resp = await client.chat.completions.create(
+                        model=deployment_name,
                         messages=[
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": user_prompt},
@@ -362,7 +413,7 @@ Output ONLY the JSON array. Do not include explanatory text, confidence scores, 
                     )
                 return (resp.choices[0].message.content or "").strip()
 
-            content = await asyncio.to_thread(_call_openai)
+            content = await _call_openai()
         else:
             chunks: List[str] = []
             current_chunk = ""
@@ -376,7 +427,7 @@ Output ONLY the JSON array. Do not include explanatory text, confidence scores, 
             if current_chunk:
                 chunks.append(current_chunk.strip())
 
-            def _call_openai_chunk(text: str) -> str:
+            async def _call_openai_chunk(text: str) -> str:
                 if (language or "en").lower() in ["sp", "es", "es-es", "es-mx", "spanish"]:
                     user_prompt = (
                         "FRAGMENTO DE TRANSCRIPCIÓN (Parte de conversación más larga):\n"
@@ -402,8 +453,8 @@ Output ONLY the JSON array. Do not include explanatory text, confidence scores, 
                         "OUTPUT: Valid JSON array starting with [ and ending with ]"
                     )
                 try:
-                    resp = client.chat.completions.create(
-                        model=model,
+                    resp = await client.chat.completions.create(
+                        model=deployment_name,
                         messages=[
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": user_prompt},
@@ -413,8 +464,8 @@ Output ONLY the JSON array. Do not include explanatory text, confidence scores, 
                         response_format={"type": "json_object"},
                     )
                 except Exception:
-                    resp = client.chat.completions.create(
-                        model=model,
+                    resp = await client.chat.completions.create(
+                        model=deployment_name,
                         messages=[
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": user_prompt},
@@ -453,7 +504,7 @@ Output ONLY the JSON array. Do not include explanatory text, confidence scores, 
 
             parts: List[Dict[str, str]] = []
             for ch in chunks:
-                chunk_result = await asyncio.to_thread(_call_openai_chunk, ch)
+                chunk_result = await _call_openai_chunk(ch)
                 parsed = _extract_json_array(chunk_result)
                 if isinstance(parsed, list):
                     parts.extend(parsed)

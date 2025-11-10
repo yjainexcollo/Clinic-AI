@@ -10,8 +10,6 @@ import os
 import asyncio
 from datetime import datetime
 
-from openai import OpenAI  # type: ignore
-
 from ...application.dto.patient_dto import (
     AudioTranscriptionRequest,
     AudioTranscriptionResponse,
@@ -894,11 +892,15 @@ async def structure_dialogue(request: Request, patient_id: str, visit_id: str, p
         from ...application.utils.structure_dialogue import structure_dialogue_from_text
 
         settings = get_settings()
-        model = settings.openai.model
-        api_key = settings.openai.api_key
+        model = settings.azure_openai.deployment_name
 
-        logger.info(f"Calling structure_dialogue_from_text with model: {model}")
-        dialogue = await structure_dialogue_from_text(raw_transcript, model=model, api_key=api_key)
+        logger.info(f"Calling structure_dialogue_from_text with deployment: {model}")
+        dialogue = await structure_dialogue_from_text(
+            raw_transcript, 
+            model=model,
+            azure_endpoint=settings.azure_openai.endpoint,
+            azure_api_key=settings.azure_openai.api_key
+        )
         logger.info(f"Structure dialogue result: {type(dialogue)}, length: {len(dialogue) if isinstance(dialogue, list) else 'N/A'}")
 
         # Normalize dialogue to a list (empty list if None)
