@@ -284,6 +284,25 @@ class AzureOpenAISettings(BaseSettings):
         return v
 
 
+class AzureQueueSettings(BaseSettings):
+    """Azure Queue Storage configuration settings."""
+    
+    model_config = SettingsConfigDict(env_prefix="AZURE_QUEUE_")
+    
+    connection_string: str = Field(default="", description="Azure Storage Connection String (same as Blob Storage)")
+    queue_name: str = Field(default="transcription-queue", description="Queue name for transcription jobs")
+    visibility_timeout: int = Field(default=600, description="Message visibility timeout in seconds (10 min default)")
+    max_retry_attempts: int = Field(default=3, description="Maximum retry attempts for failed jobs")
+    poll_interval: int = Field(default=5, description="Worker poll interval in seconds")
+    
+    @validator("connection_string")
+    def validate_connection_string(cls, v: str) -> str:
+        """Validate Azure Storage connection string."""
+        if v and not v.startswith("DefaultEndpointsProtocol="):
+            raise ValueError("Invalid Azure Storage connection string format")
+        return v
+
+
 class Settings(BaseSettings):
     """Main application settings."""
 
@@ -312,6 +331,7 @@ class Settings(BaseSettings):
     file_storage: FileStorageSettings = Field(default_factory=FileStorageSettings)
     azure_blob: AzureBlobSettings = Field(default_factory=AzureBlobSettings)
     azure_openai: AzureOpenAISettings = Field(default_factory=AzureOpenAISettings)
+    azure_queue: AzureQueueSettings = Field(default_factory=AzureQueueSettings)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -366,6 +386,7 @@ class Settings(BaseSettings):
         self.soap = SoapSettings()
         self.mistral = MistralSettings()
         self.file_storage = FileStorageSettings()
+        self.azure_queue = AzureQueueSettings()
 
     @validator("app_env")
     def validate_app_env(cls, v: str) -> str:
