@@ -1315,10 +1315,19 @@ const Index = () => {
                     try {
                       if (!patientId || !visitId) return;
                       const resp = await fetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/transcript`);
+                      
+                      // Check for 202 (Still Processing) BEFORE trying to parse JSON
+                      if (resp.status === 202) {
+                        alert('Transcript is still being processed. Please wait a moment and try again.');
+                        return;
+                      }
+                      
                       if (!resp.ok) {
                         const txt = await resp.text();
                         throw new Error(`Failed to fetch transcript ${resp.status}: ${txt}`);
                       }
+                      
+                      // Only parse JSON if status is 200
                       const responseData = await resp.json();
                       // Extract data from ApiResponse wrapper
                       const data = responseData.data || responseData;
@@ -1609,7 +1618,7 @@ const Index = () => {
                     setShowTranscriptProcessing(true);
                     const start = Date.now();
                     let attempt = 0;
-                    const maxMs = 600000; // 10 minutes (increased from 5 minutes)
+                    const maxMs = 1800000; // 30 minutes (increased for long audio files)
                     const poll = async () => {
                       attempt += 1;
                       const delay = Math.min(6000, 2000 + attempt * 500);
@@ -1626,8 +1635,77 @@ const Index = () => {
                       }
                       
                       try {
+                        // First check the status endpoint to see if transcription failed
+                        const statusRes = await fetch(`${BACKEND_BASE_URL}/notes/transcribe/status/${patientId}/${visitId}`);
+                        if (statusRes.ok) {
+                          const statusData = await statusRes.json();
+                          const status = statusData.data?.status || statusData.status;
+                          
+                          // If transcription failed, stop polling and show error
+                          if (status === "failed") {
+                            setShowTranscriptProcessing(false);
+                            setUploadAudioError(statusData.data?.message || statusData.message || "Transcription failed. Please try again.");
+                            setShowUploadAudio(true);
+                            return;
+                          }
+                          
+                          // If still processing, continue polling
+                          if (status === "pending" || status === "processing") {
+                            const ra = statusRes.headers.get('Retry-After');
+                            const retryAfterMs = ra ? Math.max(0, Number(ra) * 1000) : 0;
+                            const backoffMs = Math.min(15000, Math.round(1500 * Math.pow(1.6, attempt)));
+                            const delay = retryAfterMs || backoffMs;
+                            
+                            // Only timeout after 30 minutes AND verify it's actually taking too long
+                            if (Date.now() - start < maxMs) {
+                              setTimeout(poll, delay);
+                              return;
+                            } else {
+                              // Check one more time if it's actually failed before showing timeout
+                              const finalStatusRes = await fetch(`${BACKEND_BASE_URL}/notes/transcribe/status/${patientId}/${visitId}`);
+                              if (finalStatusRes.ok) {
+                                const finalStatusData = await finalStatusRes.json();
+                                const finalStatus = finalStatusData.data?.status || finalStatusData.status;
+                                if (finalStatus === "failed") {
+                                  setShowTranscriptProcessing(false);
+                                  setUploadAudioError(finalStatusData.data?.message || finalStatusData.message || "Transcription failed. Please try again.");
+                                  setShowUploadAudio(true);
+                                  return;
+                                }
+                              }
+                              
+                              setShowTranscriptProcessing(false);
+                              setUploadAudioError('Transcription is taking longer than expected. The file is still being processed. Please check back in a few minutes or try with a shorter audio file.');
+                              setShowUploadAudio(true);
+                              return;
+                            }
+                          }
+                        }
+                        
+                        // Fetch the transcript
                         const t = await fetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/transcript`);
-                        if (t.ok) {
+                        
+                        // Check for 202 (Still Processing) BEFORE trying to parse JSON
+                        // Backend returns empty body for 202, so we must handle it first
+                        if (t.status === 202) {
+                          // Still processing, continue polling
+                          const ra = t.headers.get('Retry-After');
+                          const retryAfterMs = ra ? Math.max(0, Number(ra) * 1000) : 0;
+                          const backoffMs = Math.min(15000, Math.round(1500 * Math.pow(1.6, attempt)));
+                          const delay = retryAfterMs || backoffMs;
+                          if (Date.now() - start < maxMs) {
+                            setTimeout(poll, delay);
+                            return;
+                          } else {
+                            setShowTranscriptProcessing(false);
+                            setUploadAudioError('Transcription is taking longer than expected. The file is still being processed. Please check back in a few minutes or try with a shorter audio file.');
+                            setShowUploadAudio(true);
+                            return;
+                          }
+                        }
+                        
+                        // Only parse JSON if status is 200 (not 202)
+                        if (t.ok && t.status === 200) {
                           const response = await t.json();
                           // Extract data from ApiResponse wrapper
                           const data = response.data || response;
@@ -1673,18 +1751,20 @@ const Index = () => {
                           } catch {}
                           return;
                         }
-                        // If still processing, backend returns 202 with optional Retry-After
-                        if (t.status === 202) {
-                          const ra = t.headers.get('Retry-After');
-                          const retryAfterMs = ra ? Math.max(0, Number(ra) * 1000) : 0;
-                          const backoffMs = Math.min(15000, Math.round(1500 * Math.pow(1.6, attempt)));
-                          const delay = retryAfterMs || backoffMs;
-                          if (Date.now() - start < maxMs) {
-                            setTimeout(poll, delay);
-                            return;
+                        
+                        // If we get here, there was an error (not 200 or 202)
+                        console.error('Unexpected transcript response status:', t.status);
+                        if (Date.now() - start < maxMs) {
+                          const delay = Math.min(15000, Math.round(1500 * Math.pow(1.6, attempt)));
+                          setTimeout(poll, delay);
+                        } else {
+                          setShowTranscriptProcessing(false);
+                          setUploadAudioError('Transcription is taking longer than expected. The file is still being processed. Please check back in a few minutes or try with a shorter audio file.');
+                          setShowUploadAudio(true);
                           }
-                        }
-                      } catch {}
+                      } catch (err: any) {
+                        console.error('Polling error:', err);
+                        // Only continue polling if we haven't timed out
                       if (Date.now() - start < maxMs) {
                         const delay = Math.min(15000, Math.round(1500 * Math.pow(1.6, attempt)));
                         setTimeout(poll, delay);
@@ -1692,6 +1772,7 @@ const Index = () => {
                         setShowTranscriptProcessing(false);
                         setUploadAudioError('Processing timed out after 10 minutes. This can happen with very long audio files. Please try with a shorter audio file or contact support if the issue persists.');
                         setShowUploadAudio(true);
+                        }
                       }
                     };
                     poll();

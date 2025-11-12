@@ -175,7 +175,7 @@ const TranscriptUpload: React.FC = () => {
 
   const pollStatusWithProgress = async (attempt = 0) => {
     const start = Date.now();
-    const maxMs = 600000; // 10 minutes
+    const maxMs = 1800000; // 30 minutes (increased for long audio files)
     
     const poll = async (currentAttempt = 0) => {
       try {
@@ -190,30 +190,92 @@ const TranscriptUpload: React.FC = () => {
           setTranscriptProcessingStatus("Finalizing transcript...");
         }
         
+        // First check the status endpoint to see if transcription failed
+        const statusRes = await fetch(`${BACKEND_BASE_URL}/notes/transcribe/status/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
+        if (statusRes.ok) {
+          const statusData = await statusRes.json();
+          const status = statusData.data?.status || statusData.status;
+          
+          // If transcription failed, stop polling and show error
+          if (status === "failed") {
+            setShowTranscriptProcessing(false);
+            setError(statusData.data?.message || statusData.message || "Transcription failed. Please try again.");
+            setLoading(false);
+            return;
+          }
+          
+          // If still processing, continue polling
+          if (status === "pending" || status === "processing") {
+            const ra = statusRes.headers.get('Retry-After');
+            const retryAfterMs = ra ? Math.max(0, Number(ra) * 1000) : 0;
+            const backoffMs = Math.min(15000, Math.round(1500 * Math.pow(1.6, currentAttempt)));
+            const delay = retryAfterMs || backoffMs;
+            
+            if (Date.now() - start < maxMs) {
+              setTimeout(() => poll(currentAttempt + 1), delay);
+              return;
+            } else {
+              // Check one more time if it's actually failed before showing timeout
+              const finalStatusRes = await fetch(`${BACKEND_BASE_URL}/notes/transcribe/status/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
+              if (finalStatusRes.ok) {
+                const finalStatusData = await finalStatusRes.json();
+                const finalStatus = finalStatusData.data?.status || finalStatusData.status;
+                if (finalStatus === "failed") {
+                  setShowTranscriptProcessing(false);
+                  setError(finalStatusData.data?.message || finalStatusData.message || "Transcription failed. Please try again.");
+                  setLoading(false);
+                  return;
+                }
+              }
+              
+              setShowTranscriptProcessing(false);
+              setError("Transcription is taking longer than expected. The file is still being processed. Please check back in a few minutes or try with a shorter audio file.");
+              setLoading(false);
+              return;
+            }
+          }
+        }
+        
+        // Fetch the transcript
         const res = await fetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/transcript`, {
           headers: { Accept: "application/json" },
         });
         
-        if (res.ok) {
+        // Check for 202 (Still Processing) BEFORE trying to parse JSON
+        // Backend returns empty body for 202, so we must handle it first
+        if (res.status === 202) {
+          // Still processing, continue polling
+          const ra = res.headers.get('Retry-After');
+          const retryAfterMs = ra ? Math.max(0, Number(ra) * 1000) : 0;
+          const backoffMs = Math.min(15000, Math.round(1500 * Math.pow(1.6, currentAttempt)));
+          const delay = retryAfterMs || backoffMs;
+          
+          if (Date.now() - start < maxMs) {
+            setTimeout(() => poll(currentAttempt + 1), delay);
+          } else {
+            setShowTranscriptProcessing(false);
+            setError("Transcription is taking longer than expected. The file is still being processed. Please check back in a few minutes or try with a shorter audio file.");
+            setLoading(false);
+          }
+          return;
+        }
+        
+        // Only parse JSON if status is 200 (not 202)
+        if (res.ok && res.status === 200) {
           let data;
           try {
-            // Check if response has content before trying to parse JSON
             const responseText = await res.text();
             if (responseText.trim()) {
               data = JSON.parse(responseText);
             } else {
-              // Empty response means still processing, continue polling
-              console.log("Empty response - transcript still processing");
-              const ra = res.headers.get('Retry-After');
-              const retryAfterMs = ra ? Math.max(0, Number(ra) * 1000) : 0;
-              const backoffMs = Math.min(15000, Math.round(1500 * Math.pow(1.6, currentAttempt)));
-              const delay = retryAfterMs || backoffMs;
-              
+              // Empty response should not happen for 200, but handle gracefully
+              console.warn("Empty response body for 200 status");
               if (Date.now() - start < maxMs) {
+                const delay = Math.min(15000, Math.round(1500 * Math.pow(1.6, currentAttempt)));
                 setTimeout(() => poll(currentAttempt + 1), delay);
               } else {
                 setShowTranscriptProcessing(false);
-                setError("Transcription timeout. Please try again.");
+                setError("Transcription is taking longer than expected. The file is still being processed. Please check back in a few minutes or try with a shorter audio file.");
                 setLoading(false);
               }
               return;
@@ -276,25 +338,11 @@ const TranscriptUpload: React.FC = () => {
           return;
         }
         
-        // If still processing, backend returns 202 with optional Retry-After
-        if (res.status === 202) {
-          const ra = res.headers.get('Retry-After');
-          const retryAfterMs = ra ? Math.max(0, Number(ra) * 1000) : 0;
-          const backoffMs = Math.min(15000, Math.round(1500 * Math.pow(1.6, currentAttempt)));
-          const delay = retryAfterMs || backoffMs;
-          
-          if (Date.now() - start < maxMs) {
-            setTimeout(() => poll(currentAttempt + 1), delay);
-          } else {
-            setShowTranscriptProcessing(false);
-            setError("Transcription timeout. Please try again.");
-            setLoading(false); // Stop loading on timeout
-          }
-        } else {
+        // If we get here, there was an error (not 200 or 202)
+        console.error('Unexpected transcript response status:', res.status);
           setShowTranscriptProcessing(false);
           setError(`Transcription failed: ${res.status}`);
           setLoading(false); // Stop loading on failure
-        }
       } catch (e: any) {
         setShowTranscriptProcessing(false);
         setError(e?.message || "Polling failed");

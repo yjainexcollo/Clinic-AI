@@ -35,7 +35,7 @@ export const Transcription: React.FC = () => {
       if (data?.success && data?.data?.transcript) {
         return false; // Stop polling if transcript exists
       }
-      return 5000; // Poll every 5s if no transcript yet
+      return 60000; // Poll every 60s (1 minute) if no transcript yet
     },
   });
 

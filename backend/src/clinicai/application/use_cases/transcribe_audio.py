@@ -133,6 +133,19 @@ class TranscribeAudioUseCase:
         if not visit:
             raise VisitNotFoundError(request.visit_id)
 
+        # Check if transcription is already completed - return existing data if so
+        if visit.transcription_session and visit.transcription_session.transcription_status == "completed":
+            LOGGER.info(f"Transcription already completed for visit {request.visit_id}, returning existing data")
+            return AudioTranscriptionResponse(
+                patient_id=patient.patient_id.value,
+                visit_id=visit.visit_id.value,
+                transcript=visit.transcription_session.transcript or "",
+                word_count=visit.transcription_session.word_count or 0,
+                audio_duration=visit.transcription_session.audio_duration_seconds,
+                transcription_status=visit.transcription_session.transcription_status,
+                message="Transcription already completed"
+            )
+
         # Check if visit is ready for transcription based on workflow type
         if not visit.can_proceed_to_transcription():
             if visit.is_scheduled_workflow():
@@ -157,12 +170,22 @@ class TranscribeAudioUseCase:
             if transcription_language in ['es', 'sp']:
                 transcription_language = 'sp'
             
-            # Start transcription process
-            visit.start_transcription(request.audio_file_path)
+            # Start transcription process (only if not already started)
+            # The API endpoint may have already called start_transcription(None) to mark it as processing
+            # In that case, just update the audio_file_path instead of creating a new session
+            if visit.transcription_session and visit.transcription_session.transcription_status == "processing":
+                # Session already exists and is processing, just update the audio_file_path
+                LOGGER.info(f"Transcription session already exists for visit {request.visit_id}, updating audio_file_path")
+                visit.transcription_session.audio_file_path = request.audio_file_path
+                visit.updated_at = datetime.utcnow()
+            else:
+                # No session or session is not processing, create new one
+                visit.start_transcription(request.audio_file_path)
+            
             await self._visit_repository.save(visit)
 
-            # Transcribe audio
-            LOGGER.info(f"Starting Whisper transcription for file: {request.audio_file_path}, language: {transcription_language}")
+            # Transcribe audio using Azure Speech Service
+            LOGGER.info(f"Starting transcription for file: {request.audio_file_path}, language: {transcription_language}")
             
             transcription_result = await self._transcription_service.transcribe_audio(
                 request.audio_file_path,
@@ -171,140 +194,31 @@ class TranscribeAudioUseCase:
             )
 
             raw_transcript = transcription_result.get("transcript", "") or ""
-            LOGGER.info(f"Whisper transcription completed. Transcript length: {len(raw_transcript)} characters")
+            LOGGER.info(f"Transcription completed. Transcript length: {len(raw_transcript)} characters")
             LOGGER.info(f"Raw transcript preview: {raw_transcript[:300]}...")
             
             if not raw_transcript or raw_transcript.strip() == "":
-                raise ValueError("Whisper transcription returned empty transcript")
+                raise ValueError("Transcription returned empty transcript")
 
-            # Post-process with LLM to clean PII and structure Doctor/Patient dialogue
-            LOGGER.info("Starting LLM processing for transcript cleaning and structuring")
-            settings = get_settings()
-            # Use Azure OpenAI client instead of standard OpenAI
-            from ...core.azure_openai_client import create_azure_openai_client
-            azure_client = create_azure_openai_client(enable_cache=False)
-            # Use the underlying AsyncAzureOpenAI client which has the same interface
-            client = azure_client.client
-
-            # Process transcript with improved chunking strategy
-            # Always use chunking - it handles both single chunks and multi-chunk processing automatically
-            LOGGER.info(f"Starting transcript processing for {len(raw_transcript)} characters")
-            LOGGER.info(f"Raw transcript preview: {raw_transcript[:200]}...")
-            structured_content = await self._process_transcript_with_chunking(
-                client, raw_transcript, settings, LOGGER, transcription_language
-            )
-
-            # Process structured dialogue separately from raw transcript
-            structured_dialogue = None
-            LOGGER.info(f"LLM processing result length: {len(structured_content) if structured_content else 0}")
+            # Azure Speech Service provides structured dialogue with speaker diarization
+            pre_structured_dialogue = transcription_result.get("structured_dialogue")
+            speaker_info = transcription_result.get("speaker_labels", {})
             
-            if structured_content and structured_content != raw_transcript:
-                try:
-                    # Enhanced JSON parsing with multiple recovery strategies
-                    cleaned_content = structured_content.strip()
-                    
-                    # If content doesn't start with [ or {, try to find the JSON part
-                    if not cleaned_content.startswith(("{", "[")):
-                        start_idx = cleaned_content.find("[")
-                        if start_idx == -1:
-                            start_idx = cleaned_content.find("{")
-                        if start_idx != -1:
-                            cleaned_content = cleaned_content[start_idx:]
-                    
-                    parsed = None
-                    recovery_method = None
-
-                    # Strategy 1: Try standard JSON parsing
-                    try:
-                        parsed = json.loads(cleaned_content)
-                        recovery_method = "standard_json"
-                    except json.JSONDecodeError:
-                        # Strategy 2: Try to recover partial JSON
-                        recovered = self._recover_partial_json(cleaned_content, LOGGER)
-                        if recovered:
-                            parsed = recovered
-                            recovery_method = "partial_recovery"
-                        else:
-                            # Strategy 3: Try to fix truncated JSON arrays
-                            if cleaned_content.startswith("[") and not cleaned_content.endswith("]"):
-                                LOGGER.warning("JSON appears truncated, attempting to fix...")
-                                last_complete_idx = cleaned_content.rfind("},")
-                                if last_complete_idx != -1:
-                                    cleaned_content = cleaned_content[: last_complete_idx + 1] + "]"
-                                else:
-                                    cleaned_content = cleaned_content + "]"
-                                try:
-                                    parsed = json.loads(cleaned_content)
-                                    recovery_method = "truncation_fix"
-                                except json.JSONDecodeError:
-                                    parsed = None
-
-                            # Strategy 4: Extract valid objects using regex on original content
-                            if not parsed:
-                                recovered = self._recover_partial_json(structured_content, LOGGER)
-                                if recovered:
-                                    parsed = recovered
-                                    recovery_method = "regex_extraction"
-
-                    if parsed and isinstance(parsed, list):
-                        # Validate dialogue format - accept both "Patient" and "Paciente" for Spanish
-                        valid_speakers = ["Doctor", "Patient", "Paciente", "Family Member", "Miembro de la Familia"]
-                        if all(
-                            isinstance(item, dict)
-                            and len(item) == 1
-                            and list(item.keys())[0] in valid_speakers
-                            for item in parsed
-                        ):
-                            structured_dialogue = parsed
-                            LOGGER.info(
-                                f"Successfully parsed structured dialogue with {len(parsed)} turns (recovery method: {recovery_method})"
-                            )
-                        else:
-                            LOGGER.warning(
-                                f"Parsed content is not valid dialogue format. Type: {type(parsed)}, Content: {cleaned_content[:200]}..."
-                            )
-                    else:
-                        LOGGER.warning("Failed to parse structured content. Recovery methods exhausted.")
-                        if parsed is not None:
-                            LOGGER.warning(f"Parsed type: {type(parsed)}, Content: {str(parsed)[:200]}...")
-
-                except Exception as e:
-                    LOGGER.warning(
-                        f"Error validating structured content: {e}. Content: {structured_content[:200] if structured_content else 'None'}..."
-                    )
-                    import traceback
-                    LOGGER.debug(f"Traceback: {traceback.format_exc()}")
+            if not pre_structured_dialogue or not isinstance(pre_structured_dialogue, list):
+                raise ValueError(
+                    "Azure Speech Service did not provide structured dialogue. "
+                    "Ensure speaker diarization is enabled in your Azure Speech Service configuration."
+                )
             
-            # Create intelligent fallback structured dialogue if LLM processing failed
-            if not structured_dialogue and raw_transcript and raw_transcript.strip():
-                try:
-                    # Use the same working logic as adhoc transcribe
-                    from ...application.utils.structure_dialogue import structure_dialogue_from_text
-                    
-                    settings = get_settings()
-                    # Use Azure OpenAI deployment name instead of model
-                    model = settings.azure_openai.deployment_name
-                    # Pass Azure OpenAI settings instead of API key
-                    azure_endpoint = settings.azure_openai.endpoint
-                    azure_api_key = settings.azure_openai.api_key
-                    
-                    LOGGER.info("Using structure_dialogue_from_text for fallback processing")
-                    # Get language from patient or use default
-                    fallback_language = getattr(patient, 'language', 'en') or 'en'
-                    structured_dialogue = await structure_dialogue_from_text(
-                        raw_transcript, 
-                        model=model, 
-                        azure_endpoint=azure_endpoint,
-                        azure_api_key=azure_api_key,
-                        language=fallback_language
+            # Map speakers from Azure Speech Service (Speaker 1, Speaker 2) to Doctor/Patient
+            LOGGER.info(f"Using pre-structured dialogue from Azure Speech Service ({len(pre_structured_dialogue)} turns)")
+            from ...application.utils.speaker_mapping import map_speakers_to_doctor_patient
+            structured_dialogue = map_speakers_to_doctor_patient(
+                pre_structured_dialogue,
+                speaker_info=speaker_info,
+                language=transcription_language
                     )
-                    
-                    if structured_dialogue:
-                        LOGGER.info(f"Created structured dialogue with {len(structured_dialogue)} turns using working logic")
-                    else:
-                        LOGGER.warning("structure_dialogue_from_text returned None")
-                except Exception as e:
-                    LOGGER.warning(f"Failed to create fallback structured dialogue: {e}")
+            LOGGER.info(f"Mapped speakers to Doctor/Patient: {len(structured_dialogue)} turns")
 
             LOGGER.info(f"Raw transcript length: {len(raw_transcript)} characters")
             LOGGER.info(f"Structured dialogue turns: {len(structured_dialogue) if structured_dialogue else 0}")
