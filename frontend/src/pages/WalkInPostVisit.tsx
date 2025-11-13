@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { BACKEND_BASE_URL } from "../services/patientService";
+import { BACKEND_BASE_URL, authorizedFetch } from "../services/patientService";
 import { workflowService } from "../services/workflowService";
 
 const WalkInPostVisit: React.FC = () => {
@@ -19,7 +19,7 @@ const WalkInPostVisit: React.FC = () => {
       setLoading(true);
       try {
         // Fetch post-visit summary (correct endpoint path)
-        const summaryResponse = await fetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/summary/postvisit`, {
+        const summaryResponse = await authorizedFetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/summary/postvisit`, {
           headers: { Accept: "application/json" },
         });
 
@@ -55,7 +55,7 @@ const WalkInPostVisit: React.FC = () => {
     setError("");
     
     try {
-      const response = await fetch(`${BACKEND_BASE_URL}/patients/summary/postvisit`, {
+      const response = await authorizedFetch(`${BACKEND_BASE_URL}/patients/summary/postvisit`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

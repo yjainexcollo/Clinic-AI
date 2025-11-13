@@ -35,6 +35,41 @@ const BACKEND_BASE_URL: string = rawBackendUrl
   ? normalizeBaseUrl(rawBackendUrl)
   : normalizeBaseUrl(""); // Will use default production URL
 
+const API_KEY = (import.meta as any).env?.VITE_API_KEY as string | undefined;
+
+if (!API_KEY) {
+  console.warn(
+    "[PatientService] VITE_API_KEY is not set. Backend requests will be rejected with 401 Unauthorized."
+  );
+}
+
+function addAuthHeader(headers?: HeadersInit): HeadersInit {
+  if (!API_KEY) {
+    return headers ?? {};
+  }
+
+  if (!headers) {
+    return { 'X-API-Key': API_KEY };
+  }
+
+  if (headers instanceof Headers) {
+    headers.set('X-API-Key', API_KEY);
+    return headers;
+  }
+
+  if (Array.isArray(headers)) {
+    const filtered = headers.filter(([key]) => key.toLowerCase() !== 'x-api-key');
+    return [...filtered, ['X-API-Key', API_KEY]];
+  }
+
+  return { ...headers, 'X-API-Key': API_KEY };
+}
+
+export function authorizedFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  const headers = addAuthHeader(init.headers);
+  return fetch(input, { ...init, headers });
+}
+
 export { BACKEND_BASE_URL };
 
 // NOTE: PatientData and PatientResponse interfaces kept for backward compatibility
@@ -134,12 +169,12 @@ export async function answerIntakeBackend(
     form.append("visit_id", payload.visit_id);
     form.append("answer", payload.answer);
     files.forEach((f) => form.append("medication_images", f));
-    resp = await fetch(`${BACKEND_BASE_URL}/patients/consultations/answer`, {   
+    resp = await authorizedFetch(`${BACKEND_BASE_URL}/patients/consultations/answer`, {   
       method: "POST",
       body: form,
     });
   } else {
-    resp = await fetch(`${BACKEND_BASE_URL}/patients/consultations/answer`, {   
+    resp = await authorizedFetch(`${BACKEND_BASE_URL}/patients/consultations/answer`, {   
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -162,7 +197,7 @@ export async function uploadMedicationImages(
   files.forEach((f) => form.append("images", f));
   form.append("patient_id", patientId);
   form.append("visit_id", visitId);
-  const resp = await fetch(`${BACKEND_BASE_URL}/patients/webhook/images`, {     
+  const resp = await authorizedFetch(`${BACKEND_BASE_URL}/patients/webhook/images`, {     
     method: "POST",
     body: form,
   });
@@ -189,7 +224,7 @@ export async function editAnswerBackend(payload: {
   question_number: number;
   new_answer: string;
 }): Promise<BackendEditAnswerResponse> {
-  const resp = await fetch(`${BACKEND_BASE_URL}/patients/consultations/answer`, {
+  const resp = await authorizedFetch(`${BACKEND_BASE_URL}/patients/consultations/answer`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -237,7 +272,7 @@ export async function registerPatientBackend(
   const timeoutMs = 20000; // 20s
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const resp = await fetch(`${BACKEND_BASE_URL}/patients/`, {
+    const resp = await authorizedFetch(`${BACKEND_BASE_URL}/patients/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patientData),
@@ -289,7 +324,7 @@ export async function getPreVisitSummary(
   visitId: string
 ): Promise<{ patient_id: string; visit_id: string; summary: string; generated_at: string; medication_images?: Array<{ id: string; filename: string; content_type?: string }>; red_flags?: Array<{ type: string; question: string; answer: string; message: string }> }> {
   try {
-    const response = await fetch(`${BACKEND_BASE_URL}/patients/${patientId}/visits/${visitId}/summary`, {
+    const response = await authorizedFetch(`${BACKEND_BASE_URL}/patients/${patientId}/visits/${visitId}/summary`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
@@ -326,13 +361,13 @@ export async function getPostVisitSummary(
     console.log(`Backend URL: ${BACKEND_BASE_URL}/patients/summary/postvisit`);
     
     // First try to fetch stored summary
-    let response = await fetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/summary/postvisit`, {
+    let response = await authorizedFetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/summary/postvisit`, {
       method: "GET",
       headers: { Accept: "application/json" },
     });
     if (response.status === 404) {
       // Not found -> generate then fetch
-      const gen = await fetch(`${BACKEND_BASE_URL}/patients/summary/postvisit`, {
+      const gen = await authorizedFetch(`${BACKEND_BASE_URL}/patients/summary/postvisit`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ patient_id: patientId, visit_id: visitId }),
@@ -341,7 +376,7 @@ export async function getPostVisitSummary(
         const t = await gen.text();
         throw new Error(`Backend error ${gen.status}: ${t}`);
       }
-      response = await fetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/summary/postvisit`, {
+      response = await authorizedFetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/summary/postvisit`, {
         method: "GET",
         headers: { Accept: "application/json" },
       });
@@ -368,7 +403,7 @@ export async function getPostVisitSummary(
 
 // Generate (create) post-visit summary only
 export async function generatePostVisitSummary(patientId: string, visitId: string): Promise<PostVisitSummaryResponse> {
-  const gen = await fetch(`${BACKEND_BASE_URL}/patients/summary/postvisit`, {
+  const gen = await authorizedFetch(`${BACKEND_BASE_URL}/patients/summary/postvisit`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ patient_id: patientId, visit_id: visitId }),
@@ -382,7 +417,7 @@ export async function generatePostVisitSummary(patientId: string, visitId: strin
 
 // Fetch stored post-visit summary only (no generation fallback)
 export async function getStoredPostVisitSummary(patientId: string, visitId: string): Promise<PostVisitSummaryResponse> {
-  const response = await fetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/summary/postvisit`, {
+  const response = await authorizedFetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/summary/postvisit`, {
     method: "GET",
     headers: { Accept: "application/json" },
   });
@@ -487,7 +522,7 @@ export interface SoapNoteResponse {
 }
 
 export async function generateSoapNote(patientId: string, visitId: string): Promise<{ message: string } | any> {
-  const res = await fetch(`${BACKEND_BASE_URL}/notes/soap/generate`, {
+  const res = await authorizedFetch(`${BACKEND_BASE_URL}/notes/soap/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ patient_id: patientId, visit_id: visitId }),
@@ -500,7 +535,7 @@ export async function generateSoapNote(patientId: string, visitId: string): Prom
 }
 
 export async function getSoapNote(patientId: string, visitId: string): Promise<SoapNoteResponse> {
-  const res = await fetch(
+  const res = await authorizedFetch(
     `${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/soap`,
     { headers: { Accept: "application/json" } }
   );
@@ -551,7 +586,7 @@ export interface VitalsResponse {
 }
 
 export async function storeVitals(patientId: string, visitId: string, vitals: VitalsData): Promise<VitalsResponse> {
-  const res = await fetch(`${BACKEND_BASE_URL}/notes/vitals`, {
+  const res = await authorizedFetch(`${BACKEND_BASE_URL}/notes/vitals`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({
@@ -568,7 +603,7 @@ export async function storeVitals(patientId: string, visitId: string, vitals: Vi
 }
 
 export async function getVitals(patientId: string, visitId: string): Promise<VitalsData> {
-  const res = await fetch(
+  const res = await authorizedFetch(
     `${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/vitals`,
     { headers: { Accept: "application/json" } }
   );
@@ -596,7 +631,7 @@ export interface UpsertDoctorPreferencesRequest {
 }
 
 export async function getDoctorPreferences(): Promise<DoctorPreferencesResponse> {
-  const res = await fetch(`${BACKEND_BASE_URL}/doctor/preferences`, {
+  const res = await authorizedFetch(`${BACKEND_BASE_URL}/doctor/preferences`, {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {
@@ -607,7 +642,7 @@ export async function getDoctorPreferences(): Promise<DoctorPreferencesResponse>
 }
 
 export async function saveDoctorPreferences(payload: UpsertDoctorPreferencesRequest): Promise<{ success?: boolean } & Partial<DoctorPreferencesResponse>> {
-  const res = await fetch(`${BACKEND_BASE_URL}/doctor/preferences`, {
+  const res = await authorizedFetch(`${BACKEND_BASE_URL}/doctor/preferences`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify(payload),

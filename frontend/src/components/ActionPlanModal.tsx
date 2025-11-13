@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, FileText, Clock, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { parseApiResponse, isErrorResponse } from '../utils/apiResponse';
-import { BACKEND_BASE_URL } from '../services/patientService';
+import { BACKEND_BASE_URL, authorizedFetch } from '../services/patientService';
 
 interface ActionPlan {
   action: string[];
@@ -54,7 +54,7 @@ const ActionPlanModal: React.FC<ActionPlanModalProps> = ({ isOpen, onClose, adho
     try {
       const url = `${API_BASE_URL}/transcription/adhoc/${adhocId}/action-plan/status`;
       console.log('ActionPlanModal fetching from URL:', url);
-      const response = await fetch(url);
+      const response = await authorizedFetch(url);
       
       const responseData = await response.json();
       
@@ -87,7 +87,7 @@ const ActionPlanModal: React.FC<ActionPlanModalProps> = ({ isOpen, onClose, adho
   const pollForCompletion = () => {
     const poll = async () => {
       try {
-        const response = await fetch(`${API_BASE_URL}/transcription/adhoc/${adhocId}/action-plan/status`);
+        const response = await authorizedFetch(`${API_BASE_URL}/transcription/adhoc/${adhocId}/action-plan/status`);
         const responseData = await response.json();
         
         if (response.ok && !isErrorResponse(responseData)) {
@@ -120,7 +120,7 @@ const ActionPlanModal: React.FC<ActionPlanModalProps> = ({ isOpen, onClose, adho
 
   const fetchActionPlan = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/transcription/adhoc/${adhocId}/action-plan`);
+      const response = await authorizedFetch(`${API_BASE_URL}/transcription/adhoc/${adhocId}/action-plan`);
       const responseData = await response.json();
       
       if (response.ok && !isErrorResponse(responseData)) {
@@ -154,7 +154,7 @@ const ActionPlanModal: React.FC<ActionPlanModalProps> = ({ isOpen, onClose, adho
     try {
       const url = `${API_BASE_URL}/transcription/adhoc/action-plan`;
       console.log('ActionPlanModal generating from URL:', url);
-      const response = await fetch(url, {
+      const response = await authorizedFetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

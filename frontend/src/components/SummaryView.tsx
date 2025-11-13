@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Button } from './ui/button';
 import { Alert, AlertDescription } from './ui/alert';
 import { FileText, Calendar, User, Clock, X, AlertCircle } from 'lucide-react';
-import { getPreVisitSummary, BACKEND_BASE_URL } from '../services/patientService';
+import { getPreVisitSummary, BACKEND_BASE_URL, authorizedFetch } from '../services/patientService';
 import { useLanguage } from '../contexts/LanguageContext';
 import { renderMarkdownText } from '../utils/markdownRenderer';
 
@@ -266,7 +266,7 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
                               
                               // Try to fetch the image directly to see the actual error
                               try {
-                                const response = await fetch(imageUrl);
+                                const response = await authorizedFetch(imageUrl);
                                 console.error(`Image fetch response:`, {
                                   status: response.status,
                                   statusText: response.statusText,

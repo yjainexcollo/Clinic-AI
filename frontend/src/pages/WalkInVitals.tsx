@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { BACKEND_BASE_URL } from "../services/patientService";
+import { BACKEND_BASE_URL, authorizedFetch } from "../services/patientService";
 import { workflowService } from "../services/workflowService";
 
 const WalkInVitals: React.FC = () => {
@@ -101,7 +101,7 @@ const WalkInVitals: React.FC = () => {
         notes: vitals.notes
       };
 
-      const response = await fetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/vitals`, {
+      const response = await authorizedFetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/vitals`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -145,7 +145,7 @@ const WalkInVitals: React.FC = () => {
   const handleGeneratePostVisitSummary = async () => {
     setGeneratingPostVisit(true);
     try {
-      const response = await fetch(`${BACKEND_BASE_URL}/patients/summary/postvisit`, {
+      const response = await authorizedFetch(`${BACKEND_BASE_URL}/patients/summary/postvisit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

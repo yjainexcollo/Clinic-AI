@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { BACKEND_BASE_URL } from "../services/patientService";
+import { BACKEND_BASE_URL, authorizedFetch } from "../services/patientService";
 
 interface Props {
   patientId: string;
@@ -37,7 +37,7 @@ const MedicationImageUploader: React.FC<Props> = ({ patientId, visitId, title = 
   useEffect(() => {
     const load = async () => {
       try {
-        const resp = await fetch(`${BACKEND_BASE_URL}/patients/${patientId}/visits/${visitId}/images`);
+        const resp = await authorizedFetch(`${BACKEND_BASE_URL}/patients/${patientId}/visits/${visitId}/images`);
         if (!resp.ok) return;
         const data = await resp.json();
         setImages(Array.isArray(data?.images) ? data.images : []);
@@ -133,7 +133,7 @@ const MedicationImageUploader: React.FC<Props> = ({ patientId, visitId, title = 
       form.append("patient_id", patientId);
       form.append("visit_id", visitId);
 
-      const resp = await fetch(`${BACKEND_BASE_URL}/patients/webhook/images`, {
+      const resp = await authorizedFetch(`${BACKEND_BASE_URL}/patients/webhook/images`, {
         method: "POST",
         body: form,
       });
@@ -172,7 +172,7 @@ const MedicationImageUploader: React.FC<Props> = ({ patientId, visitId, title = 
 
   const removeImage = async (id: string) => {
     try {
-      const resp = await fetch(`${BACKEND_BASE_URL}/patients/images/${id}`, { method: "DELETE" });
+      const resp = await authorizedFetch(`${BACKEND_BASE_URL}/patients/images/${id}`, { method: "DELETE" });
       if (!resp.ok) {
         const txt = await resp.text();
         throw new Error(`Delete failed ${resp.status}: ${txt}`);

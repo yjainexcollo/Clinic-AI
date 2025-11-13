@@ -57,7 +57,17 @@ All n8n webhook integrations have been removed. The system now uses the backend 
 ## Configuration
 
 ### Environment Variables
-No environment variables required - the application uses a hardcoded API endpoint as specified in requirements.
+Create a `.env` file in the project root (same level as `package.json`) with the following variables:
+
+```
+VITE_BACKEND_BASE_URL=http://localhost:8000
+VITE_API_KEY=your_api_key_here
+```
+
+- `VITE_BACKEND_BASE_URL`: The FastAPI backend URL (use your deployed URL in non-local environments)
+- `VITE_API_KEY`: The backend API key that maps to a user in `API_KEYS` on the backend. Every request includes this key via the `X-API-Key` header for HIPAA-compliant authentication.
+
+> **Important:** Without `VITE_API_KEY`, all API requests will receive `401 Unauthorized`. Do **not** commit real API keys to source control—use environment variables or secret managers in production.
 
 ### Customization
 - **Colors**: Edit `tailwind.config.ts` to modify the medical theme colors

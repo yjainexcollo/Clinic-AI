@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { BACKEND_BASE_URL } from "../services/patientService";
+import { BACKEND_BASE_URL, authorizedFetch } from "../services/patientService";
 import { workflowService } from "../services/workflowService";
 
 const WalkInSoap: React.FC = () => {
@@ -19,7 +19,7 @@ const WalkInSoap: React.FC = () => {
       setLoading(true);
       try {
         // Fetch SOAP data
-        const soapResponse = await fetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/soap`, {
+        const soapResponse = await authorizedFetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/soap`, {
           headers: { Accept: "application/json" },
         });
 
@@ -55,7 +55,7 @@ const WalkInSoap: React.FC = () => {
     setError("");
     
     try {
-      const response = await fetch(`${BACKEND_BASE_URL}/notes/soap/generate`, {
+      const response = await authorizedFetch(`${BACKEND_BASE_URL}/notes/soap/generate`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -72,7 +72,7 @@ const WalkInSoap: React.FC = () => {
       }
 
       // After generating, fetch the SOAP data
-      const soapResponse = await fetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/soap`, {
+      const soapResponse = await authorizedFetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/soap`, {
         headers: { Accept: "application/json" },
       });
 

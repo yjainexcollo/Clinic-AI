@@ -1,6 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, useLocation } from "react-router-dom";
-import { answerIntakeBackend, editAnswerBackend, OCRQualityInfo, BACKEND_BASE_URL, uploadMedicationImages } from "../services/patientService";
+import {
+  answerIntakeBackend,
+  editAnswerBackend,
+  OCRQualityInfo,
+  BACKEND_BASE_URL,
+  uploadMedicationImages,
+  authorizedFetch,
+} from "../services/patientService";
 import { SessionManager } from "../utils/session";
 import { COPY } from "../copy";
 import SymptomSelector from "../components/SymptomSelector";
@@ -132,7 +139,7 @@ const Index = () => {
     setIsResettingSession(true);
     try {
       // Reset the intake session in backend
-      const resetResponse = await fetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/intake/reset`, {
+      const resetResponse = await authorizedFetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/intake/reset`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -164,7 +171,7 @@ const Index = () => {
       
       // Also try to fetch intake status to see if backend has a pending question
       try {
-        const statusResponse = await fetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/intake/status`, {
+        const statusResponse = await authorizedFetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/intake/status`, {
           method: 'GET',
           headers: { 'Accept': 'application/json' }
         });
@@ -211,7 +218,7 @@ const Index = () => {
       if (hasShownRefreshWarning.current) return;
       
       try {
-        const response = await fetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(effectiveVisitId)}/intake/status`, {
+        const response = await authorizedFetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(effectiveVisitId)}/intake/status`, {
           method: 'GET',
           headers: { 'Accept': 'application/json' }
         });
@@ -370,7 +377,7 @@ const Index = () => {
       if (!patientId || !visitId || !isComplete) return;
       
       try {
-        const response = await fetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/summary/postvisit`, {
+        const response = await authorizedFetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/summary/postvisit`, {
           method: 'GET',
           headers: { 'Accept': 'application/json' }
         });
@@ -401,7 +408,7 @@ const Index = () => {
       
       // If no localStorage flag, check API
       try {
-        const response = await fetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/transcript`, {
+        const response = await authorizedFetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/transcript`, {
           method: 'GET',
           headers: { 'Accept': 'application/json' }
         });
@@ -467,7 +474,7 @@ const Index = () => {
       
       // If no localStorage flag, check API
       try {
-        const response = await fetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/vitals`, {
+        const response = await authorizedFetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/vitals`, {
           method: 'GET',
           headers: { 'Accept': 'application/json' }
         });
@@ -508,7 +515,7 @@ const Index = () => {
       
       // If no localStorage flag, check API
       try {
-        const response = await fetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/soap`, {
+        const response = await authorizedFetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/soap`, {
           method: 'GET',
           headers: { 'Accept': 'application/json' }
         });
@@ -1314,7 +1321,7 @@ const Index = () => {
                   onClick={async () => {
                     try {
                       if (!patientId || !visitId) return;
-                      const resp = await fetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/transcript`);
+                      const resp = await authorizedFetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/transcript`);
                       
                       // Check for 202 (Still Processing) BEFORE trying to parse JSON
                       if (resp.status === 202) {
@@ -1361,7 +1368,7 @@ const Index = () => {
                       if (!patientId || !visitId) return;
                       setShowPostVisitProcessing(true); // Reuse loading state
                       
-                      const response = await fetch(`${BACKEND_BASE_URL}/notes/soap/generate`, {
+                      const response = await authorizedFetch(`${BACKEND_BASE_URL}/notes/soap/generate`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                         body: JSON.stringify({ patient_id: patientId, visit_id: visitId })
@@ -1441,7 +1448,7 @@ const Index = () => {
                     try {
                       if (!patientId || !visitId) return;
                       setShowPostVisitProcessing(true);
-                      const response = await fetch(`${BACKEND_BASE_URL}/patients/summary/postvisit`, {
+                      const response = await authorizedFetch(`${BACKEND_BASE_URL}/patients/summary/postvisit`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                         body: JSON.stringify({ patient_id: patientId, visit_id: visitId })
@@ -1600,7 +1607,7 @@ const Index = () => {
                   const controller = new AbortController();
                   const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout
                   
-                  const resp = await fetch(`${BACKEND_BASE_URL}/notes/transcribe`, {
+                  const resp = await authorizedFetch(`${BACKEND_BASE_URL}/notes/transcribe`, {
                     method: 'POST',
                     body: form,
                     headers: {
@@ -1636,7 +1643,7 @@ const Index = () => {
                       
                       try {
                         // First check the status endpoint to see if transcription failed
-                        const statusRes = await fetch(`${BACKEND_BASE_URL}/notes/transcribe/status/${patientId}/${visitId}`);
+                        const statusRes = await authorizedFetch(`${BACKEND_BASE_URL}/notes/transcribe/status/${patientId}/${visitId}`);
                         if (statusRes.ok) {
                           const statusData = await statusRes.json();
                           const status = statusData.data?.status || statusData.status;
@@ -1662,7 +1669,7 @@ const Index = () => {
                               return;
                             } else {
                               // Check one more time if it's actually failed before showing timeout
-                              const finalStatusRes = await fetch(`${BACKEND_BASE_URL}/notes/transcribe/status/${patientId}/${visitId}`);
+                              const finalStatusRes = await authorizedFetch(`${BACKEND_BASE_URL}/notes/transcribe/status/${patientId}/${visitId}`);
                               if (finalStatusRes.ok) {
                                 const finalStatusData = await finalStatusRes.json();
                                 const finalStatus = finalStatusData.data?.status || finalStatusData.status;
@@ -1683,7 +1690,7 @@ const Index = () => {
                         }
                         
                         // Fetch the transcript
-                        const t = await fetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/transcript`);
+                        const t = await authorizedFetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/transcript`);
                         
                         // Check for 202 (Still Processing) BEFORE trying to parse JSON
                         // Backend returns empty body for 202, so we must handle it first
@@ -1724,7 +1731,7 @@ const Index = () => {
                             if (isRawTranscript && transcriptContent.trim()) {
                               // Try to structure the dialogue using the backend endpoint
                               try {
-                                const structureResponse = await fetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/dialogue/structure`, {
+                                const structureResponse = await authorizedFetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/dialogue/structure`, {
                                   method: 'POST',
                                   headers: { 'Content-Type': 'application/json' }
                                 });

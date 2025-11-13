@@ -3,7 +3,7 @@
  */
 
 import { extractApiResponse, ApiResponse, isErrorResponse } from '../utils/apiResponse';
-import { BACKEND_BASE_URL } from './patientService';
+import { BACKEND_BASE_URL, authorizedFetch } from './patientService';
 
 export interface AudioFile {
   audio_id: string;
@@ -84,7 +84,7 @@ class AudioService {
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
     
     try {
-      const response = await fetch(url, {
+      const response = await authorizedFetch(url, {
         ...options,
         signal: controller.signal,
         headers: {
@@ -127,7 +127,7 @@ class AudioService {
   private async requestBlob(endpoint: string, options: RequestInit = {}): Promise<Blob> {
     const url = `${API_BASE_URL}${endpoint}`;
     
-    const response = await fetch(url, {
+    const response = await authorizedFetch(url, {
       ...options,
       headers: {
         ...options.headers,

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { BACKEND_BASE_URL } from "../services/patientService";
+import { BACKEND_BASE_URL, authorizedFetch } from "../services/patientService";
 import { TranscriptView } from "../components/TranscriptView";
 import ActionPlanModal from "../components/ActionPlanModal";
 import { FileText } from "lucide-react";
@@ -161,7 +161,7 @@ const AdhocTranscribe: React.FC = () => {
         console.log(key, value);
       }
       
-      const res = await fetch(`${BACKEND_BASE_URL}/transcription`, {
+      const res = await authorizedFetch(`${BACKEND_BASE_URL}/transcription`, {
         method: "POST",
         body: form,
       });

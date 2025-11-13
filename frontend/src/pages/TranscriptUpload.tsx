@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { BACKEND_BASE_URL } from "../services/patientService";
+import { BACKEND_BASE_URL, authorizedFetch } from "../services/patientService";
 import { workflowService } from "../services/workflowService";
 
 const TranscriptUpload: React.FC = () => {
@@ -144,7 +144,7 @@ const TranscriptUpload: React.FC = () => {
       form.append("visit_id", visitId);
       form.append("audio_file", file);
       
-      const res = await fetch(`${BACKEND_BASE_URL}/notes/transcribe`, {
+      const res = await authorizedFetch(`${BACKEND_BASE_URL}/notes/transcribe`, {
         method: "POST",
         body: form,
       });
@@ -191,7 +191,7 @@ const TranscriptUpload: React.FC = () => {
         }
         
         // First check the status endpoint to see if transcription failed
-        const statusRes = await fetch(`${BACKEND_BASE_URL}/notes/transcribe/status/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
+        const statusRes = await authorizedFetch(`${BACKEND_BASE_URL}/notes/transcribe/status/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
         if (statusRes.ok) {
           const statusData = await statusRes.json();
           const status = statusData.data?.status || statusData.status;
@@ -216,7 +216,7 @@ const TranscriptUpload: React.FC = () => {
               return;
             } else {
               // Check one more time if it's actually failed before showing timeout
-              const finalStatusRes = await fetch(`${BACKEND_BASE_URL}/notes/transcribe/status/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
+              const finalStatusRes = await authorizedFetch(`${BACKEND_BASE_URL}/notes/transcribe/status/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`);
               if (finalStatusRes.ok) {
                 const finalStatusData = await finalStatusRes.json();
                 const finalStatus = finalStatusData.data?.status || finalStatusData.status;
@@ -237,7 +237,7 @@ const TranscriptUpload: React.FC = () => {
         }
         
         // Fetch the transcript
-        const res = await fetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/transcript`, {
+        const res = await authorizedFetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/transcript`, {
           headers: { Accept: "application/json" },
         });
         
@@ -306,7 +306,7 @@ const TranscriptUpload: React.FC = () => {
           if (isRawTranscript && transcriptContent.trim()) {
             // Try to structure the dialogue using the backend endpoint
             try {
-              const structureResponse = await fetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/dialogue/structure`, {
+              const structureResponse = await authorizedFetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/dialogue/structure`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
               });
