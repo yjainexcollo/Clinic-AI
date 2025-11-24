@@ -3,6 +3,8 @@
 from datetime import datetime
 from typing import Dict, Any, Optional
 
+from starlette.requests import Request
+
 from ...domain.errors import PatientNotFoundError, VisitNotFoundError
 from ...domain.value_objects.patient_id import PatientId
 from ...domain.value_objects.visit_id import VisitId
@@ -27,7 +29,9 @@ class GeneratePostVisitSummaryUseCase:
         self._visit_repository = visit_repository
         self._soap_service = soap_service
 
-    async def execute(self, request: PostVisitSummaryRequest) -> PostVisitSummaryResponse:
+    async def execute(
+        self, request: PostVisitSummaryRequest, http_request: Optional[Request] = None
+    ) -> PostVisitSummaryResponse:
         """Generate a comprehensive post-visit summary for patient sharing."""
         
         # Find patient
@@ -90,7 +94,10 @@ class GeneratePostVisitSummaryUseCase:
         # Generate post-visit summary using AI service
         try:
             summary_result = await self._soap_service.generate_post_visit_summary(
-                patient_data, soap_data, language=patient.language
+                patient_data,
+                soap_data,
+                language=patient.language,
+                request=http_request,
             )
         except Exception as e:
             raise ValueError(f"Failed to generate post-visit summary: {str(e)}")

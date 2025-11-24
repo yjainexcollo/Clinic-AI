@@ -3,11 +3,13 @@ OpenAI-based implementation of Action Plan Service.
 """
 
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
+
+from starlette.requests import Request
 
 from ...core.config import get_settings
 from ...application.ports.services.action_plan_service import ActionPlanService
-from ...core.helicone_client import create_helicone_client
+from ...core.ai_factory import get_ai_client
 
 logger = logging.getLogger(__name__)
 
@@ -17,14 +19,14 @@ class OpenAIActionPlanService(ActionPlanService):
 
     def __init__(self):
         self.settings = get_settings()
-        # Use Helicone client for AI observability
-        self.client = create_helicone_client()
+        self.client = get_ai_client(self.settings)
 
     async def generate_action_plan(
         self, 
         transcript: str, 
         structured_dialogue: list[dict] = None,
-        language: str = "en"
+        language: str = "en",
+        request: Optional[Request] = None,
     ) -> Dict[str, Any]:
         """
         Generate Action and Plan from medical transcript using OpenAI.
@@ -43,24 +45,22 @@ class OpenAIActionPlanService(ActionPlanService):
             # Call Azure OpenAI API with Helicone tracking
             # Note: patient_id is not needed for adhoc flows - it's optional and defaults to None
             # Use Azure OpenAI deployment name instead of model
-            response, metrics = await self.client.chat_completion(
+            response = await self.client.chat(
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
+                    {"role": "user", "content": user_prompt},
                 ],
-                temperature=0.3,  # Lower temperature for more consistent medical recommendations
+                temperature=0.3,
                 max_tokens=2000,
-                # patient_id is not passed - this is for adhoc transcripts (no patient)
-                prompt_name="action_plan_generation",
+                model=self.settings.azure_openai.deployment_name,
+                request=request,
+                route_name="action_plan_generation",
                 custom_properties={
                     "service": "action_plan",
                     "language": language,
-                    "flow_type": "adhoc"  # Mark this as adhoc flow
-                }
+                    "flow_type": "adhoc",
+                },
             )
-            
-            # Log metrics
-            logger.info(f"[ActionPlanService] Action plan generation metrics: {metrics}")
 
             # Parse the response
             content = response.choices[0].message.content

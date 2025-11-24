@@ -19,8 +19,10 @@ import re
 import time
 from datetime import datetime
 
+from starlette.requests import Request
+
 if TYPE_CHECKING:
-    from openai import AsyncAzureOpenAI  # type: ignore
+    from clinicai.core.ai_client import HeliconeAzureClient  # type: ignore
 
 # Module-level logger to avoid UnboundLocalError from function-level assignments
 LOGGER = logging.getLogger("clinicai")
@@ -586,20 +588,25 @@ class TranscribeAudioUseCase:
 
     async def _retry_chunk_processing(
         self,
-        client: AsyncAzureOpenAI,
+        client,
         system_prompt: str,
         user_prompt: str,
         settings,
         logger,
         max_retries: int = 3,
         base_delay: float = 1.0,
-        max_delay: float = 5.0
+        max_delay: float = 5.0,
+        request: Optional[Request] = None,
+        background_metadata: Optional[Dict[str, Any]] = None,
     ) -> Tuple[str, bool]:
         """Retry chunk processing with exponential backoff."""
         last_error = None
         for attempt in range(max_retries):
             try:
-                result = await self._process_single_chunk(client, system_prompt, user_prompt, settings, logger)
+                result = await self._process_single_chunk(
+                    client, system_prompt, user_prompt, settings, logger, 
+                    request=request, background_metadata=background_metadata
+                )
                 if result and result.strip():
                     logger.info(f"✓ Chunk processing succeeded on attempt {attempt + 1}/{max_retries}")
                     return result, True
@@ -745,11 +752,13 @@ class TranscribeAudioUseCase:
 
     async def _process_transcript_with_chunking(
         self, 
-        client: AsyncAzureOpenAI, 
+        client, 
         raw_transcript: str, 
         settings, 
         logger,
-        language: str = "en"
+        language: str = "en",
+        request: Optional[Request] = None,
+        background_metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Process transcript with robust chunking strategy for long content."""
         
@@ -918,7 +927,10 @@ class TranscribeAudioUseCase:
                     f"Follow the conversation flow and use the identification rules to assign speakers correctly.\n\n"
                     f"OUTPUT: Return ONLY a JSON array starting with [ and ending with ]. Do not use markdown, code blocks, or any other formatting."
                 )
-            return await self._process_single_chunk(client, system_prompt, user_prompt, settings, logger)
+            return await self._process_single_chunk(
+                client, system_prompt, user_prompt, settings, logger,
+                request=request, background_metadata=background_metadata
+            )
         
         # Multi-chunk processing with overlap
         chunks = []
@@ -995,7 +1007,8 @@ class TranscribeAudioUseCase:
             
             # Use retry logic for chunk processing
             chunk_result, success = await self._retry_chunk_processing(
-                client, system_prompt, chunk_prompt, settings, logger
+                client, system_prompt, chunk_prompt, settings, logger,
+                request=request, background_metadata=background_metadata,
             )
             
             chunk_processing_time = time.time() - chunk_start_time
@@ -1099,11 +1112,13 @@ class TranscribeAudioUseCase:
     
     async def _process_single_chunk(
         self, 
-        client: AsyncAzureOpenAI, 
+        client, 
         system_prompt: str, 
         user_prompt: str, 
         settings, 
-        logger
+        logger,
+        request: Optional[Request] = None,
+        background_metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Process a single chunk of transcript."""
         
@@ -1121,8 +1136,8 @@ class TranscribeAudioUseCase:
                 logger.info(f"User prompt length: {len(user_prompt)} characters")
                 logger.info(f"User prompt preview: {user_prompt[:300]}...")
                 
-                # Use Azure OpenAI deployment name instead of model
-                resp = await client.chat.completions.create(
+                # Use unified Helicone-aware client
+                resp = await client.chat(
                     model=settings.azure_openai.deployment_name,
                     messages=[
                         {"role": "system", "content": system_prompt},
@@ -1130,6 +1145,9 @@ class TranscribeAudioUseCase:
                     ],
                     max_tokens=max_tokens,
                     temperature=0.1,
+                    request=request,
+                    route_name="transcription_postprocess_chunk",
+                    background_metadata=background_metadata,
                     top_p=0.9,
                     frequency_penalty=0.1,
                     presence_penalty=0.1,
@@ -1335,11 +1353,13 @@ class TranscribeAudioUseCase:
     
     async def _process_transcript_simple(
         self, 
-        client: AsyncAzureOpenAI, 
+        client, 
         raw_transcript: str, 
         settings, 
         logger,
-        language: str = "en"
+        language: str = "en",
+        request: Optional[Request] = None,
+        background_metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Process transcript with simplified approach for very short transcripts (<5000 chars)."""
         
@@ -1361,7 +1381,8 @@ class TranscribeAudioUseCase:
         if len(raw_transcript) > 12000:
             logger.info(f"Long transcript detected ({len(raw_transcript)} chars), redirecting to chunking strategy")
             return await self._process_transcript_with_chunking(
-                client, raw_transcript, settings, logger, language
+                client, raw_transcript, settings, logger, language,
+                request=request, background_metadata=background_metadata
             )
         
         if (language or "en").lower() in ["sp", "es", "es-es", "es-mx", "spanish"]:
@@ -1371,7 +1392,10 @@ class TranscribeAudioUseCase:
         
         try:
             logger.info("Starting simplified LLM processing...")
-            result = await self._process_single_chunk(client, system_prompt, user_prompt, settings, logger)
+            result = await self._process_single_chunk(
+                client, system_prompt, user_prompt, settings, logger,
+                request=request, background_metadata=background_metadata
+            )
             logger.info(f"Simplified processing completed: {len(result) if result else 0} characters")
             return result
         except Exception as e:

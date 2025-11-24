@@ -3,7 +3,10 @@ Action Plan Service interface for generating Action and Plan from medical transc
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Dict, Any, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from starlette.requests import Request
 
 
 class ActionPlanService(ABC):
@@ -14,7 +17,8 @@ class ActionPlanService(ABC):
         self, 
         transcript: str, 
         structured_dialogue: list[dict] = None,
-        language: str = "en"
+        language: str = "en",
+        request: Optional["Request"] = None,
     ) -> Dict[str, Any]:
         """
         Generate Action and Plan from medical transcript.

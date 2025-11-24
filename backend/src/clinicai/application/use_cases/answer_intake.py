@@ -2,6 +2,10 @@
 Formatting-only changes; behavior preserved.
 """
 import logging
+from typing import List, Optional
+
+from starlette.requests import Request
+
 from ...domain.entities.visit import Visit
 from ...domain.errors import (
     IntakeAlreadyCompletedError,
@@ -12,11 +16,11 @@ from ...domain.errors import (
 from ...domain.value_objects.patient_id import PatientId
 from ...domain.value_objects.visit_id import VisitId
 from ..dto.patient_dto import (
-AnswerIntakeRequest,
-AnswerIntakeResponse,
-EditAnswerRequest,
-EditAnswerResponse,
-PreVisitSummaryRequest,
+    AnswerIntakeRequest,
+    AnswerIntakeResponse,
+    EditAnswerRequest,
+    EditAnswerResponse,
+    PreVisitSummaryRequest,
 )
 from ..ports.repositories.patient_repo import PatientRepository
 from ..ports.repositories.visit_repo import VisitRepository
@@ -32,7 +36,9 @@ class AnswerIntakeUseCase:
         self._visit_repository = visit_repository
         self._question_service = question_service
 
-    async def execute(self, request: AnswerIntakeRequest) -> AnswerIntakeResponse:
+    async def execute(
+        self, request: AnswerIntakeRequest, http_request: Optional[Request] = None
+    ) -> AnswerIntakeResponse:
         """Execute the answer intake use case."""
         # Find patient
         patient_id = PatientId(request.patient_id)
@@ -47,8 +53,6 @@ class AnswerIntakeUseCase:
             raise VisitNotFoundError(request.visit_id)
 
         # Build prior context from latest completed visit (excluding current)
-        from typing import Optional, List
-
         prior_summary: Optional[str] = None
         prior_qas: Optional[List[str]] = None
         try:
@@ -77,6 +81,7 @@ class AnswerIntakeUseCase:
                 current_question = await self._question_service.generate_first_question(
                     disease=visit.symptom or "general consultation",
                     language=patient.language,
+                    request=http_request,
                 )
             else:
                 previous_answers = [qa.answer for qa in visit.intake_session.questions_asked]
@@ -100,6 +105,7 @@ class AnswerIntakeUseCase:
                             prior_qas=prior_qas,
                             patient_gender=patient.gender,
                             patient_age=patient.age,
+                        request=http_request,
                         )
                         if candidate and candidate.strip() and candidate not in asked_questions:
                             current_question = candidate
@@ -138,6 +144,7 @@ class AnswerIntakeUseCase:
             previous_answers=[qa.answer for qa in visit.intake_session.questions_asked],
             current_count=visit.intake_session.current_question_count,
             max_count=visit.intake_session.max_questions,
+            request=http_request,
         )
 
         next_question = None
@@ -188,6 +195,7 @@ class AnswerIntakeUseCase:
                         prior_qas=prior_qas,
                         patient_gender=patient.gender,
                         patient_age=patient.age,
+                        request=http_request,
                     )
                     if candidate and candidate.strip() and candidate not in asked_questions:
                         next_question = candidate
@@ -219,6 +227,7 @@ class AnswerIntakeUseCase:
             max_count=visit.intake_session.max_questions,
             prior_summary=prior_summary,
             prior_qas=prior_qas,
+            request=http_request,
         )
 
         # Force 100% on completion
@@ -230,7 +239,9 @@ class AnswerIntakeUseCase:
 
         allows_image_upload = False
         if next_question:
-            allows_image_upload = await self._question_service.is_medication_question(next_question)
+            allows_image_upload = await self._question_service.is_medication_question(
+                next_question, request=http_request
+            )
 
         return AnswerIntakeResponse(
             next_question=next_question,
@@ -242,7 +253,9 @@ class AnswerIntakeUseCase:
             allows_image_upload=allows_image_upload,
         )
 
-    async def edit(self, request: EditAnswerRequest) -> EditAnswerResponse:
+    async def edit(
+        self, request: EditAnswerRequest, http_request: Optional[Request] = None
+    ) -> EditAnswerResponse:
         """Edit an existing answer by question number (1-based)."""
         # Find patient
         patient_id = PatientId(request.patient_id)
@@ -285,6 +298,7 @@ class AnswerIntakeUseCase:
             recently_travelled=patient.recently_travelled,
             patient_gender=patient.gender,
             patient_age=patient.age,
+            request=http_request,
         )
         visit.set_pending_question(next_question)
 
@@ -295,11 +309,14 @@ class AnswerIntakeUseCase:
             asked_questions=asked_questions,
             current_count=visit.intake_session.current_question_count,
             max_count=max_count,
+            request=http_request,
         )
 
         allows_image_upload = False
         if next_question:
-            allows_image_upload = await self._question_service.is_medication_question(next_question)
+            allows_image_upload = await self._question_service.is_medication_question(
+                next_question, request=http_request
+            )
 
         # Persist changes
         await self._visit_repository.save(visit)

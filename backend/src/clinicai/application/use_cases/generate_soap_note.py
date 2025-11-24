@@ -1,5 +1,9 @@
 """Generate SOAP note use case for Step-03 functionality."""
 
+from typing import Optional
+
+from starlette.requests import Request
+
 from ...domain.errors import PatientNotFoundError, VisitNotFoundError
 from ...domain.value_objects.patient_id import PatientId
 from ...domain.value_objects.visit_id import VisitId
@@ -23,7 +27,9 @@ class GenerateSoapNoteUseCase:
         self._visit_repository = visit_repository
         self._soap_service = soap_service
 
-    async def execute(self, request: SoapGenerationRequest) -> SoapGenerationResponse:
+    async def execute(
+        self, request: SoapGenerationRequest, http_request: Optional[Request] = None
+    ) -> SoapGenerationResponse:
         """Execute the SOAP note generation use case."""
         # Find patient
         patient_id = PatientId(request.patient_id)
@@ -112,6 +118,7 @@ class GenerateSoapNoteUseCase:
                 pre_visit_summary=pre_visit_summary,
                 vitals=vitals,
                 language=patient_language,
+                request=http_request,
             )
 
             # Validate SOAP structure

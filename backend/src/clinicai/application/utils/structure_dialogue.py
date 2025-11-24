@@ -8,6 +8,7 @@ ad-hoc flows produce consistent outputs.
 from typing import List, Dict, Optional
 import asyncio
 import re as _re
+from starlette.requests import Request
 
 
 async def structure_dialogue_from_text(
@@ -17,7 +18,8 @@ async def structure_dialogue_from_text(
     azure_endpoint: Optional[str] = None,
     azure_api_key: Optional[str] = None,
     api_key: Optional[str] = None,  # Deprecated - use azure_api_key
-    language: str = "en"
+    language: str = "en",
+    request: Optional[Request] = None,
 ) -> Optional[List[Dict[str, str]]]:
     """
     Structure dialogue from text using Azure OpenAI.
@@ -39,35 +41,24 @@ async def structure_dialogue_from_text(
     if not raw:
         return None
     try:
-        # Require Azure OpenAI - no fallback to standard OpenAI
-        from openai import AsyncAzureOpenAI  # type: ignore
         from clinicai.core.config import get_settings
+        from clinicai.core.ai_factory import get_ai_client
         
         settings = get_settings()
         
-        # Require Azure OpenAI - no fallback to standard OpenAI
-        if azure_endpoint and azure_api_key:
-            # Use Azure OpenAI from parameters
-            client = AsyncAzureOpenAI(
-                api_key=azure_api_key,
-                api_version=settings.azure_openai.api_version,
-                azure_endpoint=azure_endpoint
-            )
+        # Use unified Helicone-aware client
+        client = get_ai_client(settings)
+        
+        # Determine deployment name
+        if model:
             deployment_name = model  # model parameter is actually deployment name for Azure
-        elif settings.azure_openai.endpoint and settings.azure_openai.api_key:
-            # Use Azure OpenAI from settings
-            client = AsyncAzureOpenAI(
-                api_key=settings.azure_openai.api_key,
-                api_version=settings.azure_openai.api_version,
-                azure_endpoint=settings.azure_openai.endpoint
-            )
-            deployment_name = settings.azure_openai.deployment_name
         else:
-            # Azure OpenAI is required - raise error instead of falling back
+            deployment_name = settings.azure_openai.deployment_name
+        
+        if not deployment_name:
             raise ValueError(
-                "Azure OpenAI is required. Please provide azure_endpoint and azure_api_key parameters, "
-                "or configure AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY in settings. "
-                "Fallback to standard OpenAI is disabled for data security."
+                "Azure OpenAI deployment name is required. Please provide model parameter, "
+                "or configure AZURE_OPENAI_DEPLOYMENT_NAME in settings."
             )
 
         # Language-aware system prompt
@@ -454,7 +445,7 @@ Output ONLY the JSON array. Do not include explanatory text, confidence scores, 
 
             async def _call_openai() -> str:
                 try:
-                    resp = await client.chat.completions.create(
+                    resp = await client.chat(
                         model=deployment_name,
                         messages=[
                             {"role": "system", "content": system_prompt},
@@ -462,11 +453,13 @@ Output ONLY the JSON array. Do not include explanatory text, confidence scores, 
                         ],
                         max_tokens=4000 if is_gpt4 else 2000,
                         temperature=0.0,
+                        request=request,
+                        route_name="dialogue_structuring",
                         response_format={"type": "json_object"},  # enforce strict JSON when supported
                     )
                 except Exception:
                     # Fallback without response_format if unsupported
-                    resp = await client.chat.completions.create(
+                    resp = await client.chat(
                         model=deployment_name,
                         messages=[
                             {"role": "system", "content": system_prompt},
@@ -474,6 +467,8 @@ Output ONLY the JSON array. Do not include explanatory text, confidence scores, 
                         ],
                         max_tokens=4000 if is_gpt4 else 2000,
                         temperature=0.0,
+                        request=request,
+                        route_name="dialogue_structuring",
                     )
                 return (resp.choices[0].message.content or "").strip()
 
@@ -517,7 +512,7 @@ Output ONLY the JSON array. Do not include explanatory text, confidence scores, 
                         "OUTPUT: Valid JSON array starting with [ and ending with ]"
                     )
                 try:
-                    resp = await client.chat.completions.create(
+                    resp = await client.chat(
                         model=deployment_name,
                         messages=[
                             {"role": "system", "content": system_prompt},
@@ -525,10 +520,12 @@ Output ONLY the JSON array. Do not include explanatory text, confidence scores, 
                         ],
                         max_tokens=4000 if is_gpt4 else 2000,
                         temperature=0.0,
+                        request=request,
+                        route_name="dialogue_structuring_chunked",
                         response_format={"type": "json_object"},
                     )
                 except Exception:
-                    resp = await client.chat.completions.create(
+                    resp = await client.chat(
                         model=deployment_name,
                         messages=[
                             {"role": "system", "content": system_prompt},
@@ -536,6 +533,8 @@ Output ONLY the JSON array. Do not include explanatory text, confidence scores, 
                         ],
                         max_tokens=4000 if is_gpt4 else 2000,
                         temperature=0.0,
+                        request=request,
+                        route_name="dialogue_structuring_chunked",
                     )
                 return (resp.choices[0].message.content or "").strip()
 

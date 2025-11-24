@@ -5,6 +5,10 @@ Formatting-only changes; behavior preserved.
 
 # Unused imports removed
 
+from typing import Optional
+
+from starlette.requests import Request
+
 from ...domain.entities.patient import Patient
 from ...domain.entities.visit import Visit
 
@@ -27,7 +31,9 @@ class RegisterPatientUseCase:
         self._visit_repository = visit_repository
         self._question_service = question_service
 
-    async def execute(self, request: RegisterPatientRequest) -> RegisterPatientResponse:
+    async def execute(
+        self, request: RegisterPatientRequest, http_request: Optional[Request] = None
+    ) -> RegisterPatientResponse:
         """Execute the register patient use case."""
         # Enforce consent gating
         if not getattr(request, "consent", False):
@@ -50,7 +56,8 @@ class RegisterPatientUseCase:
             existing_patient.language = request.language
             first_question = await self._question_service.generate_first_question(
                 disease=visit.symptom or "general consultation",
-                language=request.language
+                language=request.language,
+                request=http_request,
             )
             visit.set_pending_question(first_question)
             
@@ -96,7 +103,8 @@ class RegisterPatientUseCase:
         # Generate first question via QuestionService for consistency
         first_question = await self._question_service.generate_first_question(
             disease=visit.symptom or "general consultation",
-            language=patient.language
+            language=patient.language,
+            request=http_request,
         )
 
         # Set pending question on visit

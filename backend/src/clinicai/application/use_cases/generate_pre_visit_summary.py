@@ -2,6 +2,9 @@
 
 import logging
 from datetime import datetime
+from typing import Optional
+
+from starlette.requests import Request
 from ...domain.errors import PatientNotFoundError, VisitNotFoundError
 from ...domain.value_objects.patient_id import PatientId
 from ...domain.value_objects.visit_id import VisitId
@@ -27,7 +30,9 @@ class GeneratePreVisitSummaryUseCase:
         self._visit_repository = visit_repository
         self._question_service = question_service
 
-    async def execute(self, request: PreVisitSummaryRequest) -> PreVisitSummaryResponse:
+    async def execute(
+        self, request: PreVisitSummaryRequest, http_request: Optional[Request] = None
+    ) -> PreVisitSummaryResponse:
         """Execute the pre-visit summary generation use case."""
         try:
             # Store original request patient_id for image querying
@@ -138,7 +143,11 @@ class GeneratePreVisitSummaryUseCase:
             try:
                 logger.info(f"Generating pre-visit summary for visit {request.visit_id}, patient {request.patient_id[:50]}")
                 summary_result = await self._question_service.generate_pre_visit_summary(
-                    patient_data, intake_answers, language=patient.language, medication_images_info=medication_images_info
+                    patient_data,
+                    intake_answers,
+                    language=patient.language,
+                    medication_images_info=medication_images_info,
+                    request=http_request,
                 )
             except Exception as ai_error:
                 logger.error(

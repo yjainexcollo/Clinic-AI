@@ -283,6 +283,18 @@ class AzureSpeechSettings(BaseSettings):
         return v.lower()
 
 
+class HeliconeSettings(BaseSettings):
+    """Helicone proxy configuration settings."""
+
+    model_config = SettingsConfigDict(env_prefix="HELICONE_")
+
+    api_key: Optional[str] = Field(default=None, description="Helicone API key for authentication")
+    base_url: Optional[str] = Field(
+        default=None,
+        description="Helicone proxy base URL (https://your-instance/v1). Leave empty for header-only mode.",
+    )
+
+
 class Settings(BaseSettings):
     """Main application settings."""
 
@@ -311,6 +323,7 @@ class Settings(BaseSettings):
     azure_openai: AzureOpenAISettings = Field(default_factory=AzureOpenAISettings)
     azure_queue: AzureQueueSettings = Field(default_factory=AzureQueueSettings)
     azure_speech: AzureSpeechSettings = Field(default_factory=AzureSpeechSettings)
+    helicone: HeliconeSettings = Field(default_factory=HeliconeSettings)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -339,6 +352,9 @@ class Settings(BaseSettings):
                     "AZURE_OPENAI_API_VERSION": key_vault.get_secret("AZURE-OPENAI-API-VERSION"),
                     "AZURE_OPENAI_DEPLOYMENT_NAME": key_vault.get_secret("AZURE-OPENAI-DEPLOYMENT-NAME"),
                     "AZURE_OPENAI_WHISPER_DEPLOYMENT_NAME": key_vault.get_secret("AZURE-OPENAI-WHISPER-DEPLOYMENT-NAME"),
+                    # Helicone secrets
+                    "HELICONE_API_KEY": key_vault.get_secret("HELICONE-API-KEY"),
+                    "HELICONE_BASE_URL": key_vault.get_secret("HELICONE-BASE-URL"),
                 }
                 # Only use Key Vault values if they exist (don't override env vars that are already set)
                 for key, value in key_vault_secrets.items():
@@ -366,6 +382,7 @@ class Settings(BaseSettings):
         self.azure_openai = AzureOpenAISettings()
         self.azure_queue = AzureQueueSettings()
         self.azure_speech = AzureSpeechSettings()
+        self.helicone = HeliconeSettings()
 
     @validator("app_env")
     def validate_app_env(cls, v: str) -> str:

@@ -3,7 +3,10 @@ SOAP generation service interface for medical documentation.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from starlette.requests import Request
 
 
 class SoapService(ABC):
@@ -17,6 +20,8 @@ class SoapService(ABC):
         intake_data: Optional[Dict[str, Any]] = None,
         pre_visit_summary: Optional[Dict[str, Any]] = None,
         vitals: Optional[Dict[str, Any]] = None,
+        language: str = "en",
+        request: Optional["Request"] = None,
     ) -> Dict[str, Any]:
         """
         Generate SOAP note from transcript and context.
@@ -50,7 +55,8 @@ class SoapService(ABC):
     async def generate_post_visit_summary(
         self,
         patient_data: Dict[str, Any],
-        soap_data: Dict[str, Any]
+        soap_data: Dict[str, Any],
+        request: Optional["Request"] = None,
     ) -> Dict[str, Any]:
         """
         Generate post-visit summary for patient sharing.

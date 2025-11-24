@@ -503,7 +503,7 @@ async def generate_soap_note(
 
         # Execute use case
         use_case = GenerateSoapNoteUseCase(patient_repo, visit_repo, soap_service)
-        result = await use_case.execute(decoded_request)
+        result = await use_case.execute(decoded_request, http_request)
         
         # Convert DTO to response format (encode patient_id for client)
         from ...core.utils.crypto import encode_patient_id
@@ -992,7 +992,8 @@ async def structure_dialogue(request: Request, patient_id: str, visit_id: str, p
             raw_transcript, 
             model=model,
             azure_endpoint=settings.azure_openai.endpoint,
-            azure_api_key=settings.azure_openai.api_key
+            azure_api_key=settings.azure_openai.api_key,
+            request=request,
         )
         logger.info(f"Structure dialogue result: {type(dialogue)}, length: {len(dialogue) if isinstance(dialogue, list) else 'N/A'}")
 
