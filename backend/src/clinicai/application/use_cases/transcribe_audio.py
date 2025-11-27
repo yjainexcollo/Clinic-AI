@@ -11,7 +11,7 @@ from ..ports.repositories.patient_repo import PatientRepository
 from ..ports.repositories.visit_repo import VisitRepository
 from ..ports.services.transcription_service import TranscriptionService
 from ...core.config import get_settings
-from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING
+from typing import Dict, Any, List, Optional, Tuple
 import asyncio
 import logging
 import json
@@ -19,10 +19,8 @@ import re
 import time
 from datetime import datetime
 
-from starlette.requests import Request
-
-if TYPE_CHECKING:
-    from clinicai.core.ai_client import HeliconeAzureClient  # type: ignore
+from ...core.ai_client import AzureAIClient
+from ...core.ai_factory import get_ai_client
 
 # Module-level logger to avoid UnboundLocalError from function-level assignments
 LOGGER = logging.getLogger("clinicai")
@@ -588,25 +586,20 @@ class TranscribeAudioUseCase:
 
     async def _retry_chunk_processing(
         self,
-        client,
+        client: AzureAIClient,
         system_prompt: str,
         user_prompt: str,
         settings,
         logger,
         max_retries: int = 3,
         base_delay: float = 1.0,
-        max_delay: float = 5.0,
-        request: Optional[Request] = None,
-        background_metadata: Optional[Dict[str, Any]] = None,
+        max_delay: float = 5.0
     ) -> Tuple[str, bool]:
         """Retry chunk processing with exponential backoff."""
         last_error = None
         for attempt in range(max_retries):
             try:
-                result = await self._process_single_chunk(
-                    client, system_prompt, user_prompt, settings, logger, 
-                    request=request, background_metadata=background_metadata
-                )
+                result = await self._process_single_chunk(client, system_prompt, user_prompt, settings, logger)
                 if result and result.strip():
                     logger.info(f"✓ Chunk processing succeeded on attempt {attempt + 1}/{max_retries}")
                     return result, True
@@ -752,13 +745,11 @@ class TranscribeAudioUseCase:
 
     async def _process_transcript_with_chunking(
         self, 
-        client, 
+        client: AzureAIClient, 
         raw_transcript: str, 
         settings, 
         logger,
-        language: str = "en",
-        request: Optional[Request] = None,
-        background_metadata: Optional[Dict[str, Any]] = None,
+        language: str = "en"
     ) -> str:
         """Process transcript with robust chunking strategy for long content."""
         
@@ -927,10 +918,7 @@ class TranscribeAudioUseCase:
                     f"Follow the conversation flow and use the identification rules to assign speakers correctly.\n\n"
                     f"OUTPUT: Return ONLY a JSON array starting with [ and ending with ]. Do not use markdown, code blocks, or any other formatting."
                 )
-            return await self._process_single_chunk(
-                client, system_prompt, user_prompt, settings, logger,
-                request=request, background_metadata=background_metadata
-            )
+            return await self._process_single_chunk(client, system_prompt, user_prompt, settings, logger)
         
         # Multi-chunk processing with overlap
         chunks = []
@@ -1007,8 +995,7 @@ class TranscribeAudioUseCase:
             
             # Use retry logic for chunk processing
             chunk_result, success = await self._retry_chunk_processing(
-                client, system_prompt, chunk_prompt, settings, logger,
-                request=request, background_metadata=background_metadata,
+                client, system_prompt, chunk_prompt, settings, logger
             )
             
             chunk_processing_time = time.time() - chunk_start_time
@@ -1112,13 +1099,11 @@ class TranscribeAudioUseCase:
     
     async def _process_single_chunk(
         self, 
-        client, 
+        client: AzureAIClient, 
         system_prompt: str, 
         user_prompt: str, 
         settings, 
-        logger,
-        request: Optional[Request] = None,
-        background_metadata: Optional[Dict[str, Any]] = None,
+        logger
     ) -> str:
         """Process a single chunk of transcript."""
         
@@ -1136,18 +1121,15 @@ class TranscribeAudioUseCase:
                 logger.info(f"User prompt length: {len(user_prompt)} characters")
                 logger.info(f"User prompt preview: {user_prompt[:300]}...")
                 
-                # Use unified Helicone-aware client
+                # Use unified client.chat() method
                 resp = await client.chat(
-                    model=settings.azure_openai.deployment_name,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
                     ],
+                    model=settings.azure_openai.deployment_name,
                     max_tokens=max_tokens,
                     temperature=0.1,
-                    request=request,
-                    route_name="transcription_postprocess_chunk",
-                    background_metadata=background_metadata,
                     top_p=0.9,
                     frequency_penalty=0.1,
                     presence_penalty=0.1,
@@ -1353,13 +1335,11 @@ class TranscribeAudioUseCase:
     
     async def _process_transcript_simple(
         self, 
-        client, 
+        client: AzureAIClient, 
         raw_transcript: str, 
         settings, 
         logger,
-        language: str = "en",
-        request: Optional[Request] = None,
-        background_metadata: Optional[Dict[str, Any]] = None,
+        language: str = "en"
     ) -> str:
         """Process transcript with simplified approach for very short transcripts (<5000 chars)."""
         
@@ -1381,8 +1361,7 @@ class TranscribeAudioUseCase:
         if len(raw_transcript) > 12000:
             logger.info(f"Long transcript detected ({len(raw_transcript)} chars), redirecting to chunking strategy")
             return await self._process_transcript_with_chunking(
-                client, raw_transcript, settings, logger, language,
-                request=request, background_metadata=background_metadata
+                client, raw_transcript, settings, logger, language
             )
         
         if (language or "en").lower() in ["sp", "es", "es-es", "es-mx", "spanish"]:
@@ -1392,10 +1371,7 @@ class TranscribeAudioUseCase:
         
         try:
             logger.info("Starting simplified LLM processing...")
-            result = await self._process_single_chunk(
-                client, system_prompt, user_prompt, settings, logger,
-                request=request, background_metadata=background_metadata
-            )
+            result = await self._process_single_chunk(client, system_prompt, user_prompt, settings, logger)
             logger.info(f"Simplified processing completed: {len(result) if result else 0} characters")
             return result
         except Exception as e:

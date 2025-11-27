@@ -20,8 +20,6 @@ from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
 
-from starlette.requests import Request
-
 from clinicai.application.ports.services.question_service import QuestionService
 from clinicai.core.config import get_settings
 from clinicai.core.ai_factory import get_ai_client
@@ -59,8 +57,7 @@ class MedicalContextAnalyzer:
         patient_age: Optional[int],
         patient_gender: Optional[str],
         recently_travelled: bool = False,
-        language: str = "en",
-        request: Optional[Request] = None,
+        language: str = "en"
     ) -> MedicalContext:
         """
         Analyze the medical condition to understand what information is needed.
@@ -350,16 +347,10 @@ Return ONLY the JSON, no additional text."""
                 model=self._settings.openai.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
+                    {"role": "user", "content": user_prompt}
                 ],
                 max_tokens=800,
-                temperature=0.2,
-                request=request,
-                route_name="medical_context_analyzer",
-                custom_properties={
-                    "agent": "context_analyzer",
-                    "chief_complaint": chief_complaint,
-                },
+                temperature=0.2,  # Low temperature for consistency
             )
             
             # Extract text from response object
@@ -540,8 +531,7 @@ class AnswerExtractor:
         asked_questions: List[str],
         previous_answers: List[str],
         medical_context: MedicalContext,
-        language: str = "en",
-        request: Optional[Request] = None,
+        language: str = "en"
     ) -> ExtractedInformation:
         """
         Analyze ALL Q&A pairs to understand what's been covered.
@@ -737,17 +727,10 @@ Return ONLY the JSON, no additional text."""
                 model=self._settings.openai.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
+                    {"role": "user", "content": user_prompt}
                 ],
                 max_tokens=600,
-                temperature=0.1,
-                request=request,
-                route_name="answer_extractor",
-                custom_properties={
-                    "agent": "answer_extractor",
-                    "qa_count": len(all_qa),
-                    "total_questions": len(asked_questions),
-                },
+                temperature=0.1,  # Very low for consistency
             )
             
             # Extract text from response object
@@ -1132,17 +1115,10 @@ Generate THE NEXT most important question now:"""
                 model=self._settings.openai.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
+                    {"role": "user", "content": user_prompt}
                 ],
-                max_tokens=200,
-                temperature=0.2,
-                request=request,
-                route_name="question_generator",
-                custom_properties={
-                    "agent": "question_generator",
-                    "question_number": current_count + 1,
-                    "avoid_duplicate": bool(avoid_similar_to),
-                },
+                max_tokens=200,  # Increased to avoid truncation
+                temperature=0.2,  # Lower for stricter adherence to rules and less creativity
             )
             
             # Extract text from response object
@@ -1452,7 +1428,8 @@ class OpenAIQuestionService(QuestionService):
                 "Azure OpenAI Whisper deployment name is required. Please set AZURE_OPENAI_WHISPER_DEPLOYMENT_NAME."
             )
         
-        self._client = get_ai_client(self._settings)
+        # Initialize centralized Azure AI client (no fallback)
+        self._client = get_ai_client()
         
         # Initialize agents
         self._context_analyzer = MedicalContextAnalyzer(self._client, self._settings)
@@ -1467,31 +1444,19 @@ class OpenAIQuestionService(QuestionService):
         messages: List[Dict[str, str]],
         max_tokens: int = 64,
         temperature: float = 0.3,
-        route_name: str = "question_service",
-        request: Optional[Request] = None,
-        custom_properties: Optional[Dict[str, Any]] = None,
-        model: Optional[str] = None,
+        patient_id: str = None,
+        prompt_name: str = None,
     ) -> str:
         """Helper method for direct chat completion (used by other methods)"""
         try:
             if self._debug_prompts:
                 logger.debug("[QuestionService] Sending messages to OpenAI:\n%s", messages)
 
-            properties = {
-                "service": "question_generation",
-                "message_count": len(messages),
-            }
-            if custom_properties:
-                properties.update({k: v for k, v in custom_properties.items() if v is not None})
-
             resp = await self._client.chat(
-                model=model or self._settings.openai.model,
                 messages=messages,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                request=request,
-                route_name=route_name,
-                custom_properties=properties,
+                model=self._settings.openai.model,
             )
             output = resp.choices[0].message.content.strip()
 
@@ -1580,9 +1545,7 @@ class OpenAIQuestionService(QuestionService):
         extracted_info.redundant_categories = redundant
         return count
     
-    async def generate_first_question(
-        self, disease: str, language: str = "en", request: Optional[Request] = None
-    ) -> str:
+    async def generate_first_question(self, disease: str, language: str = "en") -> str:
         """Generate the first intake question"""
         lang = self._normalize_language(language)
         if lang == "sp":
@@ -1603,7 +1566,6 @@ class OpenAIQuestionService(QuestionService):
         patient_gender: Optional[str] = None,
         patient_age: Optional[int] = None,
         language: str = "en",
-        request: Optional[Request] = None,
     ) -> str:
         """
         Generate next question using multi-agent pipeline.
@@ -1620,8 +1582,7 @@ class OpenAIQuestionService(QuestionService):
                 patient_age=patient_age,
                 patient_gender=patient_gender,
                 recently_travelled=recently_travelled,
-                language=language,
-                request=request,
+                language=language
             )
             
             # AGENT 2: Extract what's been covered
@@ -1630,8 +1591,7 @@ class OpenAIQuestionService(QuestionService):
                 asked_questions=asked_questions,
                 previous_answers=previous_answers,
                 medical_context=medical_context,
-                language=language,
-                request=request,
+                language=language
             )
             
             # Log Agent 2 output for debugging
@@ -1792,8 +1752,7 @@ class OpenAIQuestionService(QuestionService):
                     avoid_similar_to=rejected_question,  # Tell Agent 3 to avoid this specific question
                     asked_questions=asked_questions,  # Full Q&A history for context
                     previous_answers=previous_answers,  # Full Q&A history for context
-                    is_deep_diagnostic=is_after_consent and deeper_count < 3,  # Generate deep diagnostic if after consent and less than 3 asked
-                    request=request,
+                    is_deep_diagnostic=is_after_consent and deeper_count < 3  # Generate deep diagnostic if after consent and less than 3 asked
                 )
                 
                 # AGENT 4: Validate safety
@@ -1843,7 +1802,6 @@ class OpenAIQuestionService(QuestionService):
         previous_answers: List[str],
         current_count: int,
         max_count: int = 10,
-        request: Optional[Request] = None,
     ) -> bool:
         """Determine if we should stop asking questions"""
         if current_count >= max_count:
@@ -1859,7 +1817,6 @@ class OpenAIQuestionService(QuestionService):
         max_count: int = 10,
         prior_summary: Optional[Any] = None,
         prior_qas: Optional[List[str]] = None,
-        request: Optional[Request] = None,
     ) -> int:
         """Calculate completion percentage"""
         try:
@@ -1870,9 +1827,7 @@ class OpenAIQuestionService(QuestionService):
         except Exception:
             return 0
     
-    async def is_medication_question(
-        self, question: str, request: Optional[Request] = None
-    ) -> bool:
+    async def is_medication_question(self, question: str) -> bool:
         """Check if question is about medications (for image upload)"""
         question_lower = (question or "").lower()
         
@@ -1904,7 +1859,6 @@ class OpenAIQuestionService(QuestionService):
         intake_answers: Dict[str, Any],
         language: str = "en",
         medication_images_info: Optional[str] = None,
-        request: Optional[Request] = None,
     ) -> Dict[str, Any]:
         """Generate pre-visit clinical summary from intake data with red flag detection."""
         
@@ -2001,7 +1955,7 @@ class OpenAIQuestionService(QuestionService):
         try:
             # Detect abusive language red flags
             try:
-                red_flags = await self._detect_red_flags(intake_answers, lang, request=request)
+                red_flags = await self._detect_red_flags(intake_answers, lang)
             except Exception as e:
                 logger.warning(f"Red flag detection failed, continuing without flags: {e}")
                 red_flags = []
@@ -2017,11 +1971,8 @@ class OpenAIQuestionService(QuestionService):
                     },
                     {"role": "user", "content": prompt},
                 ],
-                max_tokens=min(2000, self._settings.openai.max_tokens),
+                max_tokens=min(2000, self._settings.openai.max_tokens),  # Use max_tokens from settings
                 temperature=0.3,
-                route_name="pre_visit_summary",
-                request=request,
-                custom_properties={"has_medication_images": bool(medication_images_info)},
             )
             cleaned = self._clean_summary_markdown(response)
             
@@ -2039,12 +1990,7 @@ class OpenAIQuestionService(QuestionService):
     # ----------------------
     # Red Flag Detection
     # ----------------------
-    async def _detect_red_flags(
-        self,
-        intake_answers: Dict[str, Any],
-        language: str = "en",
-        request: Optional[Request] = None,
-    ) -> List[Dict[str, str]]:
+    async def _detect_red_flags(self, intake_answers: Dict[str, Any], language: str = "en") -> List[Dict[str, str]]:
         """Hybrid abusive language detection: hardcoded rules + LLM analysis."""
         lang = self._normalize_language(language)
         
@@ -2207,17 +2153,12 @@ Responses to analyze:
                 messages=[
                     {
                         "role": "system",
-                        "content": (
-                            "You are a clinical assistant analyzing patient responses for abusive language. "
-                            "Be precise and only flag truly inappropriate or abusive language."
-                        ),
+                        "content": "You are a clinical assistant analyzing patient responses for abusive language. Be precise and only flag truly inappropriate or abusive language."
                     },
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": prompt}
                 ],
                 max_tokens=1000,
-                temperature=0.1,
-                route_name="red_flag_detection",
-                request=request,
+                temperature=0.1,  # Low temperature for consistent analysis
             )
             
             # Parse LLM response

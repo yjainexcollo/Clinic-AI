@@ -3,9 +3,7 @@ OpenAI-based implementation of Action Plan Service.
 """
 
 import logging
-from typing import Dict, Any, List, Optional
-
-from starlette.requests import Request
+from typing import Dict, Any, List
 
 from ...core.config import get_settings
 from ...application.ports.services.action_plan_service import ActionPlanService
@@ -19,14 +17,14 @@ class OpenAIActionPlanService(ActionPlanService):
 
     def __init__(self):
         self.settings = get_settings()
-        self.client = get_ai_client(self.settings)
+        # Use centralized Azure AI client
+        self.client = get_ai_client()
 
     async def generate_action_plan(
         self, 
         transcript: str, 
         structured_dialogue: list[dict] = None,
-        language: str = "en",
-        request: Optional[Request] = None,
+        language: str = "en"
     ) -> Dict[str, Any]:
         """
         Generate Action and Plan from medical transcript using OpenAI.
@@ -42,24 +40,16 @@ class OpenAIActionPlanService(ActionPlanService):
                 system_prompt = self._get_english_system_prompt()
                 user_prompt = self._get_english_user_prompt(transcript, structured_dialogue)
 
-            # Call Azure OpenAI API with Helicone tracking
+            # Call Azure OpenAI API
             # Note: patient_id is not needed for adhoc flows - it's optional and defaults to None
             # Use Azure OpenAI deployment name instead of model
             response = await self.client.chat(
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
+                    {"role": "user", "content": user_prompt}
                 ],
-                temperature=0.3,
+                temperature=0.3,  # Lower temperature for more consistent medical recommendations
                 max_tokens=2000,
-                model=self.settings.azure_openai.deployment_name,
-                request=request,
-                route_name="action_plan_generation",
-                custom_properties={
-                    "service": "action_plan",
-                    "language": language,
-                    "flow_type": "adhoc",
-                },
             )
 
             # Parse the response

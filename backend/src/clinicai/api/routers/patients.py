@@ -118,7 +118,7 @@ async def register_patient(
 
         # Execute use case
         use_case = RegisterPatientUseCase(patient_repo, visit_repo, question_service)
-        result = await use_case.execute(dto_request, http_request)
+        result = await use_case.execute(dto_request)
 
         # Set IDs in request state for HIPAA audit middleware
         http_request.state.audit_patient_id = encode_patient_id(result.patient_id)
@@ -375,7 +375,7 @@ async def answer_intake_question(
 
         # Execute use case
         use_case = AnswerIntakeUseCase(patient_repo, visit_repo, question_service)
-        result = await use_case.execute(dto_request, request)
+        result = await use_case.execute(dto_request)
 
         return AnswerIntakeResponse(
             next_question=result.next_question,
@@ -463,7 +463,7 @@ async def edit_intake_answer(
             question_number=request.question_number,
             new_answer=request.new_answer,
         )
-        result = await use_case.edit(dto_request, http_request)
+        result = await use_case.edit(dto_request)
         return EditAnswerResponseSchema(
             success=result.success,
             message=result.message,
@@ -952,7 +952,7 @@ async def generate_pre_visit_summary(
 
         # Execute use case
         use_case = GeneratePreVisitSummaryUseCase(patient_repo, visit_repo, question_service)
-        result = await use_case.execute(dto_request, http_request)
+        result = await use_case.execute(dto_request)
 
         return PreVisitSummaryResponse(
             patient_id=encode_patient_id(result.patient_id),
@@ -1228,7 +1228,7 @@ async def generate_post_visit_summary(
         use_case = GeneratePostVisitSummaryUseCase(patient_repo, visit_repo, soap_service)
         
         # Execute use case
-        result = await use_case.execute(decoded_request, http_request)
+        result = await use_case.execute(decoded_request)
         
         return ok(http_request, data=result)
         

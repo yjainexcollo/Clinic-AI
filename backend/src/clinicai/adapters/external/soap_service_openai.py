@@ -5,11 +5,7 @@ OpenAI-based SOAP generation service implementation.
 import asyncio
 import json
 from typing import Dict, Any, Optional, List
-import os
 import logging
-
-from starlette.requests import Request
-
 from clinicai.core.ai_factory import get_ai_client
 
 from clinicai.application.ports.services.soap_service import SoapService
@@ -40,7 +36,8 @@ class OpenAISoapService(SoapService):
                 "Azure OpenAI deployment name is required. Please set AZURE_OPENAI_DEPLOYMENT_NAME."
             )
         
-        self._client = get_ai_client(self._settings)
+        # Use Azure AI client (no fallback)
+        self._client = get_ai_client()
         # Optional: log initialization
         try:
             logging.getLogger("clinicai").info(
@@ -107,8 +104,7 @@ class OpenAISoapService(SoapService):
         intake_data: Optional[Dict[str, Any]] = None,
         pre_visit_summary: Optional[Dict[str, Any]] = None,
         vitals: Optional[Dict[str, Any]] = None,
-        language: str = "en",
-        request: Optional[Request] = None,
+        language: str = "en"
     ) -> Dict[str, Any]:
         """Generate SOAP note using OpenAI GPT-4."""
         # Normalize language code
@@ -310,41 +306,26 @@ Generate the SOAP note now:
             if patient_context:
                 patient_id = patient_context.get("id") or patient_context.get("patient_id")
             
-            # Use async Helicone client with tracking
-            result = await self._generate_soap_async(
-                prompt, patient_id=patient_id, request=request
-            )
+            # Use async Azure OpenAI client
+            result = await self._generate_soap_async(prompt, patient_id=patient_id)
             # Normalize for structure/consistency
             return self._normalize_soap(result)
             
         except Exception as e:
             raise ValueError(f"SOAP generation failed: {str(e)}")
 
-    async def _generate_soap_async(
-        self, prompt: str, patient_id: Optional[str] = None, request: Optional[Request] = None
-    ) -> Dict[str, Any]:
-        """Async SOAP generation method with Helicone tracking."""
+    async def _generate_soap_async(self, prompt: str, patient_id: str = None) -> Dict[str, Any]:
+        """Async SOAP generation method."""
         response = await self._client.chat(
-            model=self._settings.soap.model,
             messages=[
                 {
-                    "role": "system",
-                    "content": (
-                        "You are a clinical scribe. Generate accurate, structured SOAP notes from medical consultations. "
-                        "Always respond with valid JSON only, no extra text."
-                    ),
+                    "role": "system", 
+                    "content": "You are a clinical scribe. Generate accurate, structured SOAP notes from medical consultations. Always respond with valid JSON only, no extra text."
                 },
-                {"role": "user", "content": prompt},
+                {"role": "user", "content": prompt}
             ],
             temperature=self._settings.soap.temperature,
             max_tokens=self._settings.soap.max_tokens,
-            request=request,
-            route_name="soap_generation",
-            custom_properties={
-                "service": "soap_note",
-                "note_type": "soap",
-                **({"soap_patient_id": patient_id} if patient_id else {}),
-            },
         )
         
         # Parse JSON response
@@ -562,8 +543,7 @@ Generate the SOAP note now:
         self,
         patient_data: Dict[str, Any],
         soap_data: Dict[str, Any],
-        language: str = "en",
-        request: Optional[Request] = None,
+        language: str = "en"
     ) -> Dict[str, Any]:
         """Generate post-visit summary for patient sharing."""
         # Normalize language code
@@ -719,10 +699,8 @@ Generate the post-visit summary now:
             # Extract patient_id from patient_data
             patient_id = patient_data.get("id") or patient_data.get("patient_id")
             
-            # Use async Helicone client with tracking
-            result = await self._generate_post_visit_summary_async(
-                prompt, patient_id=patient_id, request=request
-            )
+            # Use async Azure OpenAI client
+            result = await self._generate_post_visit_summary_async(prompt, patient_id=patient_id)
             # Normalize and return the result
             normalized = self._normalize_post_visit_summary(result)
             return normalized
@@ -733,31 +711,18 @@ Generate the post-visit summary now:
             print(f"ERROR: Traceback: {traceback.format_exc()}")
             raise ValueError(f"Post-visit summary generation failed: {str(e)}")
 
-    async def _generate_post_visit_summary_async(
-        self, prompt: str, patient_id: Optional[str] = None, request: Optional[Request] = None
-    ) -> Dict[str, Any]:
-        """Async post-visit summary generation method with Helicone tracking."""
+    async def _generate_post_visit_summary_async(self, prompt: str, patient_id: str = None) -> Dict[str, Any]:
+        """Async post-visit summary generation method."""
         response = await self._client.chat(
-            model=self._settings.soap.model,
             messages=[
                 {
-                    "role": "system",
-                    "content": (
-                        "You are a medical assistant generating patient-friendly post-visit summaries. "
-                        "Always respond with valid JSON only, no extra text."
-                    ),
+                    "role": "system", 
+                    "content": "You are a medical assistant generating patient-friendly post-visit summaries. Always respond with valid JSON only, no extra text."
                 },
-                {"role": "user", "content": prompt},
+                {"role": "user", "content": prompt}
             ],
             temperature=self._settings.soap.temperature,
             max_tokens=self._settings.soap.max_tokens,
-            request=request,
-            route_name="post_visit_summary",
-            custom_properties={
-                "service": "soap_note",
-                "note_type": "post_visit_summary",
-                **({"soap_patient_id": patient_id} if patient_id else {}),
-            },
         )
         
         # Parse JSON response

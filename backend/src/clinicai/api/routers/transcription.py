@@ -344,8 +344,7 @@ async def structure_transcript_text(request: Request, payload: StructureTextRequ
         payload.transcript, 
         model=model,
         azure_endpoint=settings.azure_openai.endpoint,
-        azure_api_key=settings.azure_openai.api_key,
-        request=request,
+        azure_api_key=settings.azure_openai.api_key
     )
     logger.info(f"Structure dialogue result: {type(dialogue)}, length: {len(dialogue) if isinstance(dialogue, list) else 'N/A'}")
 

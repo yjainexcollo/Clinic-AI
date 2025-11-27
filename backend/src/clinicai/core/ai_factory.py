@@ -1,20 +1,28 @@
-"""Factory for shared Helicone Azure AI client."""
+"""
+AI client factory.
+
+This module centralizes creation of the core AI client used by the backend.
+It is intentionally simple:
+
+- Returns a direct Azure OpenAI client (no Helicone, no proxy)
+- Uses configuration from `Settings.azure_openai`
+"""
 
 from __future__ import annotations
 
-from typing import Optional
-
-from .ai_client import HeliconeAzureClient
-from .config import Settings
-
-_ai_client: Optional[HeliconeAzureClient] = None
+from .ai_client import AzureAIClient
 
 
-def get_ai_client(settings: Settings) -> HeliconeAzureClient:
-    """Return singleton HeliconeAzureClient instance."""
-    global _ai_client
-    if _ai_client is None:
-        _ai_client = HeliconeAzureClient(settings)
-    return _ai_client
+def get_ai_client() -> AzureAIClient:
+    """
+    Get the default AI client for the application.
+
+    Currently this is a thin wrapper over `AsyncAzureOpenAI` configured
+    via environment / settings.
+    """
+    return AzureAIClient()
+
+
+__all__ = ["get_ai_client", "AzureAIClient"]
 
 

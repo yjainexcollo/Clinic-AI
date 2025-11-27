@@ -3,7 +3,6 @@ OpenAI Whisper API-based transcription service.
 Fits low-memory Cloud Run by offloading STT to OpenAI.
 """
 
-import os
 from typing import Dict, Any
 from pathlib import Path
 
@@ -34,8 +33,8 @@ class OpenAITranscriptionService(TranscriptionService):
                 "Azure OpenAI Whisper deployment name is required. Please set AZURE_OPENAI_WHISPER_DEPLOYMENT_NAME."
             )
         
-        # Use unified Helicone-aware Azure OpenAI client
-        self._client = get_ai_client(self._settings)
+        # Use centralized Azure AI client (no fallback)
+        self._client = get_ai_client()
 
     async def transcribe_audio(
         self,
@@ -61,15 +60,9 @@ class OpenAITranscriptionService(TranscriptionService):
         
         try:
             with open(audio_file_path, "rb") as f:
-                # Use unified client's transcribe_whisper method
-                # Note: request is None for transcription service (background task)
-                # The client will use whisper_deployment_name from settings
                 resp = await self._client.transcribe_whisper(
                     file=f,
                     language=whisper_language,
-                    request=None,  # No FastAPI request in transcription service
-                    route_name="whisper_transcription",
-                    model=self._settings.azure_openai.whisper_deployment_name,
                 )
                 model_name = f"azure-{self._settings.azure_openai.whisper_deployment_name}"
             

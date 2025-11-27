@@ -3,19 +3,14 @@ Question service interface for AI-powered question generation.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from starlette.requests import Request
+from typing import Dict, Any, List, Optional
 
 
 class QuestionService(ABC):
     """Abstract service for generating adaptive questions."""
 
     @abstractmethod
-    async def generate_first_question(
-        self, disease: str, language: str = "en", request: Optional["Request"] = None
-    ) -> str:
+    async def generate_first_question(self, disease: str, language: str = "en") -> str:
         """Generate the first question based on primary symptom (backward param name)."""
         pass
 
@@ -32,8 +27,6 @@ class QuestionService(ABC):
         prior_qas: Optional[List[str]] = None,
         patient_gender: Optional[str] = None,
         patient_age: Optional[int] = None,
-        language: str = "en",
-        request: Optional["Request"] = None,
     ) -> str:
         """Generate the next question based on context."""
         pass
@@ -45,7 +38,6 @@ class QuestionService(ABC):
         previous_answers: List[str],
         current_count: int,
         max_count: int,
-        request: Optional["Request"] = None,
     ) -> bool:
         """Determine if sufficient information has been collected."""
         pass
@@ -57,7 +49,6 @@ class QuestionService(ABC):
         intake_answers: Dict[str, Any],
         language: str = "en",
         medication_images_info: Optional[str] = None,
-        request: Optional["Request"] = None,
     ) -> Dict[str, Any]:
         """Generate pre-visit clinical summary from intake data."""
         pass
@@ -72,14 +63,11 @@ class QuestionService(ABC):
         max_count: int,
         prior_summary: Optional[str] = None,
         prior_qas: Optional[List[str]] = None,
-        request: Optional["Request"] = None,
     ) -> int:
         """Return completion percent (0-100) based on information coverage."""
         pass
 
     @abstractmethod
-    async def is_medication_question(
-        self, question: str, request: Optional["Request"] = None
-    ) -> bool:
+    async def is_medication_question(self, question: str) -> bool:
         """Check if a question is about medications and allows image upload."""
         pass

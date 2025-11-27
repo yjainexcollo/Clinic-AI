@@ -8,7 +8,9 @@ ad-hoc flows produce consistent outputs.
 from typing import List, Dict, Optional
 import asyncio
 import re as _re
-from starlette.requests import Request
+
+from clinicai.core.ai_factory import get_ai_client
+from clinicai.core.config import get_settings
 
 
 async def structure_dialogue_from_text(
@@ -18,8 +20,7 @@ async def structure_dialogue_from_text(
     azure_endpoint: Optional[str] = None,
     azure_api_key: Optional[str] = None,
     api_key: Optional[str] = None,  # Deprecated - use azure_api_key
-    language: str = "en",
-    request: Optional[Request] = None,
+    language: str = "en"
 ) -> Optional[List[Dict[str, str]]]:
     """
     Structure dialogue from text using Azure OpenAI.
@@ -41,25 +42,14 @@ async def structure_dialogue_from_text(
     if not raw:
         return None
     try:
-        from clinicai.core.config import get_settings
-        from clinicai.core.ai_factory import get_ai_client
-        
         settings = get_settings()
-        
-        # Use unified Helicone-aware client
-        client = get_ai_client(settings)
-        
-        # Determine deployment name
-        if model:
-            deployment_name = model  # model parameter is actually deployment name for Azure
-        else:
-            deployment_name = settings.azure_openai.deployment_name
-        
-        if not deployment_name:
-            raise ValueError(
-                "Azure OpenAI deployment name is required. Please provide model parameter, "
-                "or configure AZURE_OPENAI_DEPLOYMENT_NAME in settings."
-            )
+
+        deployment_name = model or settings.azure_openai.deployment_name
+
+        # Always use factory client (configured via settings/env)
+        # Custom credentials should be configured via environment variables or settings
+        # rather than passed as parameters to maintain consistency
+        client = get_ai_client()
 
         # Language-aware system prompt
         if (language or "en").lower() in ["sp", "es", "es-es", "es-mx", "spanish"]:
@@ -453,8 +443,6 @@ Output ONLY the JSON array. Do not include explanatory text, confidence scores, 
                         ],
                         max_tokens=4000 if is_gpt4 else 2000,
                         temperature=0.0,
-                        request=request,
-                        route_name="dialogue_structuring",
                         response_format={"type": "json_object"},  # enforce strict JSON when supported
                     )
                 except Exception:
@@ -467,8 +455,6 @@ Output ONLY the JSON array. Do not include explanatory text, confidence scores, 
                         ],
                         max_tokens=4000 if is_gpt4 else 2000,
                         temperature=0.0,
-                        request=request,
-                        route_name="dialogue_structuring",
                     )
                 return (resp.choices[0].message.content or "").strip()
 
@@ -520,8 +506,6 @@ Output ONLY the JSON array. Do not include explanatory text, confidence scores, 
                         ],
                         max_tokens=4000 if is_gpt4 else 2000,
                         temperature=0.0,
-                        request=request,
-                        route_name="dialogue_structuring_chunked",
                         response_format={"type": "json_object"},
                     )
                 except Exception:
@@ -533,8 +517,6 @@ Output ONLY the JSON array. Do not include explanatory text, confidence scores, 
                         ],
                         max_tokens=4000 if is_gpt4 else 2000,
                         temperature=0.0,
-                        request=request,
-                        route_name="dialogue_structuring_chunked",
                     )
                 return (resp.choices[0].message.content or "").strip()
 
