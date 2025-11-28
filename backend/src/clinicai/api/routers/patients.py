@@ -732,27 +732,51 @@ async def get_intake_medication_image_content(
 @router.get("/{patient_id}/visits/{visit_id}/images", tags=["Intake + Pre-Visit Summary"])
 async def list_medication_images(request: Request, patient_id: str, visit_id: str):
     from ...adapters.db.mongo.models.patient_m import MedicationImageMongo
+    from ...adapters.db.mongo.repositories.blob_file_repository import BlobFileRepository
     try:
+        original_patient_id = patient_id
         try:
             internal_patient_id = decode_patient_id(patient_id)
         except Exception:
             internal_patient_id = patient_id
+        candidate_patient_ids = {str(internal_patient_id), str(original_patient_id)}
+        try:
+            candidate_patient_ids.add(encode_patient_id(str(internal_patient_id)))
+        except Exception:
+            pass
         docs = await MedicationImageMongo.find(
-            MedicationImageMongo.patient_id == str(internal_patient_id),
-            MedicationImageMongo.visit_id == str(visit_id),
+            {
+                "patient_id": {"$in": list(candidate_patient_ids)},
+                "visit_id": str(visit_id),
+            }
         ).to_list()
+        
+        # Fetch blob references for blob_url
+        blob_repo = BlobFileRepository()
+        images_list = []
+        for d in docs:
+            blob_url = None
+            try:
+                if hasattr(d, "blob_reference_id") and d.blob_reference_id:
+                    blob_ref = await blob_repo.get_blob_reference_by_id(d.blob_reference_id)
+                    if blob_ref:
+                        blob_url = blob_ref.blob_url
+            except Exception as e:
+                logger.warning(f"Failed to fetch blob URL for image {getattr(d, 'id', 'unknown')}: {e}")
+            
+            images_list.append({
+                "id": str(getattr(d, "id", "")),
+                "filename": getattr(d, "filename", "unknown"),
+                "content_type": getattr(d, "content_type", ""),
+                "file_size": getattr(d, "file_size", 0),
+                "blob_url": blob_url,
+                "uploaded_at": getattr(d, "uploaded_at", None),
+            })
+        
         return ok(request, data={
             "patient_id": internal_patient_id,
             "visit_id": visit_id,
-            "images": [
-                {
-                    "id": str(getattr(d, "id", "")),
-                    "filename": getattr(d, "filename", "unknown"),
-                    "content_type": getattr(d, "content_type", ""),
-                    "uploaded_at": getattr(d, "uploaded_at", None),
-                }
-                for d in docs
-            ],
+            "images": images_list,
         })
     except Exception as e:
         logger.error("Error listing medication images", exc_info=True)
@@ -1750,27 +1774,7 @@ async def get_visit_detail(
                 confidence_score=visit.soap_note.confidence_score,
             )
         
-        # Get associated audio files
-        audio_repo = AudioRepository()
-        audio_files = await audio_repo.list_audio_files(
-            patient_id=internal_patient_id,
-            visit_id=visit_id,
-            audio_type="visit",
-            limit=100,
-            offset=0
-        )
-        
-        audio_files_data = []
-        for audio_file in audio_files:
-            audio_files_data.append({
-                "audio_id": audio_file.audio_id,
-                "filename": audio_file.filename,
-                "content_type": audio_file.content_type,
-                "file_size": audio_file.file_size,
-                "duration_seconds": audio_file.duration_seconds,
-                "created_at": audio_file.created_at.isoformat() if audio_file.created_at else None,
-                "blob_reference_id": audio_file.blob_reference_id,
-            })
+        # Note: Audio files are stored internally for transcription but not exposed in API
         
         # Build response
         visit_detail = VisitDetailSchema(
@@ -1787,7 +1791,6 @@ async def get_visit_detail(
             soap_note=soap_note_data,
             vitals=visit.vitals,
             post_visit_summary=visit.post_visit_summary,
-            audio_files=audio_files_data,
         )
         
         return ok(

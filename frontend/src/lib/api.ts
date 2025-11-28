@@ -393,49 +393,6 @@ class ApiClient {
     });
   }
 
-  // Audio management
-  async listAudioFiles(params?: {
-    patient_id?: string;
-    visit_id?: string;
-    audio_type?: string;
-    limit?: number;
-    offset?: number;
-  }): Promise<ApiResponse<any>> {
-    return this.request<any>({
-      method: 'GET',
-      url: '/audio/',
-      params,
-    });
-  }
-
-  async getAudioMetadata(audioId: string): Promise<ApiResponse<any>> {
-    return this.request<any>({
-      method: 'GET',
-      url: `/audio/${audioId}`,
-    });
-  }
-
-  async streamAudio(audioId: string): Promise<string> {
-    const response = await this.client.get(`/audio/${audioId}/stream`, {
-      responseType: 'blob',
-    });
-    return URL.createObjectURL(response.data);
-  }
-
-  async deleteAudio(audioId: string): Promise<ApiResponse<any>> {
-    return this.request<any>({
-      method: 'DELETE',
-      url: `/audio/${audioId}`,
-    });
-  }
-
-  async getAudioStats(): Promise<ApiResponse<any>> {
-    return this.request<any>({
-      method: 'GET',
-      url: '/audio/stats/summary',
-    });
-  }
-
   // Dialogue structuring
   async structureDialogue(patientId: string, visitId: string): Promise<ApiResponse<any>> {
     return this.request<any>({

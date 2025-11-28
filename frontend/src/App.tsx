@@ -4,39 +4,26 @@ import {
   Routes,
   Route,
   Navigate,
-  useLocation,
 } from "react-router-dom";
 import PersonalForm from "./components/PersonalForm";
-import Navigation from "./components/Navigation";
 import WorkflowSelector from "./components/WorkflowSelector";
 import WalkInPatientForm from "./components/WalkInPatientForm";
 import Index from "./pages/Index";
 import SoapSummary from "./pages/SoapSummary";
 import VitalsForm from "./pages/VitalsForm";
-import AdhocTranscribe from "./pages/AdhocTranscribe";
 import DoctorPreferences from "./pages/DoctorPreferences";
 import PostVisitSummary from "./pages/PostVisitSummary";
 import PreVisitSummary from "./pages/PreVisitSummary";
-import AudioManagement from "./pages/AudioManagement";
 import WalkInTranscription from "./pages/WalkInTranscription";
 import WalkInVitals from "./pages/WalkInVitals";
 import WalkInSoap from "./pages/WalkInSoap";
 import WalkInPostVisit from "./pages/WalkInPostVisit";
 
-// Conditional Navigation Component
-const ConditionalNavigation: React.FC = () => {
-  const location = useLocation();
-  
-  // Only show navigation on the audio page
-  const shouldShowNav = location.pathname === '/audio';
-  
-  return shouldShowNav ? <Navigation /> : null;
-};
+// Navigation removed - no longer needed
 
 const App: React.FC = () => {
   return (
     <Router>
-      <ConditionalNavigation />
       <Routes>
         <Route path="/" element={<Navigate to="/workflow-selector" replace />} />
         <Route path="/workflow-selector" element={<WorkflowSelectorPage />} />
@@ -47,7 +34,6 @@ const App: React.FC = () => {
         <Route path="/pre-visit-summary" element={<PreVisitSummary />} />
         <Route path="/soap/:patientId/:visitId" element={<SoapSummary />} />
         <Route path="/vitals/:patientId/:visitId" element={<VitalsForm />} />
-        <Route path="/transcribe/adhoc" element={<AdhocTranscribe />} />
         <Route path="/doctor/preferences" element={<DoctorPreferences />} />
         <Route path="/post-visit/:patientId/:visitId" element={<PostVisitSummary />} />
         
@@ -55,7 +41,6 @@ const App: React.FC = () => {
         <Route path="/walk-in-vitals/:patientId/:visitId" element={<VitalsForm />} />
         <Route path="/walk-in-soap/:patientId/:visitId" element={<WalkInSoap />} />
         <Route path="/walk-in-post-visit/:patientId/:visitId" element={<WalkInPostVisit />} />
-        <Route path="/audio" element={<AudioManagement />} />
         <Route path="*" element={<Navigate to="/workflow-selector" replace />} />
       </Routes>
     </Router>
