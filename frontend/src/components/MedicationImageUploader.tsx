@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { BACKEND_BASE_URL, authorizedFetch } from "../services/patientService";
 
 interface Props {
@@ -8,7 +8,12 @@ interface Props {
   onChange?: () => void;
 }
 
-type ServerImage = { id: string; filename: string; content_type?: string };
+type ServerImage = {
+  id: string;
+  filename: string;
+  content_type?: string;
+  signed_url?: string;
+};
 
 type QueuedImage = { id: string; file: File; previewUrl: string };
 
@@ -33,18 +38,22 @@ const MedicationImageUploader: React.FC<Props> = ({ patientId, visitId, title = 
     return () => { if (timerRef.current) window.clearInterval(timerRef.current); };
   }, [isUploading]);
 
+  const refreshImages = useCallback(async () => {
+    if (!patientId || !visitId) return;
+    try {
+      const resp = await authorizedFetch(`${BACKEND_BASE_URL}/patients/${patientId}/visits/${visitId}/images`);
+      if (!resp.ok) return;
+      const data = await resp.json();
+      setImages(Array.isArray(data?.images) ? data.images : []);
+    } catch {
+      // swallow; UI already shows empty state
+    }
+  }, [patientId, visitId]);
+
   // Load existing uploaded images
   useEffect(() => {
-    const load = async () => {
-      try {
-        const resp = await authorizedFetch(`${BACKEND_BASE_URL}/patients/${patientId}/visits/${visitId}/images`);
-        if (!resp.ok) return;
-        const data = await resp.json();
-        setImages(Array.isArray(data?.images) ? data.images : []);
-      } catch {}
-    };
-    if (patientId && visitId) load();
-  }, [patientId, visitId]);
+    refreshImages();
+  }, [refreshImages]);
 
   const formatElapsed = (s: number) => {
     const m = Math.floor(s / 60);
@@ -143,10 +152,7 @@ const MedicationImageUploader: React.FC<Props> = ({ patientId, visitId, title = 
       }
       const result = await resp.json();
       if (Array.isArray(result?.uploaded_images)) {
-        setImages((prev) => [
-          ...prev,
-          ...result.uploaded_images.map((x: any) => ({ id: x.id, filename: x.filename, content_type: x.content_type }))
-        ]);
+        await refreshImages();
       }
       setSuccessMsg(`Uploaded ${queue.length} image(s)`);
       window.setTimeout(() => setSuccessMsg(""), 2000);
@@ -253,7 +259,10 @@ const MedicationImageUploader: React.FC<Props> = ({ patientId, visitId, title = 
               <div key={img.id} className="flex items-center justify-between bg-gray-50 p-2 rounded text-xs">
                 <div className="flex items-center gap-2 min-w-0">
                   <img
-                    src={`${BACKEND_BASE_URL}/patients/${patientId}/visits/${visitId}/intake-images/${img.id}/content`}
+                    src={
+                      img.signed_url ??
+                      `${BACKEND_BASE_URL}/patients/${patientId}/visits/${visitId}/intake-images/${img.id}/content`
+                    }
                     alt={img.filename}
                     className="w-8 h-8 object-cover rounded border"
                   />

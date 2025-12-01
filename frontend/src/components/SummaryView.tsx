@@ -251,7 +251,8 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
                   <h4 className="text-sm font-semibold text-gray-800 mb-2">{language === 'sp' ? 'Imágenes de prescripción subidas' : 'Uploaded prescription images'}</h4>
                   <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
                     {summaryData.medication_images.map((img) => {
-                      const imageUrl = `${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/intake-images/${encodeURIComponent(img.id)}/content`;
+                      const fallbackUrl = `${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/intake-images/${encodeURIComponent(img.id)}/content`;
+                      const imageUrl = (img as any).signed_url ?? fallbackUrl;
                       console.log(`Loading medication image:`, { imgId: img.id, filename: img.filename, url: imageUrl });
                       return (
                         <div key={img.id} className="border rounded p-1 bg-gray-50">
