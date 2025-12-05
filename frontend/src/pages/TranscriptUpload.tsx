@@ -175,7 +175,7 @@ const TranscriptUpload: React.FC = () => {
 
   const pollStatusWithProgress = async (attempt = 0) => {
     const start = Date.now();
-    const maxMs = 1800000; // 30 minutes (increased for long audio files)
+    const maxMs = 1500000; // 25 minutes (accommodates 15-minute generation time + 10 minute buffer)
     
     const poll = async (currentAttempt = 0) => {
       try {
@@ -229,7 +229,7 @@ const TranscriptUpload: React.FC = () => {
               }
               
               setShowTranscriptProcessing(false);
-              setError("Transcription is taking longer than expected. The file is still being processed. Please check back in a few minutes or try with a shorter audio file.");
+              setError("Transcription is taking longer than expected (over 25 minutes). The file may still be processing. Please try refreshing the page or try with a shorter audio file.");
               setLoading(false);
               return;
             }
@@ -254,7 +254,7 @@ const TranscriptUpload: React.FC = () => {
             setTimeout(() => poll(currentAttempt + 1), delay);
           } else {
             setShowTranscriptProcessing(false);
-            setError("Transcription is taking longer than expected. The file is still being processed. Please check back in a few minutes or try with a shorter audio file.");
+            setError("Transcription is taking longer than expected (over 25 minutes). The file may still be processing. Please try refreshing the page or try with a shorter audio file.");
             setLoading(false);
           }
           return;

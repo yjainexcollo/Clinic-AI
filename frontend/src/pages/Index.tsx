@@ -447,12 +447,21 @@ const Index = () => {
     if (patientId && visitId && isComplete) {
       checkTranscript();
       
-      // Set up periodic checking for transcript updates (every 5 seconds)
+      // Set up periodic checking for transcript updates (every 10 seconds)
+      // Continue checking even if initial check fails, up to 25 minutes
+      const startTime = Date.now();
+      const maxCheckTime = 1500000; // 25 minutes
+      
       const interval = setInterval(() => {
-        if (!hasTranscript) { // Only check if we don't have transcript yet
+        const elapsed = Date.now() - startTime;
+        if (!hasTranscript && elapsed < maxCheckTime) {
+          // Only check if we don't have transcript yet and haven't exceeded max time
           checkTranscript();
+                        } else if (elapsed >= maxCheckTime) {
+          // Stop checking after 25 minutes
+          clearInterval(interval);
         }
-      }, 5000);
+      }, 10000); // Check every 10 seconds
       
       return () => clearInterval(interval);
     }
@@ -1321,39 +1330,112 @@ const Index = () => {
                   onClick={async () => {
                     try {
                       if (!patientId || !visitId) return;
-                      const resp = await authorizedFetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/transcript`);
+                      
+                      // Show loading state
+                      setIsTranscriptLoading(true);
+                      
+                      const resp = await authorizedFetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/transcript`, {
+                        method: 'GET',
+                        headers: { 'Accept': 'application/json' }
+                      });
                       
                       // Check for 202 (Still Processing) BEFORE trying to parse JSON
                       if (resp.status === 202) {
-                        alert('Transcript is still being processed. Please wait a moment and try again.');
+                        setIsTranscriptLoading(false);
+                        alert('Transcript is still being processed. Please wait a moment and try again. This usually takes up to 15 minutes.');
                         return;
                       }
                       
                       if (!resp.ok) {
                         const txt = await resp.text();
-                        throw new Error(`Failed to fetch transcript ${resp.status}: ${txt}`);
+                        setIsTranscriptLoading(false);
+                        // If 404, transcript doesn't exist yet
+                        if (resp.status === 404) {
+                          alert('Transcript not available yet. Please upload audio first or wait for processing to complete.');
+                        } else {
+                          alert(`Failed to fetch transcript (${resp.status}). Please try again.`);
+                        }
+                        return;
                       }
                       
                       // Only parse JSON if status is 200
                       const responseData = await resp.json();
                       // Extract data from ApiResponse wrapper
                       const data = responseData.data || responseData;
+                      
                       // Prefer structured_dialogue if available
                       let transcriptContent = '';
                       if (data.structured_dialogue && Array.isArray(data.structured_dialogue) && data.structured_dialogue.length > 0) {
                         transcriptContent = JSON.stringify(data.structured_dialogue);
                       } else if (data.transcript) {
                         transcriptContent = data.transcript;
+                        
+                        // Check if transcript appears to be raw (not structured JSON)
+                        const isRawTranscript = !transcriptContent.includes('"Doctor"') && !transcriptContent.includes('"Patient"');
+                        
+                        if (isRawTranscript && transcriptContent.trim()) {
+                          // Try to structure the dialogue using the backend endpoint
+                          try {
+                            const structureResponse = await authorizedFetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/dialogue/structure`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' }
+                            });
+                            if (structureResponse.ok) {
+                              const structureResponseData = await structureResponse.json();
+                              const structureData = structureResponseData.data || structureResponseData;
+                              if (structureData.dialogue && typeof structureData.dialogue === 'object') {
+                                transcriptContent = JSON.stringify(structureData.dialogue);
+                              }
+                            }
+                          } catch (e) {
+                            console.warn('Failed to structure dialogue:', e);
+                          }
+                        }
                       }
+                      
+                      if (!transcriptContent || transcriptContent.trim() === '') {
+                        setIsTranscriptLoading(false);
+                        alert('Transcript is empty or not available yet. Please wait for processing to complete.');
+                        return;
+                      }
+                      
+                      // Set transcript and show it
                       setTranscriptText(transcriptContent);
+                      setIsTranscriptLoading(false);
                       setShowTranscript(true);
-                    } catch (e) {
-                      alert('Transcript not available yet.');
+                      
+                      // Update localStorage flag and state
+                      try {
+                        const key = `transcript_done_${patientId}_${visitId}`;
+                        localStorage.setItem(key, '1');
+                        setHasTranscript(true);
+                      } catch (e) {
+                        console.warn('Failed to update localStorage:', e);
+                      }
+                    } catch (e: any) {
+                      setIsTranscriptLoading(false);
+                      console.error('Error fetching transcript:', e);
+                      const errorMsg = e?.message || 'Unknown error';
+                      if (errorMsg.includes('Failed to fetch') || errorMsg.includes('Network')) {
+                        alert('Network error. Please check your connection and try again.');
+                      } else {
+                        alert(`Failed to load transcript: ${errorMsg}. Please try again.`);
+                      }
                     }
                   }}
-                  className="w-full bg-violet-600 text-white py-3 px-4 rounded-md hover:bg-violet-700 transition-colors font-medium"
+                  disabled={isTranscriptLoading}
+                  className={`w-full bg-violet-600 text-white py-3 px-4 rounded-md hover:bg-violet-700 transition-colors font-medium ${isTranscriptLoading ? 'opacity-60 cursor-not-allowed' : ''}`}
                 >
-                  {isWalkInPatient ? '3. View Transcript' : '4. View Transcript'}
+                  {isTranscriptLoading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block mr-2"></div>
+                      Loading...
+                    </>
+                  ) : (
+                    <>
+                      {isWalkInPatient ? '3. View Transcript' : '4. View Transcript'}
+                    </>
+                  )}
                 </button>
                 
                 {/* Step 4: Generate SOAP Summary (Walk-in) / Step 5: Generate SOAP Summary (Scheduled) */}
@@ -1625,7 +1707,7 @@ const Index = () => {
                     setShowTranscriptProcessing(true);
                     const start = Date.now();
                     let attempt = 0;
-                    const maxMs = 1800000; // 30 minutes (increased for long audio files)
+                    const maxMs = 1500000; // 25 minutes (accommodates 15-minute generation time + 10 minute buffer)
                     const poll = async () => {
                       attempt += 1;
                       const delay = Math.min(6000, 2000 + attempt * 500);
@@ -1682,7 +1764,7 @@ const Index = () => {
                               }
                               
                               setShowTranscriptProcessing(false);
-                              setUploadAudioError('Transcription is taking longer than expected. The file is still being processed. Please check back in a few minutes or try with a shorter audio file.');
+                              setUploadAudioError('Transcription is taking longer than expected (over 25 minutes). The file may still be processing. Please try clicking "View Transcript" button in a few minutes, or try with a shorter audio file.');
                               setShowUploadAudio(true);
                               return;
                             }
@@ -1705,7 +1787,7 @@ const Index = () => {
                             return;
                           } else {
                             setShowTranscriptProcessing(false);
-                            setUploadAudioError('Transcription is taking longer than expected. The file is still being processed. Please check back in a few minutes or try with a shorter audio file.');
+                            setUploadAudioError('Transcription is taking longer than expected (over 25 minutes). The file may still be processing. Please try clicking "View Transcript" button in a few minutes, or try with a shorter audio file.');
                             setShowUploadAudio(true);
                             return;
                           }
@@ -1766,7 +1848,7 @@ const Index = () => {
                           setTimeout(poll, delay);
                         } else {
                           setShowTranscriptProcessing(false);
-                          setUploadAudioError('Transcription is taking longer than expected. The file is still being processed. Please check back in a few minutes or try with a shorter audio file.');
+                          setUploadAudioError('Transcription is taking longer than expected (over 25 minutes). The file may still be processing. Please try clicking "View Transcript" button in a few minutes, or try with a shorter audio file.');
                           setShowUploadAudio(true);
                           }
                       } catch (err: any) {
@@ -1777,7 +1859,7 @@ const Index = () => {
                         setTimeout(poll, delay);
                       } else {
                         setShowTranscriptProcessing(false);
-                        setUploadAudioError('Processing timed out after 10 minutes. This can happen with very long audio files. Please try with a shorter audio file or contact support if the issue persists.');
+                        setUploadAudioError('Processing timed out after 20 minutes. The transcript may still be generating. Please try clicking "View Transcript" button in a few minutes, or try with a shorter audio file.');
                         setShowUploadAudio(true);
                         }
                       }
