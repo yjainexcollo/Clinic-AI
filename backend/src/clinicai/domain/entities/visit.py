@@ -156,6 +156,21 @@ class TranscriptionSession:
     word_count: Optional[int] = None
     # Cached structured dialogue turns (ordered Doctor/Patient), to avoid re-structuring on the fly
     structured_dialogue: Optional[List[Dict[str, Any]]] = None
+    transcription_id: Optional[str] = None  # Azure Speech Service transcription job ID for tracking
+    last_poll_status: Optional[str] = None  # Last polled status from Azure Speech Service (Succeeded, Running, Failed, etc.)
+    last_poll_at: Optional[datetime] = None  # Timestamp of last status poll from Azure Speech Service
+    # Observability timestamps for latency analysis
+    enqueued_at: Optional[datetime] = None  # When job was enqueued to Azure Queue
+    dequeued_at: Optional[datetime] = None  # When worker dequeued the job
+    azure_job_created_at: Optional[datetime] = None  # When Azure Speech job was created
+    first_poll_at: Optional[datetime] = None  # When first status poll was made
+    results_downloaded_at: Optional[datetime] = None  # When transcription results were downloaded
+    db_saved_at: Optional[datetime] = None  # When transcript was saved to database
+    # Audio normalization metadata
+    normalized_audio: Optional[bool] = None  # Whether audio was normalized/converted
+    original_content_type: Optional[str] = None  # Original content type before normalization
+    normalized_format: Optional[str] = None  # Format after normalization (e.g., wav_16khz_mono_pcm)
+    file_content_type: Optional[str] = None  # Final content type used for transcription
 
 
 @dataclass
@@ -419,15 +434,17 @@ class Visit:
 
     # Step-03: Audio Transcription & SOAP Generation Methods
 
-    def start_transcription(self, audio_file_path: str) -> None:
+    def start_transcription(self, audio_file_path: str, enqueued_at: Optional[datetime] = None) -> None:
         """Start the transcription process."""
         if not self.can_proceed_to_transcription():
             raise ValueError(f"Cannot start transcription. Current status: {self.status}")
         
+        now = datetime.utcnow()
         self.transcription_session = TranscriptionSession(
             audio_file_path=audio_file_path,
             transcription_status="processing",
-            started_at=datetime.utcnow()
+            started_at=now,
+            enqueued_at=enqueued_at or now  # Use provided enqueued_at or fallback to now
         )
         if self.is_walk_in_workflow():
             self.status = "transcription"

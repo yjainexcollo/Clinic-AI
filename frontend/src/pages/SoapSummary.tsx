@@ -1,6 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { generateSoapNote, getSoapNote } from "../services/patientService";
+import {
+  generateSoapNote,
+  getSoapNote,
+  getDoctorPreferences,
+  DoctorPreferencesResponse,
+} from "../services/patientService";
 import { useLanguage } from "../contexts/LanguageContext";
 
 const Block: React.FC<{ title: string; children?: React.ReactNode; t: (key: string) => string }> = ({ title, children, t }) => (
@@ -174,6 +179,7 @@ const SoapSummary: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [soap, setSoap] = useState<any>(null);
+  const [soapOrder, setSoapOrder] = useState<string[]>(["subjective", "objective", "assessment", "plan"]);
 
   async function load() {
     if (!patientId || !visitId) {
@@ -201,7 +207,37 @@ const SoapSummary: React.FC = () => {
   }
 
   useEffect(() => {
+    // Load SOAP note
     load();
+    // Load doctor preferences (SOAP order)
+    (async () => {
+      try {
+        const pref: DoctorPreferencesResponse = await getDoctorPreferences();
+        const DEFAULT_SOAP = ["subjective", "objective", "assessment", "plan"];
+        const allowed = new Set(DEFAULT_SOAP);
+        const fromServer = Array.isArray(pref.soap_order) ? pref.soap_order : [];
+        const cleaned: string[] = [];
+        const seen = new Set<string>();
+        for (const key of fromServer) {
+          const lower = (key || "").toString().trim().toLowerCase();
+          if (allowed.has(lower) && !seen.has(lower)) {
+            cleaned.push(lower);
+            seen.add(lower);
+          }
+        }
+        // Append any missing keys in default order
+        for (const key of DEFAULT_SOAP) {
+          if (!seen.has(key)) {
+            cleaned.push(key);
+            seen.add(key);
+          }
+        }
+        setSoapOrder(cleaned.length ? cleaned : DEFAULT_SOAP);
+      } catch {
+        // On any error, silently fall back to default order
+        setSoapOrder(["subjective", "objective", "assessment", "plan"]);
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patientId, visitId]);
 
@@ -240,10 +276,38 @@ const SoapSummary: React.FC = () => {
         )}
       </div>
 
-      <Block title={t('soap.subjective')} t={t}>{render(subj, t)}</Block>
-      <Block title={t('soap.objective')} t={t}>{renderObjective(obj, t)}</Block>
-      <Block title={t('soap.assessment')} t={t}>{render(assess, t)}</Block>
-      <Block title={t('soap.plan')} t={t}>{render(plan, t)}</Block>
+      {soapOrder.map((sectionKey) => {
+        const key = sectionKey.toLowerCase();
+        if (key === "subjective") {
+          return (
+            <Block key="subjective" title={t("soap.subjective")} t={t}>
+              {render(subj, t)}
+            </Block>
+          );
+        }
+        if (key === "objective") {
+          return (
+            <Block key="objective" title={t("soap.objective")} t={t}>
+              {renderObjective(obj, t)}
+            </Block>
+          );
+        }
+        if (key === "assessment") {
+          return (
+            <Block key="assessment" title={t("soap.assessment")} t={t}>
+              {render(assess, t)}
+            </Block>
+          );
+        }
+        if (key === "plan") {
+          return (
+            <Block key="plan" title={t("soap.plan")} t={t}>
+              {render(plan, t)}
+            </Block>
+          );
+        }
+        return null;
+      })}
 
 
     </div>

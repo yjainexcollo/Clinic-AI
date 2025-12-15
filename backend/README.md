@@ -143,6 +143,7 @@ backend/
 - Docker & Docker Compose
 - MongoDB (local or cloud)
 - OpenAI API key
+- **ffmpeg** (required for audio normalization) - Install instructions below
 
 ### Environment Setup
 
@@ -157,7 +158,30 @@ backend/
    cp .env.example .env
    ```
 
-3. **Configure environment variables**
+3. **Install ffmpeg** (required for audio normalization)
+   
+   **macOS**:
+   ```bash
+   brew install ffmpeg
+   ```
+   
+   **Ubuntu/Debian**:
+   ```bash
+   sudo apt-get update
+   sudo apt-get install -y ffmpeg
+   ```
+   
+   **Windows**:
+   - Download from https://ffmpeg.org/download.html
+   - Add to PATH or set `FFMPEG_PATH` and `FFPROBE_PATH` env vars
+   
+   **Verify installation**:
+   ```bash
+   ffmpeg -version
+   ffprobe -version
+   ```
+
+4. **Configure environment variables**
    ```bash
    # Required
    OPENAI_API_KEY=your_openai_api_key
@@ -165,6 +189,10 @@ backend/
    
    # Optional
    TRANSCRIPTION_SERVICE=azure_speech  # Azure Speech Service with speaker diarization
+   NORMALIZE_AUDIO=true  # Enable audio normalization (default: true)
+   FFMPEG_PATH=ffmpeg  # Path to ffmpeg executable (default: "ffmpeg")
+   FFPROBE_PATH=ffprobe  # Path to ffprobe executable (default: "ffprobe")
+   TRANSCRIPTION_WORKER_CONCURRENCY=5  # Worker concurrency (default: 5)
    ```
 
 ### Local Development
@@ -497,7 +525,4 @@ For support and questions:
 
 ---
 
-**Built with ❤️ for better healthcare through AI**# Azure deployment fix
-
-# Trigger deployment with Service Principal
-# Force fresh deployment
+**Built with ❤️ for better healthcare through AI**

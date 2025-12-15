@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useParams, useLocation } from "react-router-dom";
+import { useParams, useLocation, useNavigate } from "react-router-dom";
 import {
   answerIntakeBackend,
   editAnswerBackend,
@@ -36,6 +36,7 @@ interface Question {
 const Index = () => {
   const { patientId } = useParams<{ patientId: string }>();
   const location = useLocation();
+  const navigate = useNavigate();
   const { language, setLanguage, t } = useLanguage();
   const [currentQuestion, setCurrentQuestion] = useState<string>("");
   const [currentAnswer, setCurrentAnswer] = useState<string>("");
@@ -227,8 +228,8 @@ const Index = () => {
           const json = await response.json();
           const data = json.data || json;
 
-          // Only restore if there's an active intake session with questions
-          if (data.intake_status === "in_progress" && data.questions_asked && data.questions_asked.length > 0) {
+          // Restore if there's an intake session (in_progress or completed) with questions
+          if ((data.intake_status === "in_progress" || data.intake_status === "completed") && data.questions_asked && data.questions_asked.length > 0) {
             // Restore questions and answers
             const restoredQuestions: Question[] = data.questions_asked.map((qa: any) => ({
               text: qa.question,
@@ -236,12 +237,17 @@ const Index = () => {
             }));
             setQuestions(restoredQuestions);
 
-            // Restore pending question or use the one from URL
-            const urlQuestion = params.get("q");
-            if (data.pending_question && data.pending_question.trim()) {
-              setCurrentQuestion(data.pending_question);
-            } else if (urlQuestion && urlQuestion.trim()) {
-              setCurrentQuestion(decodeURIComponent(urlQuestion));
+            // Restore pending question or use the one from URL (only if not completed)
+            if (data.intake_status === "in_progress") {
+              const urlQuestion = params.get("q");
+              if (data.pending_question && data.pending_question.trim()) {
+                setCurrentQuestion(data.pending_question);
+              } else if (urlQuestion && urlQuestion.trim()) {
+                setCurrentQuestion(decodeURIComponent(urlQuestion));
+              }
+            } else {
+              // If completed, clear current question
+              setCurrentQuestion("");
             }
 
             // Restore completion status
@@ -258,7 +264,7 @@ const Index = () => {
             setShowStartScreen(false);
             setIsInitialized(true);
             
-            console.log(`[Index] Restored intake session: ${data.total_questions}/${data.max_questions} questions, pending: ${data.pending_question || 'none'}`);
+            console.log(`[Index] Restored intake session: status=${data.intake_status}, ${data.total_questions}/${data.max_questions} questions, pending: ${data.pending_question || 'none'}`);
             return; // Early return since we restored from backend
           }
         }
@@ -344,6 +350,39 @@ const Index = () => {
       setIsInitialized(true);
     }
     
+    // Additional check: if we have patientId and visitId but intake status wasn't restored,
+    // check if intake was completed by looking at localStorage or making a quick status check
+    if (patientId && v && !isComplete && isInitialized) {
+      const checkCompletionStatus = async () => {
+        try {
+          const statusResponse = await authorizedFetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(v)}/intake/status`, {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' }
+          });
+          if (statusResponse.ok) {
+            const statusData = await statusResponse.json();
+            const statusInfo = statusData.data || statusData;
+            if (statusInfo.intake_status === "completed") {
+              setIsComplete(true);
+              // Also restore questions if available
+              if (statusInfo.questions_asked && statusInfo.questions_asked.length > 0) {
+                const restoredQuestions: Question[] = statusInfo.questions_asked.map((qa: any) => ({
+                  text: qa.question,
+                  answer: qa.answer
+                }));
+                setQuestions(restoredQuestions);
+              }
+            }
+          }
+        } catch (e) {
+          // Silently fail - this is just a fallback check
+          console.log('Fallback completion check failed:', e);
+        }
+      };
+      // Only check if we haven't already restored from the main restore effect
+      setTimeout(checkCompletionStatus, 500);
+    }
+    
     if (patientId && !v) {
       const storedV = localStorage.getItem(`visit_${patientId}`);
       if (storedV) setVisitId(storedV);
@@ -406,9 +445,9 @@ const Index = () => {
         return;
       }
       
-      // If no localStorage flag, check API
+      // If no localStorage flag, check API (dialogue endpoint)
       try {
-        const response = await authorizedFetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/transcript`, {
+        const response = await authorizedFetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/dialogue`, {
           method: 'GET',
           headers: { 'Accept': 'application/json' }
         });
@@ -1360,7 +1399,7 @@ const Index = () => {
                       
                       // Only parse JSON if status is 200
                       const responseData = await resp.json();
-                      // Extract data from ApiResponse wrapper
+                      // Extract data from ApiResponse wrapper (TranscriptionSessionDTO)
                       const data = responseData.data || responseData;
                       
                       // Prefer structured_dialogue if available
@@ -1517,6 +1556,18 @@ const Index = () => {
                   className="w-full bg-rose-600 text-white py-3 px-4 rounded-md hover:bg-rose-700 transition-colors font-medium"
                 >
                   {isWalkInPatient ? '5' : '6'}. View SOAP Summary
+                </button>
+
+                {/* Configure SOAP Summary order (doctor preferences) */}
+                <button
+                  onClick={() => {
+                    navigate("/doctor/preferences", { 
+                      state: { returnTo: `/intake/${patientId}`, patientId } 
+                    });
+                  }}
+                  className="w-full bg-sky-600 text-white py-3 px-4 rounded-md hover:bg-sky-700 transition-colors font-medium"
+                >
+                  Configure SOAP Summary Order
                 </button>
 
                 {/* Step 6: Create Post Visit Summary (Walk-in) / Step 7: Create Post Visit Summary (Scheduled) */}
@@ -1771,8 +1822,8 @@ const Index = () => {
                           }
                         }
                         
-                        // Fetch the transcript
-                        const t = await authorizedFetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/transcript`);
+                        // Fetch the transcript + dialogue
+                        const t = await authorizedFetch(`${BACKEND_BASE_URL}/notes/${patientId}/visits/${visitId}/dialogue`);
                         
                         // Check for 202 (Still Processing) BEFORE trying to parse JSON
                         // Backend returns empty body for 202, so we must handle it first
@@ -1796,10 +1847,10 @@ const Index = () => {
                         // Only parse JSON if status is 200 (not 202)
                         if (t.ok && t.status === 200) {
                           const response = await t.json();
-                          // Extract data from ApiResponse wrapper
+                          // Extract data from ApiResponse wrapper (TranscriptionSessionDTO)
                           const data = response.data || response;
                           
-                          // Prefer structured_dialogue if available, otherwise use transcript
+                          // Prefer structured_dialogue if available, otherwise use transcript text
                           let transcriptContent = '';
                           if (data.structured_dialogue && Array.isArray(data.structured_dialogue) && data.structured_dialogue.length > 0) {
                             // Convert structured dialogue array to JSON string for TranscriptView

@@ -2,13 +2,13 @@
 function normalizeBaseUrl(input?: string): string {
   let url = (input || "").trim();
   if (!url) return "https://clinicai-backend-x7v3qgkqra-uc.a.run.app";
-  
+
   // Map 0.0.0.0 to localhost for browser requests
   url = url.replace(/\b0\.0\.0\.0\b/g, "localhost");
-  
+
   // Check if it's localhost or 127.0.0.1
   const isLocalhost = url.includes('localhost') || url.includes('127.0.0.1');
-  
+
   // Add protocol if missing
   if (!/^https?:\/\//i.test(url)) {
     // Use HTTP only for localhost, HTTPS for everything else
@@ -23,7 +23,7 @@ function normalizeBaseUrl(input?: string): string {
       url = url.replace('http://', 'https://');
     }
   }
-  
+
   // Drop trailing slashes
   url = url.replace(/\/+$/g, "");
   return url;
@@ -31,7 +31,7 @@ function normalizeBaseUrl(input?: string): string {
 
 // Get the raw environment variable and normalize it
 const rawBackendUrl = (import.meta as any).env?.VITE_BACKEND_BASE_URL as string;
-const BACKEND_BASE_URL: string = rawBackendUrl 
+const BACKEND_BASE_URL: string = rawBackendUrl
   ? normalizeBaseUrl(rawBackendUrl)
   : normalizeBaseUrl(""); // Will use default production URL
 
@@ -169,12 +169,12 @@ export async function answerIntakeBackend(
     form.append("visit_id", payload.visit_id);
     form.append("answer", payload.answer);
     files.forEach((f) => form.append("medication_images", f));
-    resp = await authorizedFetch(`${BACKEND_BASE_URL}/patients/consultations/answer`, {   
+    resp = await authorizedFetch(`${BACKEND_BASE_URL}/patients/consultations/answer`, {
       method: "POST",
       body: form,
     });
   } else {
-    resp = await authorizedFetch(`${BACKEND_BASE_URL}/patients/consultations/answer`, {   
+    resp = await authorizedFetch(`${BACKEND_BASE_URL}/patients/consultations/answer`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -192,12 +192,12 @@ export async function uploadMedicationImages(
   patientId: string,
   visitId: string,
   files: File[]
-): Promise<{ uploaded_images: Array<{ id: string; filename: string; content_type?: string }>; status: string }>{
+): Promise<{ uploaded_images: Array<{ id: string; filename: string; content_type?: string }>; status: string }> {
   const form = new FormData();
   files.forEach((f) => form.append("images", f));
   form.append("patient_id", patientId);
   form.append("visit_id", visitId);
-  const resp = await authorizedFetch(`${BACKEND_BASE_URL}/patients/webhook/images`, {     
+  const resp = await authorizedFetch(`${BACKEND_BASE_URL}/patients/webhook/images`, {
     method: "POST",
     body: form,
   });
@@ -229,23 +229,23 @@ export async function editAnswerBackend(payload: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  
+
   const json = await resp.json();
-  
+
   console.log(`[editAnswerBackend] Response status: ${resp.status}, Response:`, json);
-  
+
   if (!resp.ok) {
     const errorMsg = json.message || json.error || `Backend error ${resp.status}`;
     throw new Error(`Backend error ${resp.status}: ${errorMsg}`);
   }
-  
+
   // Extract data from ApiResponse wrapper
   // Backend returns: {success: true, data: {success, message, next_question, ...}, ...}
   if (json && typeof json === 'object' && 'data' in json && json.data) {
     console.log(`[editAnswerBackend] Extracted data:`, json.data);
     return json.data as BackendEditAnswerResponse;
   }
-  
+
   // Fallback: if response is not wrapped, return as-is (for backward compatibility)
   console.log(`[editAnswerBackend] Response not wrapped, returning as-is:`, json);
   return json as BackendEditAnswerResponse;
@@ -278,24 +278,24 @@ export async function registerPatientBackend(
       body: JSON.stringify(patientData),
       signal: controller.signal,
     });
-    
+
     const json = await resp.json();
-    
+
     console.log(`[registerPatientBackend] Response status: ${resp.status}, Response:`, json);
-    
+
     if (!resp.ok) {
       // Handle error response
       const errorMsg = json.message || json.error || `Backend error ${resp.status}`;
       throw new Error(`Backend error ${resp.status}: ${errorMsg}`);
     }
-    
+
     // Extract data from ApiResponse wrapper
     // Backend returns: {success: true, data: {patient_id, visit_id, first_question, message}, ...}
     if (json && typeof json === 'object' && 'data' in json && json.data) {
       console.log(`[registerPatientBackend] Extracted data:`, json.data);
       return json.data as BackendRegisterResponse;
     }
-    
+
     // Fallback: if response is not wrapped, return as-is (for backward compatibility)
     console.log(`[registerPatientBackend] Response not wrapped, returning as-is:`, json);
     return json as BackendRegisterResponse;
@@ -339,15 +339,15 @@ export async function getPreVisitSummary(
     const responseData = await response.json();
     // Extract data from ApiResponse wrapper if present, otherwise use response directly
     const data = responseData.data || responseData;
-    console.log('Pre-visit summary response:', { 
-      hasMedicationImages: !!data.medication_images, 
+    console.log('Pre-visit summary response:', {
+      hasMedicationImages: !!data.medication_images,
       medicationImagesCount: data.medication_images?.length || 0,
-      medicationImages: data.medication_images 
+      medicationImages: data.medication_images
     });
     return data;
   } catch (error) {
     console.error("Error getting pre-visit summary:", error);
-    throw new Error("Failed to get pre-visit summary. Please try again.");      
+    throw new Error("Failed to get pre-visit summary. Please try again.");
   }
 }
 
@@ -359,7 +359,7 @@ export async function getPostVisitSummary(
   try {
     console.log(`Requesting post-visit summary for patient: ${patientId}, visit: ${visitId}`);
     console.log(`Backend URL: ${BACKEND_BASE_URL}/patients/summary/postvisit`);
-    
+
     // First try to fetch stored summary
     let response = await authorizedFetch(`${BACKEND_BASE_URL}/patients/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/summary/postvisit`, {
       method: "GET",
@@ -383,7 +383,7 @@ export async function getPostVisitSummary(
     }
 
     console.log(`Response status: ${response.status}`);
-    
+
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`Backend error response:`, errorText);
@@ -440,9 +440,9 @@ function formatPostVisitSummaryForWhatsApp(summary: PostVisitSummaryResponse): s
   let message = `🏥 *${summary.clinic_name}*\n`;
   message += `📅 Visit Date: ${new Date(summary.visit_date).toLocaleDateString()}\n`;
   message += `👨‍⚕️ Doctor: ${summary.doctor_name}\n\n`;
-  
+
   message += `*Chief Complaint:*\n${summary.chief_complaint}\n\n`;
-  
+
   if (summary.key_findings.length > 0) {
     message += `*Key Findings:*\n`;
     summary.key_findings.forEach((finding, index) => {
@@ -450,9 +450,9 @@ function formatPostVisitSummaryForWhatsApp(summary: PostVisitSummaryResponse): s
     });
     message += `\n`;
   }
-  
+
   message += `*Diagnosis:*\n${summary.diagnosis}\n\n`;
-  
+
   if (summary.medications.length > 0) {
     message += `*Medications:*\n`;
     summary.medications.forEach((med, index) => {
@@ -464,7 +464,7 @@ function formatPostVisitSummaryForWhatsApp(summary: PostVisitSummaryResponse): s
       message += `\n`;
     });
   }
-  
+
   if (summary.other_recommendations.length > 0) {
     message += `*Recommendations:*\n`;
     summary.other_recommendations.forEach((rec, index) => {
@@ -472,7 +472,7 @@ function formatPostVisitSummaryForWhatsApp(summary: PostVisitSummaryResponse): s
     });
     message += `\n`;
   }
-  
+
   if (summary.tests_ordered.length > 0) {
     message += `*Tests Ordered:*\n`;
     summary.tests_ordered.forEach((test, index) => {
@@ -481,11 +481,11 @@ function formatPostVisitSummaryForWhatsApp(summary: PostVisitSummaryResponse): s
       message += `   Instructions: ${test.instructions}\n\n`;
     });
   }
-  
+
   if (summary.next_appointment) {
     message += `*Next Appointment:*\n${summary.next_appointment}\n\n`;
   }
-  
+
   if (summary.red_flag_symptoms.length > 0) {
     message += `⚠️ *Warning Signs - Seek immediate medical attention if:*\n`;
     summary.red_flag_symptoms.forEach((symptom, index) => {
@@ -493,16 +493,16 @@ function formatPostVisitSummaryForWhatsApp(summary: PostVisitSummaryResponse): s
     });
     message += `\n`;
   }
-  
+
   message += `*Patient Instructions:*\n`;
   summary.patient_instructions.forEach((instruction, index) => {
     message += `${index + 1}. ${instruction}\n`;
   });
   message += `\n`;
-  
+
   message += `*${summary.reassurance_note}*\n\n`;
   message += `📞 *Contact:* ${summary.clinic_contact}`;
-  
+
   return message;
 }
 
@@ -617,17 +617,21 @@ export async function getVitals(patientId: string, visitId: string): Promise<Vit
 // ------------------------
 // Doctor Preferences API
 // ------------------------
+export interface PreVisitSectionConfig {
+  section_key: string;
+  enabled: boolean;
+  selected_fields: string[];
+}
+
 export interface DoctorPreferencesResponse {
   doctor_id: string;
-  global_categories: string[];
-  selected_categories: string[];
-  max_questions: number;
+  soap_order: string[];
+  pre_visit_config: PreVisitSectionConfig[];
 }
 
 export interface UpsertDoctorPreferencesRequest {
-  categories: string[];
-  max_questions: number;
-  global_categories?: string[];
+  soap_order?: string[];
+  pre_visit_config?: PreVisitSectionConfig[];
 }
 
 export async function getDoctorPreferences(): Promise<DoctorPreferencesResponse> {
