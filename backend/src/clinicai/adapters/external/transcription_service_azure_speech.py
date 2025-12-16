@@ -8,7 +8,7 @@ import asyncio
 import logging
 import time
 import uuid
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, Callable, Coroutine
 from pathlib import Path
 import json
 import re
@@ -111,9 +111,22 @@ class AzureSpeechTranscriptionService(TranscriptionService):
         language: str = "en",
         medical_context: bool = True,
         sas_url: Optional[str] = None,
+        status_update_callback: Optional[Callable[[Dict[str, Any]], Coroutine[Any, Any, None]]] = None,
+        enable_diarization: Optional[bool] = None,  # P1-5: Optional per-job diarization toggle
     ) -> Dict[str, Any]:
         """
         Transcribe audio using Azure Speech Service batch transcription with speaker diarization.
+        
+        Args:
+            audio_file_path: Path to audio file
+            language: Language code (default: "en")
+            medical_context: Whether to optimize for medical terminology
+            sas_url: Optional SAS URL for blob storage (if provided, used instead of audio_file_path)
+            status_update_callback: Optional async callback function(status_update_dict) called with:
+                - transcription_id: str (when job is created)
+                - last_poll_status: str (during polling, e.g., "Running", "Succeeded", "Failed")
+                - last_poll_at: datetime (during polling)
+            enable_diarization: Optional bool to enable/disable diarization per job (defaults to service config)
         
         Returns:
             Dict containing:
@@ -127,7 +140,12 @@ class AzureSpeechTranscriptionService(TranscriptionService):
             - model: Service name
         """
         if self._settings.azure_speech.transcription_mode == "batch":
-            return await self._transcribe_batch(audio_file_path, language, medical_context, sas_url=sas_url)
+            return await self._transcribe_batch(
+                audio_file_path, language, medical_context, 
+                sas_url=sas_url, 
+                status_update_callback=status_update_callback,
+                enable_diarization=enable_diarization  # P1-5: Pass diarization toggle
+            )
         else:
             raise ValueError("Real-time transcription not supported. Use batch mode.")
     
@@ -137,6 +155,8 @@ class AzureSpeechTranscriptionService(TranscriptionService):
         language: str,
         medical_context: bool,
         sas_url: Optional[str] = None,
+        status_update_callback: Optional[Callable[[Dict[str, Any]], Coroutine[Any, Any, None]]] = None,
+        enable_diarization: Optional[bool] = None,  # P1-5: Optional per-job diarization toggle
     ) -> Dict[str, Any]:
         """Batch transcription with speaker diarization using REST API."""
         from ...core.utils.timing import TimingContext
@@ -188,14 +208,25 @@ class AzureSpeechTranscriptionService(TranscriptionService):
                             original_error=str(e)
                         )
             
-            # Track job creation timestamp for observability
-            azure_job_created_at = datetime.utcnow()
-            
+            # P1-4: Track job creation timestamp exactly when job is created
             with TimingContext("AzureSpeech_JobCreation", logger) as timing_ctx:
                 try:
-                    transcription_id = await self._create_transcription_job(blob_url, speech_language)
+                    # Set timestamp right before job creation
+                    azure_job_created_at = datetime.utcnow()
+                    # P1-5: Pass enable_diarization to job creation
+                    transcription_id = await self._create_transcription_job(blob_url, speech_language, enable_diarization=enable_diarization)
                     timing_ctx.add_metadata(transcription_id=transcription_id)
-                    logger.info(f"Batch transcription job created: {transcription_id}, created_at={azure_job_created_at.isoformat()}")
+                    logger.info(f"Batch transcription job created: {transcription_id}, created_at={azure_job_created_at.isoformat()}, diarization={enable_diarization if enable_diarization is not None else self._settings.azure_speech.enable_speaker_diarization}")
+                    
+                    # P1-4: Persist transcription_id and azure_job_created_at immediately via callback
+                    if status_update_callback:
+                        try:
+                            await status_update_callback({
+                                "transcription_id": transcription_id,
+                                "azure_job_created_at": azure_job_created_at,
+                            })
+                        except Exception as callback_error:
+                            logger.warning(f"Failed to persist transcription_id via callback: {callback_error}")
                 except Exception as e:
                     raise AzureSpeechAPIError(
                         f"Failed to create transcription job: {str(e)}",
@@ -205,7 +236,7 @@ class AzureSpeechTranscriptionService(TranscriptionService):
                     )
             
             try:
-                transcription_status = await self._poll_transcription_status(transcription_id)
+                transcription_status = await self._poll_transcription_status(transcription_id, status_update_callback=status_update_callback)
             except TimeoutError as e:
                 raise AzureSpeechTimeoutError(
                     str(e),
@@ -216,6 +247,17 @@ class AzureSpeechTranscriptionService(TranscriptionService):
             if transcription_status["status"] != "Succeeded":
                 error_details = transcription_status.get("error", {})
                 error_message = error_details.get("message", "Unknown error") if isinstance(error_details, dict) else str(error_details)
+                
+                # Persist failure status via callback
+                if status_update_callback:
+                    try:
+                        await status_update_callback({
+                            "last_poll_status": transcription_status["status"],
+                            "last_poll_at": datetime.utcnow(),
+                        })
+                    except Exception as callback_error:
+                        logger.warning(f"Failed to persist failure status via callback: {callback_error}")
+                
                 raise AzureSpeechAPIError(
                     f"Transcription failed with status: {transcription_status['status']} - {error_message}",
                     transcription_id=transcription_id,
@@ -223,13 +265,22 @@ class AzureSpeechTranscriptionService(TranscriptionService):
                     error_details=error_details
                 )
             
-            # Track results download timestamp for observability
-            results_downloaded_at = datetime.utcnow()
-            
+            # P1-4: Track results download timestamp exactly when results are fetched
             with TimingContext("AzureSpeech_GetResults", logger) as timing_ctx:
+                # Set timestamp right before fetching results
+                results_downloaded_at = datetime.utcnow()
                 results = await self._get_transcription_results(transcription_id)
                 timing_ctx.add_metadata(result_count=len(results))
                 logger.info(f"Retrieved {len(results)} result files from transcription job, downloaded_at={results_downloaded_at.isoformat()}")
+                
+                # P1-4: Persist results_downloaded_at via callback
+                if status_update_callback:
+                    try:
+                        await status_update_callback({
+                            "results_downloaded_at": results_downloaded_at,
+                        })
+                    except Exception as callback_error:
+                        logger.warning(f"Failed to persist results_downloaded_at via callback: {callback_error}")
             
             if not results:
                 raise AzureSpeechEmptyTranscriptError(
@@ -386,12 +437,15 @@ class AzureSpeechTranscriptionService(TranscriptionService):
             logger.error(f"Failed to upload audio for transcription: {e}", exc_info=True)
             raise
     
-    async def _create_transcription_job(self, blob_url: str, language: str) -> str:
+    async def _create_transcription_job(self, blob_url: str, language: str, enable_diarization: Optional[bool] = None) -> str:
         """Create Azure Speech transcription job with retry logic."""
         transcription_name = f"clinicai-transcription-{uuid.uuid4()}"
         
+        # P1-5: Use per-job diarization toggle if provided, otherwise use service config default
+        diarization_enabled = enable_diarization if enable_diarization is not None else self._settings.azure_speech.enable_speaker_diarization
+        
         properties: Dict[str, Any] = {
-            "diarizationEnabled": self._settings.azure_speech.enable_speaker_diarization,
+            "diarizationEnabled": diarization_enabled,
             "wordLevelTimestampsEnabled": self._settings.azure_speech.enable_word_level_timestamps,  # Default False for faster transcription
             "punctuationMode": "DictatedAndAutomatic",
             "profanityFilterMode": "Masked",
@@ -488,7 +542,7 @@ class AzureSpeechTranscriptionService(TranscriptionService):
         else:
             return 10.0  # Very slow for very long jobs
     
-    async def _poll_transcription_status(self, transcription_id: str) -> Dict[str, Any]:
+    async def _poll_transcription_status(self, transcription_id: str, status_update_callback: Optional[callable] = None) -> Dict[str, Any]:
         """Poll transcription job status until completion with adaptive polling strategy."""
         from ...core.utils.timing import TimingContext
         
@@ -498,6 +552,9 @@ class AzureSpeechTranscriptionService(TranscriptionService):
         start_time = time.time()
         poll_count = 0
         last_info_log_time = start_time  # Track last INFO-level log for long jobs
+        first_poll_at = None  # P1-4: Track first poll timestamp
+        last_persist_at = None  # P1-6: Track last DB persist time for throttling
+        poll_persist_interval = 20  # P1-6: Throttle DB writes to every 20 seconds during polling
         
         with TimingContext("AzureSpeech_Polling", logger) as timing_ctx:
             timing_ctx.add_metadata(transcription_id=transcription_id)
@@ -528,9 +585,43 @@ class AzureSpeechTranscriptionService(TranscriptionService):
                             status_data = await response.json()
                             status = status_data.get("status")
                             
-                            # Update last_poll_at timestamp (will be saved by use case if visit accessible)
-                            # For now, just log it - the use case will handle persisting to visit
+                            # P1-4: Track first poll timestamp
                             poll_timestamp = datetime.utcnow()
+                            if first_poll_at is None:
+                                first_poll_at = poll_timestamp
+                                # P1-4: Persist first_poll_at immediately
+                                if status_update_callback:
+                                    try:
+                                        await status_update_callback({
+                                            "first_poll_at": first_poll_at,
+                                        })
+                                    except Exception as callback_error:
+                                        logger.debug(f"Failed to persist first_poll_at via callback: {callback_error}")
+                            
+                            # P1-6: Throttle DB writes during polling (only persist every N seconds or on status change)
+                            should_persist = False
+                            if status in ("Succeeded", "Failed"):
+                                # Always persist completion/failure immediately
+                                should_persist = True
+                            elif last_persist_at is None:
+                                # First poll after initial setup
+                                should_persist = True
+                            else:
+                                # Throttle: only persist if enough time has passed
+                                time_since_last_persist = (poll_timestamp - last_persist_at).total_seconds()
+                                if time_since_last_persist >= poll_persist_interval:
+                                    should_persist = True
+                            
+                            # Persist polling status via callback (throttled)
+                            if status_update_callback and should_persist:
+                                try:
+                                    await status_update_callback({
+                                        "last_poll_status": status,
+                                        "last_poll_at": poll_timestamp,
+                                    })
+                                    last_persist_at = poll_timestamp
+                                except Exception as callback_error:
+                                    logger.debug(f"Failed to persist poll status via callback: {callback_error}")
                             
                             # Log polling progress: INFO for first poll, every 60s, or when status changes
                             # Otherwise use DEBUG for frequent polls to reduce log noise

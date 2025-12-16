@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Debug script to print Azure Queue information.
-Uses Settings (NOT direct env vars) to ensure consistency with app/worker.
+Print Azure Queue statistics and current configuration.
+Shows approximate message count, queue properties, and settings.
 """
 
 import sys
@@ -28,7 +28,6 @@ def mask_connection_string(conn_str: str) -> str:
     if not conn_str:
         return "not set"
     try:
-        # Show format: AccountName=XXX;AccountKey=***masked***;...
         parts = []
         for part in conn_str.split(';'):
             if part.startswith('AccountKey='):
@@ -42,28 +41,14 @@ def mask_connection_string(conn_str: str) -> str:
         return "***error parsing***"
 
 
-def extract_storage_account(conn_str: str) -> str:
-    """Extract storage account name from connection string."""
-    if not conn_str:
-        return "unknown"
-    try:
-        for part in conn_str.split(';'):
-            if part.startswith('AccountName='):
-                return part.split('=', 1)[1]
-    except Exception:
-        pass
-    return "unknown"
-
-
 async def main():
-    """Print queue information."""
-    print("=" * 60)
-    print("Azure Queue Storage Debug Information")
-    print("=" * 60)
+    """Print queue statistics."""
+    print("=" * 70)
+    print("Azure Queue Statistics")
+    print("=" * 70)
     print()
     
     try:
-        # Get settings (handles all fallbacks)
         settings = get_settings()
         queue_settings = settings.azure_queue
         
@@ -72,54 +57,43 @@ async def main():
         print(f"  Visibility Timeout: {queue_settings.visibility_timeout}s")
         print(f"  Poll Interval: {queue_settings.poll_interval}s")
         print(f"  Max Retry Attempts: {queue_settings.max_retry_attempts}")
+        print(f"  Max Dequeue Count: {queue_settings.max_dequeue_count}")
         print()
         
         print("🔗 Connection String (masked):")
         conn_str = queue_settings.connection_string
         if not conn_str:
-            # Try blob fallback
             blob_settings = settings.azure_blob
             conn_str = blob_settings.connection_string
             print(f"  Queue connection string: not set (using blob fallback)")
         else:
             print(f"  Queue connection string: {mask_connection_string(conn_str)}")
-        
-        storage_account = extract_storage_account(conn_str)
-        print(f"  Storage Account: {storage_account}")
         print()
         
-        # Check environment variables for debugging
-        print("🔍 Environment Variables Check:")
-        env_vars = {
-            "AZURE_QUEUE_CONNECTION_STRING": os.getenv("AZURE_QUEUE_CONNECTION_STRING"),
-            "AZURE_STORAGE_CONNECTION_STRING": os.getenv("AZURE_STORAGE_CONNECTION_STRING"),
-            "AZURE_BLOB_CONNECTION_STRING": os.getenv("AZURE_BLOB_CONNECTION_STRING"),
-            "AZURE_QUEUE_QUEUE_NAME": os.getenv("AZURE_QUEUE_QUEUE_NAME"),
-            "AZURE_QUEUE_NAME": os.getenv("AZURE_QUEUE_NAME"),
-        }
-        for var_name, var_value in env_vars.items():
-            if var_value:
-                if "CONNECTION_STRING" in var_name:
-                    print(f"  ✅ {var_name}: {mask_connection_string(var_value)}")
-                else:
-                    print(f"  ✅ {var_name}: {var_value}")
-            else:
-                print(f"  ⚪ {var_name}: not set")
-        print()
-        
-        # Test queue connection
-        print("🔌 Testing Queue Connection:")
+        # Get queue statistics
+        print("📊 Queue Statistics:")
         try:
             queue_service = get_azure_queue_service()
-            # Access queue_client property to trigger initialization
-            queue_client = queue_service.queue_client
-            
-            # Get queue length using the service method
             message_count = await queue_service.get_queue_length()
             
             print(f"  ✅ Connected successfully")
-            print(f"  Queue Name: {queue_settings.queue_name}")
             print(f"  Approximate Message Count: {message_count}")
+            
+            # Get queue properties for additional info
+            try:
+                queue_client = queue_service.queue_client
+                properties = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: queue_client.get_queue_properties()
+                )
+                # Safely access last_modified - may not exist in all SDK versions
+                last_modified = getattr(properties, "last_modified", None)
+                if last_modified:
+                    print(f"  Last Modified: {last_modified.isoformat()}")
+                else:
+                    print(f"  Last Modified: (not available in this SDK object)")
+            except Exception as e:
+                print(f"  ⚠️  Could not fetch queue properties: {e}")
             
         except Exception as e:
             print(f"  ❌ Connection failed: {e}")
@@ -128,7 +102,7 @@ async def main():
             traceback.print_exc()
         
         print()
-        print("=" * 60)
+        print("=" * 70)
         
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -140,3 +114,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+

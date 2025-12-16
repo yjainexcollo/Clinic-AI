@@ -241,8 +241,10 @@ class AzureQueueSettings(BaseSettings):
     
     connection_string: str = Field(default="", description="Azure Storage Connection String (same as Blob Storage)")
     queue_name: str = Field(default="transcription-queue", description="Queue name for transcription jobs")
-    visibility_timeout: int = Field(default=600, description="Message visibility timeout in seconds (10 min default)")
+    visibility_timeout: int = Field(default=3600, description="Message visibility timeout in seconds (60 min default, aligned with stale threshold)")
     max_retry_attempts: int = Field(default=3, description="Maximum retry attempts for failed jobs")
+    max_dequeue_count: int = Field(default=5, description="Maximum dequeue count before moving to poison queue")
+    processing_stale_seconds: int = Field(default=4000, description="Seconds before a processing job is considered stale and can be claimed (must be >= visibility_timeout)")
     poll_interval: int = Field(default=5, description="Worker poll interval in seconds")
     
     @classmethod
@@ -322,6 +324,16 @@ class AzureQueueSettings(BaseSettings):
             fallback = self._get_queue_name_fallback()
             if fallback and fallback != "transcription-queue":
                 object.__setattr__(self, "queue_name", fallback)
+        
+        # Validate stale_seconds >= visibility_timeout to prevent churn
+        if self.processing_stale_seconds < self.visibility_timeout:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                f"⚠️  PROCESSING_STALE_SECONDS ({self.processing_stale_seconds}s) < VISIBILITY_TIMEOUT ({self.visibility_timeout}s). "
+                f"This can cause message churn. Setting stale_seconds to {self.visibility_timeout + 400}s"
+            )
+            object.__setattr__(self, "processing_stale_seconds", self.visibility_timeout + 400)
 
 
 class AzureSpeechSettings(BaseSettings):

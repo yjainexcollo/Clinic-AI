@@ -198,6 +198,8 @@ class AudioTranscriptionRequest:
     audio_duration: Optional[float] = None
     # Optional: direct SAS URL to existing blob for Azure Speech (avoids re-upload)
     sas_url: Optional[str] = None
+    # P1-5: Optional diarization toggle (defaults to service config if not provided)
+    enable_diarization: Optional[bool] = None
 
 
 # Post-Visit Summary DTOs

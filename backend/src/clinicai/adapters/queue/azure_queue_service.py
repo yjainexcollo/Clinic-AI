@@ -4,6 +4,7 @@ Azure Queue Storage service for background job processing.
 import json
 import logging
 import asyncio
+import time
 from datetime import datetime
 from typing import Optional, Dict, Any
 from azure.storage.queue import QueueServiceClient, QueueClient
@@ -36,6 +37,9 @@ class AzureQueueService:
     def __init__(self):
         self.settings = get_settings().azure_queue
         self._queue_client: Optional[QueueClient] = None
+        self._poison_queue_client: Optional[QueueClient] = None
+        self._last_empty_poll_log: float = 0.0
+        self._empty_poll_log_interval: float = 30.0  # Log empty polls every 30 seconds
         
     def _extract_storage_account_name(self, connection_string: str) -> str:
         """Extract storage account name from connection string for logging."""
@@ -85,6 +89,74 @@ class AzureQueueService:
             )
         
         return self._queue_client
+    
+    @property
+    def queue_name(self) -> str:
+        """Backward-compatible property to access queue name from settings."""
+        return self.settings.queue_name
+    
+    @property
+    def poison_queue_name(self) -> str:
+        """Backward-compatible property to access poison queue name."""
+        return f"{self.settings.queue_name}-poison"
+    
+    @property
+    def poison_queue_client(self) -> QueueClient:
+        """Get or create poison queue client."""
+        if self._poison_queue_client is None:
+            poison_queue_name = f"{self.settings.queue_name}-poison"
+            connection_string = self.settings.connection_string
+            if not connection_string:
+                blob_settings = get_settings().azure_blob
+                connection_string = blob_settings.connection_string
+            
+            if not connection_string:
+                raise ValueError("Azure Queue Storage connection string is required")
+            
+            queue_service = QueueServiceClient.from_connection_string(connection_string)
+            self._poison_queue_client = queue_service.get_queue_client(poison_queue_name)
+            logger.info(f"✅ Poison queue client initialized: {poison_queue_name}")
+        
+        return self._poison_queue_client
+    
+    async def _move_to_poison_queue(self, message_id: str, pop_receipt: str, content: str, reason: str) -> bool:
+        """Move a message to the poison queue and delete from main queue."""
+        try:
+            # Ensure poison queue exists
+            try:
+                await run_blocking(self.poison_queue_client.create_queue)
+                logger.info(f"✅ Created poison queue: {self.poison_queue_client.queue_name}")
+            except ResourceExistsError:
+                pass  # Queue already exists, which is fine
+            
+            # Add metadata to poison message
+            poison_message = {
+                "original_message_id": message_id,
+                "original_content": content,
+                "reason": reason,
+                "moved_at": datetime.utcnow().isoformat()
+            }
+            
+            # Send to poison queue
+            await run_blocking(
+                self.poison_queue_client.send_message,
+                json.dumps(poison_message)
+            )
+            
+            # Delete from main queue
+            await run_blocking(
+                self.queue_client.delete_message,
+                message_id,
+                pop_receipt
+            )
+            
+            logger.warning(
+                f"⚠️  Moved message to poison queue: message_id={message_id}, reason={reason}"
+            )
+            return True
+        except Exception as e:
+            logger.error(f"❌ Failed to move message to poison queue: {e}", exc_info=True)
+            return False
     
     async def ensure_queue_exists(self) -> bool:
         """Ensure the queue exists (non-blocking)."""
@@ -159,52 +231,105 @@ class AzureQueueService:
             logger.error(f"❌ Failed to enqueue transcription job: {e}")
             raise
     
-    async def dequeue_transcription_job(self) -> Optional[Dict[str, Any]]:
+    async def dequeue_transcription_job(self, max_messages: int = 1) -> Optional[Dict[str, Any]]:
         """
-        Dequeue a transcription job (non-blocking).
+        Dequeue transcription job(s) (non-blocking).
+        
+        Args:
+            max_messages: Maximum number of messages to dequeue (default: 1 for backward compatibility)
         
         Returns:
-            Dict with 'data', 'message_id', 'pop_receipt' or None
+            Dict with 'data', 'message_id', 'pop_receipt' or None (single message)
+            OR List[Dict] if max_messages > 1 (returns all available messages up to max_messages)
         """
         try:
             messages = await run_blocking(
                 lambda: list(self.queue_client.receive_messages(
-                    messages_per_page=1,
+                    messages_per_page=max_messages,
                     visibility_timeout=self.settings.visibility_timeout
                 ))
             )
             
             if not messages:
-                # Log empty queue periodically (not every call, to avoid log spam)
-                # Only log at DEBUG level since empty queues are normal
-                logger.debug(f"Queue '{self.queue_name}' is empty (no messages available)")
+                # Log empty queue periodically (every ~30s) to avoid log spam
+                current_time = time.time()
+                if current_time - self._last_empty_poll_log >= self._empty_poll_log_interval:
+                    logger.debug(f"Queue '{self.settings.queue_name}' is empty (no messages available)")
+                    self._last_empty_poll_log = current_time
                 return None
             
+            # Process all messages and collect valid ones
+            valid_messages = []
             for message in messages:
+                message_id = message.id
+                pop_receipt = message.pop_receipt
+                
                 try:
                     message_data = json.loads(message.content)
                     visit_id = message_data.get("visit_id", "unknown")
                     audio_file_id = message_data.get("audio_file_id", "unknown")
                     retry_count = message_data.get("retry_count", 0)
+                    
+                    # Check if this is a poison message (too many retries)
+                    if retry_count >= self.settings.max_dequeue_count:
+                        reason = f"POISON_MESSAGE: retry_count={retry_count} >= max_dequeue_count={self.settings.max_dequeue_count}"
+                        logger.warning(
+                            f"⚠️  Poison message detected: message_id={message_id}, "
+                            f"visit={visit_id}, retry_count={retry_count}"
+                        )
+                        await self._move_to_poison_queue(message_id, pop_receipt, message.content, reason)
+                        continue
+                    
+                    # Log message details with insertion time if available
+                    insertion_time = getattr(message, 'insertion_time', None)
+                    insertion_str = f", insertion_time={insertion_time.isoformat()}" if insertion_time else ""
+                    
                     logger.info(
                         f"📥 Dequeued transcription job: visit={visit_id}, "
-                        f"audio_file={audio_file_id}, message_id={message.id}, retry={retry_count}"
+                        f"audio_file={audio_file_id}, message_id={message_id}, "
+                        f"retry={retry_count}{insertion_str}"
                     )
-                    return {
+                    
+                    job_dict = {
                         "data": message_data,
-                        "message_id": message.id,
-                        "pop_receipt": message.pop_receipt
+                        "message_id": message_id,
+                        "pop_receipt": pop_receipt
                     }
+                    
+                    # If max_messages == 1, return first valid message (backward compatible)
+                    if max_messages == 1:
+                        return job_dict
+                    
+                    # Otherwise, collect for batch return
+                    valid_messages.append(job_dict)
+                    
                 except json.JSONDecodeError as e:
-                    logger.error(f"❌ Failed to parse queue message {message.id}: {e}")
-                    # Delete invalid message (non-blocking)
-                    await run_blocking(
-                        self.queue_client.delete_message,
-                        message.id,
-                        message.pop_receipt
+                    # Invalid JSON - log warning with truncated content and handle as poison in dev
+                    content_preview = message.content[:200] if len(message.content) > 200 else message.content
+                    logger.warning(
+                        f"⚠️  Failed to parse queue message JSON: message_id={message_id}, "
+                        f"error={e}, content_preview={content_preview}"
                     )
+                    
+                    # In development, move to poison queue; in production, delete
+                    import os
+                    is_dev = os.getenv("APP_ENV", "production") == "development" or os.getenv("DEBUG", "false").lower() == "true"
+                    
+                    if is_dev:
+                        reason = f"INVALID_JSON: {str(e)[:100]}"
+                        await self._move_to_poison_queue(message_id, pop_receipt, message.content, reason)
+                    else:
+                        # Delete invalid message
+                        await run_blocking(
+                            self.queue_client.delete_message,
+                            message_id,
+                            pop_receipt
+                        )
                     continue
             
+            # Return batch if max_messages > 1, otherwise None (no valid messages found)
+            if max_messages > 1:
+                return valid_messages if valid_messages else None
             return None
         except Exception as e:
             logger.error(f"❌ Failed to dequeue transcription job: {e}")

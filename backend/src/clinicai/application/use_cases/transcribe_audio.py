@@ -214,9 +214,41 @@ class TranscribeAudioUseCase:
             
             from ...core.utils.timing import TimingContext
             
-            # Track timestamps for observability - will be updated by service callbacks
-            azure_job_created_start = time.time()
+            # Create callback to persist transcription metadata during job creation and polling
+            async def status_update_callback(update_fields: Dict[str, Any]) -> None:
+                """Callback to persist transcription session fields to database."""
+                try:
+                    # Filter and map fields that should be persisted
+                    fields_to_update = {}
+                    if "transcription_id" in update_fields:
+                        fields_to_update["transcription_id"] = update_fields["transcription_id"]
+                    if "azure_job_created_at" in update_fields:
+                        fields_to_update["azure_job_created_at"] = update_fields["azure_job_created_at"]
+                    if "first_poll_at" in update_fields:
+                        fields_to_update["first_poll_at"] = update_fields["first_poll_at"]
+                    if "results_downloaded_at" in update_fields:
+                        fields_to_update["results_downloaded_at"] = update_fields["results_downloaded_at"]
+                    if "last_poll_status" in update_fields:
+                        fields_to_update["last_poll_status"] = update_fields["last_poll_status"]
+                    if "last_poll_at" in update_fields:
+                        fields_to_update["last_poll_at"] = update_fields["last_poll_at"]
+                    if "transcription_status" in update_fields:
+                        fields_to_update["transcription_status"] = update_fields["transcription_status"]
+                    if "error_message" in update_fields:
+                        fields_to_update["error_message"] = update_fields["error_message"]
+                    
+                    if fields_to_update:
+                        await self._visit_repository.update_transcription_session_fields(
+                            request.patient_id,
+                            visit_id,
+                            fields_to_update
+                        )
+                        LOGGER.debug(f"Persisted transcription session fields: {list(fields_to_update.keys())} for visit {request.visit_id}")
+                except Exception as e:
+                    LOGGER.warning(f"Failed to persist transcription session fields: {e}")
             
+            # P1-4: Timestamps are now set exactly by Azure Speech service via callbacks
+            # No more approximate calculations needed
             speech_start = time.time()
             with TimingContext("AzureSpeech_Transcription", LOGGER) as timing_ctx:
                 timing_ctx.set_input_size(len(audio_source) if audio_source else 0)
@@ -225,23 +257,12 @@ class TranscribeAudioUseCase:
                 language=transcription_language,
                 medical_context=True,
                 sas_url=getattr(request, "sas_url", None),
+                status_update_callback=status_update_callback,
+                enable_diarization=getattr(request, "enable_diarization", None),  # P1-5: Pass diarization toggle
             )
             speech_end = time.time()
             # Calculate duration after context exits (duration is set in __exit__)
             speech_latency = (speech_end - speech_start) if speech_start else 0.0
-            
-            # Update azure_job_created_at timestamp (approximate, since job creation happens inside service)
-            # Job creation typically happens within first 5 seconds of transcription call
-            if visit.transcription_session and not visit.transcription_session.azure_job_created_at:
-                # Approximate: job creation happens early in transcription, use a timestamp close to start
-                visit.transcription_session.azure_job_created_at = datetime.utcnow() - timedelta(seconds=max(2.0, speech_latency * 0.95))
-                # Set first_poll_at and results_downloaded_at approximations
-                # Polling starts shortly after job creation, results downloaded near the end
-                if not visit.transcription_session.first_poll_at:
-                    visit.transcription_session.first_poll_at = visit.transcription_session.azure_job_created_at + timedelta(seconds=3)
-                if not visit.transcription_session.results_downloaded_at:
-                    visit.transcription_session.results_downloaded_at = datetime.utcnow() - timedelta(seconds=5)
-                await self._visit_repository.save(visit)
 
             # Check for transcription errors
             if transcription_result.get("error"):
@@ -269,16 +290,11 @@ class TranscribeAudioUseCase:
                 # Raise with detailed error information
                 raise ValueError(f"Transcription failed: {error_message} (code: {error_code})")
 
-            # Store transcription_id and update timestamps for observability
+            # P1-4: transcription_id and timestamps are already persisted via callbacks
+            # No need to update them here - they're set exactly when events occur
             transcription_id = transcription_result.get("transcription_id")
-            if transcription_id and visit.transcription_session:
-                visit.transcription_session.transcription_id = transcription_id
-                # Set azure_job_created_at (approximate - job was created earlier in the service call)
-                # We approximate it as 2 seconds after transcription started (job creation is quick)
-                if not visit.transcription_session.azure_job_created_at:
-                    visit.transcription_session.azure_job_created_at = datetime.utcnow() - timedelta(seconds=speech_latency * 0.95)
-                await self._visit_repository.save(visit)
-                LOGGER.info(f"Stored transcription_id={transcription_id} for visit {request.visit_id}")
+            if transcription_id:
+                LOGGER.info(f"Transcription completed with transcription_id={transcription_id} for visit {request.visit_id}")
             
             raw_transcript = transcription_result.get("transcript", "") or ""
             LOGGER.info(f"Transcription completed. Transcript length: {len(raw_transcript)} characters, word_count: {transcription_result.get('word_count', 0)}")
@@ -291,11 +307,15 @@ class TranscribeAudioUseCase:
             pre_structured_dialogue = transcription_result.get("structured_dialogue")
             speaker_info = transcription_result.get("speaker_labels", {})
             
+            # P1-5: Handle case where diarization is disabled (may have empty or single-speaker dialogue)
             if not pre_structured_dialogue or not isinstance(pre_structured_dialogue, list):
-                raise ValueError(
-                    "Azure Speech Service did not provide structured dialogue. "
-                    "Ensure speaker diarization is enabled in your Azure Speech Service configuration."
+                LOGGER.warning(
+                    f"Azure Speech Service did not provide structured dialogue for visit {request.visit_id}. "
+                    f"This may occur if diarization is disabled. Creating single-speaker dialogue from transcript."
                 )
+                # Create a single-speaker dialogue from the raw transcript
+                pre_structured_dialogue = [{"Speaker 1": raw_transcript}] if raw_transcript else []
+                speaker_info = {"speakers": [{"label": "Speaker 1"}]}
             
             # Map speakers from Azure Speech Service (Speaker 1, Speaker 2) to Doctor/Patient
             LOGGER.info(f"Using pre-structured dialogue from Azure Speech Service ({len(pre_structured_dialogue)} turns)")

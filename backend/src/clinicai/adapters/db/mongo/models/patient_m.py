@@ -47,10 +47,11 @@ class TranscriptionSessionMongo(BaseModel):
     """Embedded model for transcription session (no revision_id)."""
     audio_file_path: Optional[str] = Field(None, description="Path to audio file")
     transcript: Optional[str] = Field(None, description="Transcribed text")
-    transcription_status: str = Field(default="pending", description="Status: pending, processing, completed, failed")
+    transcription_status: str = Field(default="pending", description="Status: pending, queued, processing, completed, failed")
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     error_message: Optional[str] = Field(None, description="Error message if failed")
+    worker_id: Optional[str] = Field(None, description="Worker that claimed/processed this job (format: hostname:pid)")
     audio_duration_seconds: Optional[float] = Field(None, description="Audio duration in seconds")
     word_count: Optional[int] = Field(None, description="Word count of transcript")
     structured_dialogue: Optional[list[dict]] = Field(None, description="Ordered Doctor/Patient turns")

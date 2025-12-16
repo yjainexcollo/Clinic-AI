@@ -377,9 +377,10 @@ async def transcribe_audio(
             )
             print(f"✅ Audio file saved to database: {audio_file_record.audio_id} (repo_call={repo_call_duration:.3f}s, total={blob_upload_duration:.3f}s)")
 
-            # Start transcription session with enqueued_at timestamp and normalization metadata
+            # Queue transcription job (sets status to 'queued', not 'processing')
+            # The worker will atomically claim it and set status to 'processing'
             enqueued_at = datetime.utcnow()
-            visit.start_transcription(None, enqueued_at=enqueued_at)  # No file path needed
+            visit.queue_transcription(None, enqueued_at=enqueued_at)  # No file path needed
             # Store normalization metadata and duration
             if visit.transcription_session:
                 visit.transcription_session.normalized_audio = normalized_audio
