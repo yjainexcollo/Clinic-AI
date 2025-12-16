@@ -2,6 +2,7 @@
 Formatting-only changes; behavior preserved.
 """
 import logging
+from typing import List
 from ...domain.entities.visit import Visit
 from ...domain.errors import (
     IntakeAlreadyCompletedError,
@@ -83,6 +84,62 @@ class AnswerIntakeUseCase:
             else:
                 previous_answers = [qa.answer for qa in visit.intake_session.questions_asked]
                 asked_questions = [qa.question for qa in visit.intake_session.questions_asked]
+                
+                # Initialize asked_categories list for tracking (code-truth)
+                # First, try to use existing asked_categories from session
+                asked_categories: List[str] = list(visit.intake_session.asked_categories) if visit.intake_session.asked_categories else []
+                
+                # If asked_categories is empty or shorter than expected, reconstruct from existing questions
+                if len(asked_categories) < len(visit.intake_session.questions_asked) - 1:  # -1 because Q1 has no category
+                    asked_categories = []
+                    # Reconstruct from existing questions based on strict sequence
+                    for i, qa in enumerate(visit.intake_session.questions_asked):
+                        q_num = qa.question_number  # 1-based
+                        if q_num == 1:
+                            continue  # Chief complaint - no category
+                        elif q_num == 2:
+                            asked_categories.append("duration")
+                        elif q_num == 3:
+                            asked_categories.append("associated_symptoms")
+                        elif q_num == 4:
+                            asked_categories.append("current_medications")
+                        elif q_num == 5:
+                            asked_categories.append("past_medical_history")
+                        elif q_num == 6:
+                            asked_categories.append("triggers")
+                        elif q_num == 7:
+                            q_lower = qa.question.lower()
+                            if any(kw in q_lower for kw in ["travel", "trip", "abroad", "viaje"]):
+                                asked_categories.append("travel_history")
+                            else:
+                                asked_categories.append("lifestyle_functional_impact")
+                        elif q_num == 8:
+                            q_lower = qa.question.lower()
+                            if any(kw in q_lower for kw in ["family", "relative", "mother", "father"]):
+                                asked_categories.append("family_history")
+                            elif any(kw in q_lower for kw in ["allerg", "reaction"]):
+                                asked_categories.append("allergies")
+                            elif any(kw in q_lower for kw in ["pain", "severity", "0 to 10", "scale"]):
+                                asked_categories.append("pain_assessment")
+                            else:
+                                asked_categories.append("temporal")
+                        elif q_num == 9:
+                            q_lower = qa.question.lower()
+                            if "detailed diagnostic" in q_lower or "preguntas diagnósticas detalladas" in q_lower:
+                                continue  # Consent question - no category
+                            elif any(kw in q_lower for kw in ["menstrual", "period", "cycle", "lmp"]):
+                                asked_categories.append("menstrual_cycle")
+                            else:
+                                asked_categories.append("past_evaluation")
+                        elif q_num >= 10:
+                            deep_num = q_num - 9
+                            if deep_num == 1:
+                                asked_categories.append("chronic_monitoring")
+                            elif deep_num == 2:
+                                asked_categories.append("screening")
+                            elif deep_num == 3:
+                                asked_categories.append("screening")
+                
                 # Robust uniqueness loop: never surface a duplicate question
                 max_attempts = 6
                 attempt = 0
@@ -96,6 +153,7 @@ class AnswerIntakeUseCase:
                             asked_questions=asked_questions,
                             current_count=visit.intake_session.current_question_count,
                             max_count=visit.intake_session.max_questions,
+                            asked_categories=asked_categories,  # Pass the tracked categories
                             language=patient.language,
                             recently_travelled=visit.recently_travelled,  # Use visit.recently_travelled (moved from Patient)
                             travel_questions_count=visit.intake_session.travel_questions_count,
@@ -106,6 +164,8 @@ class AnswerIntakeUseCase:
                         )
                         if candidate and candidate.strip() and candidate not in asked_questions:
                             current_question = candidate
+                            # Save updated asked_categories back to visit session
+                            visit.intake_session.asked_categories = list(asked_categories)
                             break
                     except DuplicateQuestionError:
                         # Service signaled a duplicate; try again
@@ -197,6 +257,72 @@ class AnswerIntakeUseCase:
             # Generate next question for the NEXT round and cache it as pending
             previous_answers = [qa.answer for qa in visit.intake_session.questions_asked]
             asked_questions = [qa.question for qa in visit.intake_session.questions_asked]
+            
+            # Initialize asked_categories list for tracking (code-truth)
+            # First, try to use existing asked_categories from session
+            asked_categories: List[str] = list(visit.intake_session.asked_categories) if visit.intake_session.asked_categories else []
+            
+            # If asked_categories is empty or shorter than expected, reconstruct from existing questions
+            if len(asked_categories) < len(visit.intake_session.questions_asked) - 1:  # -1 because Q1 has no category
+                asked_categories = []
+                # Try to infer categories from existing questions based on strict sequence
+                # This ensures tracking is accurate even if categories weren't stored before
+                for i, qa in enumerate(visit.intake_session.questions_asked):
+                    q_num = qa.question_number  # 1-based
+                    # Map question number to expected category based on strict sequence
+                    if q_num == 1:
+                        # Chief complaint - no category
+                        continue
+                    elif q_num == 2:
+                        asked_categories.append("duration")
+                    elif q_num == 3:
+                        asked_categories.append("associated_symptoms")
+                    elif q_num == 4:
+                        asked_categories.append("current_medications")
+                    elif q_num == 5:
+                        asked_categories.append("past_medical_history")
+                    elif q_num == 6:
+                        asked_categories.append("triggers")
+                    elif q_num == 7:
+                        # Could be travel_history or lifestyle_functional_impact
+                        # Infer from question content
+                        q_lower = qa.question.lower()
+                        if any(kw in q_lower for kw in ["travel", "trip", "abroad", "viaje"]):
+                            asked_categories.append("travel_history")
+                        else:
+                            asked_categories.append("lifestyle_functional_impact")
+                    elif q_num == 8:
+                        # Could be family_history, allergies, pain_assessment, or temporal
+                        # Infer from question content
+                        q_lower = qa.question.lower()
+                        if any(kw in q_lower for kw in ["family", "relative", "mother", "father"]):
+                            asked_categories.append("family_history")
+                        elif any(kw in q_lower for kw in ["allerg", "reaction"]):
+                            asked_categories.append("allergies")
+                        elif any(kw in q_lower for kw in ["pain", "severity", "0 to 10", "scale"]):
+                            asked_categories.append("pain_assessment")
+                        else:
+                            asked_categories.append("temporal")
+                    elif q_num == 9:
+                        # Could be consent question (no category), menstrual_cycle, or past_evaluation
+                        q_lower = qa.question.lower()
+                        if "detailed diagnostic" in q_lower or "preguntas diagnósticas detalladas" in q_lower:
+                            # Consent question - no category
+                            continue
+                        elif any(kw in q_lower for kw in ["menstrual", "period", "cycle", "lmp"]):
+                            asked_categories.append("menstrual_cycle")
+                        else:
+                            asked_categories.append("past_evaluation")
+                    elif q_num >= 10:
+                        # Deep diagnostic questions (chronic only)
+                        deep_num = q_num - 9
+                        if deep_num == 1:
+                            asked_categories.append("chronic_monitoring")
+                        elif deep_num == 2:
+                            asked_categories.append("screening")  # Lab tests
+                        elif deep_num == 3:
+                            asked_categories.append("screening")  # Screening/complications
+            
             # Robust uniqueness loop: avoid duplicates for the NEXT question
             max_attempts = 6
             attempt = 0
@@ -210,6 +336,7 @@ class AnswerIntakeUseCase:
                         asked_questions=asked_questions,
                         current_count=visit.intake_session.current_question_count,
                         max_count=visit.intake_session.max_questions,
+                        asked_categories=asked_categories,  # Pass the tracked categories
                         language=patient.language,
                         recently_travelled=visit.recently_travelled,  # Use visit.recently_travelled (moved from Patient)
                         travel_questions_count=visit.intake_session.travel_questions_count,
@@ -220,6 +347,8 @@ class AnswerIntakeUseCase:
                     )
                     if candidate and candidate.strip() and candidate not in asked_questions:
                         next_question = candidate
+                        # Save updated asked_categories back to visit session
+                        visit.intake_session.asked_categories = list(asked_categories)
                         break
                 except DuplicateQuestionError:
                     # Service signaled a duplicate; try again with a new candidate
@@ -232,8 +361,9 @@ class AnswerIntakeUseCase:
 
             if not next_question:
                 # No safe next question from the multi-agent pipeline after several
-                # attempts. Instead of asking a generic fallback question (which can
-                # re-open already covered topics), treat this as an early completion.
+                # attempts. Do NOT use generic fallback questions here – instead,
+                # treat this as an early but clean completion so that all topic
+                # selection remains owned by the agents.
                 visit.complete_intake()
                 is_complete = True
                 message = "Intake completed; no further questions were needed."
@@ -371,20 +501,27 @@ class AnswerIntakeUseCase:
             "no gracias", "no quiero", "no, gracias", "no, no quiero",
         }
 
-        # Base limit is max_questions from settings unless a positive consent appears
-        new_limit = base_max
+        # Determine max_questions based on consent:
+        # - Chronic + positive consent: 13
+        # - Chronic + negative consent: 10
+        # - Non-chronic: 10
+        # Since we can't determine chronicity here, we set conservatively:
+        # - If positive consent: allow up to 13 (for chronic cases)
+        # - If negative consent or no consent: cap at 10
+        new_limit = 10  # Default to 10 (for non-chronic or chronic with negative consent)
         for qa in visit.intake_session.questions_asked:
             question_text = (qa.question or "").strip().lower()
             if question_text in consent_prompts:
                 answer_text = (qa.answer or "").strip().lower()
                 if any(resp in answer_text for resp in positive_responses):
-                    # With consent, allow up to max_questions (already 12)
-                    new_limit = base_max
+                    # With positive consent, allow up to 13 (for chronic cases)
+                    new_limit = 13
                     break
                 if any(resp in answer_text for resp in negative_responses):
-                    # Without consent, use a lower limit (10, but capped by settings)
-                    new_limit = min(10, base_max)
+                    # With negative consent, cap at 10
+                    new_limit = 10
                     break
 
-        # Ensure max never exceeds settings limit
-        visit.intake_session.max_questions = max(1, min(base_max, new_limit))
+        # Set max_questions: allow 13 for positive consent, otherwise 10
+        # The question_service will enforce the correct max_count based on chronicity
+        visit.intake_session.max_questions = new_limit

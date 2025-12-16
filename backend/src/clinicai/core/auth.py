@@ -17,27 +17,12 @@ class AuthService:
     """Authentication service for validating users and API keys"""
     
     def __init__(self):
-        """Initialize authentication service with API keys from environment or Key Vault"""
+        """Initialize authentication service with API keys from environment variables"""
         self.api_keys: dict[str, str] = {}
         self._load_api_keys()
     
     def _load_api_keys(self) -> None:
-        """Load API keys from environment variables or Azure Key Vault"""
-        # Try Azure Key Vault first (for production)
-        try:
-            from .key_vault import get_key_vault_service
-            key_vault = get_key_vault_service()
-            
-            if key_vault and key_vault.is_available:
-                api_keys_str = key_vault.get_secret("API-KEYS")
-                if api_keys_str:
-                    self._parse_api_keys(api_keys_str)
-                    logger.info("✅ Loaded API keys from Azure Key Vault")
-                    return
-        except Exception as e:
-            logger.debug(f"Key Vault not available or API-KEYS not found: {e}")
-        
-        # Fallback to environment variable
+        """Load API keys from environment variables only"""
         api_keys_str = os.getenv("API_KEYS", "")
         if api_keys_str:
             self._parse_api_keys(api_keys_str)

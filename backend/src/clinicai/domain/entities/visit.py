@@ -41,6 +41,7 @@ class IntakeSession:
     completed_at: Optional[datetime] = None
     pending_question: Optional[str] = None
     travel_questions_count: int = 0  # Track how many travel-related questions asked
+    asked_categories: List[str] = field(default_factory=list)  # Track categories asked in strict sequence
 
     def __post_init__(self) -> None:
         """Normalize primary symptom string (no fixed whitelist)."""
