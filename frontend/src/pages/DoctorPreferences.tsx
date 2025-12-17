@@ -157,6 +157,7 @@ const DoctorPreferences: React.FC = () => {
     setSuccess("");
     try {
       await saveDoctorPreferences({
+        doctor_id: doctorId || "D123",
         soap_order: soapOrder,
         pre_visit_config: preVisitConfig,
       });

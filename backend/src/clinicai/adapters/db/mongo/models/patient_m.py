@@ -37,7 +37,7 @@ class IntakeSessionMongo(BaseModel):
     completed_at: Optional[datetime] = None
     pending_question: Optional[str] = Field(None, description="Pending next question to ask")
     travel_questions_count: int = Field(default=0, description="Number of travel-related questions asked")
-
+    asked_categories: List[str] = Field(default_factory=list, description="Categories asked in strict sequence")
     class Config:
         # Exclude revision_id and other MongoDB-specific fields
         exclude = {"revision_id"}
@@ -277,3 +277,60 @@ class LLMInteractionMongo(Document):
 
     class Settings:
         name = "llm_interactions"
+
+
+# ============================================================================
+# LLM Interaction Logging Models (Per-Visit Structured Logging)
+# ============================================================================
+
+class AgentLog(BaseModel):
+    """Model for individual agent interaction log within an intake question."""
+    agent_name: str = Field(..., description="Agent name (e.g., agent1_medical_context, agent2_extractor, agent3_question_generator)")
+    user_prompt: Any = Field(..., description="User prompt sent to the LLM")
+    response_text: Any = Field(..., description="Response text from the LLM")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Metadata (prompt_version, etc.)")
+    created_at: datetime = Field(default_factory=datetime.utcnow, description="When this agent call was made")
+
+
+class IntakeQuestionLog(BaseModel):
+    """Model for logging all agents involved in generating one intake question."""
+    question_number: int = Field(..., description="Question number in sequence")
+    question_id: Optional[str] = Field(None, description="Question ID")
+    question_text: Optional[str] = Field(None, description="The actual question text")
+    asked_at: datetime = Field(default_factory=datetime.utcnow, description="When the question was asked")
+    agents: List[AgentLog] = Field(default_factory=list, description="List of agent interactions for this question")
+
+
+class LLMCallLog(BaseModel):
+    """Model for LLM call logs in other phases (previsit, soap, postvisit)."""
+    agent_name: str = Field(..., description="Agent name or phase identifier")
+    user_prompt: Any = Field(..., description="User prompt sent to the LLM")
+    response_text: Any = Field(..., description="Response text from the LLM")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Metadata")
+    created_at: datetime = Field(default_factory=datetime.utcnow, description="When this call was made")
+
+
+class LLMInteractionVisit(Document):
+    """MongoDB document for structured per-visit LLM interaction logging."""
+    visit_id: str = Field(..., description="Visit ID", unique=True)
+    patient_id: str = Field(..., description="Patient ID")
+    
+    # Intake phase: stores all agent interactions per question (direct list, no wrapper)
+    intake: List[IntakeQuestionLog] = Field(default_factory=list, description="Intake phase logs - list of questions with agent logs")
+    
+    # Other phases: stores single LLM call (only generated once per visit)
+    pre_visit_summary: Optional[LLMCallLog] = Field(None, description="Pre-visit summary phase log")
+    soap: Optional[LLMCallLog] = Field(None, description="SOAP generation phase log")
+    post_visit_summary: Optional[LLMCallLog] = Field(None, description="Post-visit summary phase log")
+    
+    created_at: datetime = Field(default_factory=datetime.utcnow, description="Document creation timestamp")
+    updated_at: datetime = Field(default_factory=datetime.utcnow, description="Last update timestamp")
+
+    class Settings:
+        name = "llm_interaction"
+        indexes = [
+            "visit_id",
+            "patient_id",
+            "updated_at",
+            [("visit_id", 1), ("updated_at", -1)],
+        ]

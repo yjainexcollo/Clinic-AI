@@ -627,9 +627,24 @@ export interface DoctorPreferencesResponse {
   doctor_id: string;
   soap_order: string[];
   pre_visit_config: PreVisitSectionConfig[];
+  // Optional legacy + AI fields from backend (kept for forward compatibility)
+  global_categories?: string[];
+  selected_categories?: string[];
+  max_questions?: number;
+  pre_visit_ai_config?: {
+    style?: string | null;
+    focus_areas?: string[] | null;
+    include_red_flags?: boolean | null;
+  } | null;
+  soap_ai_config?: {
+    detail_level?: string | null;
+    formatting?: string | null;
+    language?: string | null;
+  } | null;
 }
 
 export interface UpsertDoctorPreferencesRequest {
+  doctor_id: string;
   soap_order?: string[];
   pre_visit_config?: PreVisitSectionConfig[];
 }
@@ -642,7 +657,13 @@ export async function getDoctorPreferences(): Promise<DoctorPreferencesResponse>
     const t = await res.text();
     throw new Error(`Backend error ${res.status}: ${t}`);
   }
-  return res.json();
+  const json = await res.json();
+  // Backend returns ApiResponse wrapper: { success, data, ... }
+  if (json && typeof json === "object" && "data" in json && json.data) {
+    return json.data as DoctorPreferencesResponse;
+  }
+  // Fallback for older shapes
+  return json as DoctorPreferencesResponse;
 }
 
 export async function saveDoctorPreferences(payload: UpsertDoctorPreferencesRequest): Promise<{ success?: boolean } & Partial<DoctorPreferencesResponse>> {
@@ -655,5 +676,9 @@ export async function saveDoctorPreferences(payload: UpsertDoctorPreferencesRequ
     const t = await res.text();
     throw new Error(`Backend error ${res.status}: ${t}`);
   }
-  return res.json();
+  const json = await res.json();
+  if (json && typeof json === "object" && "data" in json && json.data) {
+    return json.data as { success?: boolean } & Partial<DoctorPreferencesResponse>;
+  }
+  return json as { success?: boolean } & Partial<DoctorPreferencesResponse>;
 }
