@@ -636,6 +636,7 @@ async def generate_soap_note(
             patient_id=internal_patient_id,
             visit_id=request.visit_id,
             transcript=request.transcript,
+            template=request.template.dict() if getattr(request, "template", None) else None,
         )
 
         # Execute use case
