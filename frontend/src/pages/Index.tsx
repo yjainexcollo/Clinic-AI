@@ -1373,7 +1373,8 @@ const Index = () => {
                       // Show loading state
                       setIsTranscriptLoading(true);
                       
-                      const resp = await authorizedFetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/transcript`, {
+                      // Use dialogue endpoint which returns TranscriptionSessionDTO (transcript + structured_dialogue)
+                      const resp = await authorizedFetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/dialogue`, {
                         method: 'GET',
                         headers: { 'Accept': 'application/json' }
                       });
@@ -1484,17 +1485,29 @@ const Index = () => {
                       alert('SOAP summary already generated for this visit. Use "View SOAP Summary" to see it.');
                       return;
                     }
-                    
+
+                    if (!patientId || !visitId) return;
+
+                    // For walk-in flow, navigate to the WalkInSoap page where the doctor
+                    // can optionally fill the template form and then trigger generation.
+                    if (isWalkInPatient) {
+                      const soapRoute = `/walk-in-soap/${encodeURIComponent(
+                        patientId
+                      )}/${encodeURIComponent(visitId)}?action=generate`;
+                      window.location.href = soapRoute;
+                      return;
+                    }
+
+                    // For scheduled visits, keep existing direct generation behavior.
                     try {
-                      if (!patientId || !visitId) return;
                       setShowPostVisitProcessing(true); // Reuse loading state
-                      
+
                       const response = await authorizedFetch(`${BACKEND_BASE_URL}/notes/soap/generate`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                         body: JSON.stringify({ patient_id: patientId, visit_id: visitId })
                       });
-                      
+
                       if (response.ok) {
                         // Set localStorage flag and update state
                         try {

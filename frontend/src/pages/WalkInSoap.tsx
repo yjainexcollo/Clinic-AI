@@ -1,15 +1,35 @@
 import React, { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { BACKEND_BASE_URL, authorizedFetch } from "../services/patientService";
 import { workflowService } from "../services/workflowService";
 
 const WalkInSoap: React.FC = () => {
   const { patientId = "", visitId = "" } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const autoOpenGeneration = searchParams.get("action") === "generate";
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [soapData, setSoapData] = useState<any>(null);
   const [workflowInfo, setWorkflowInfo] = useState<any>(null);
+  const [showGenerationPanel, setShowGenerationPanel] = useState(autoOpenGeneration);
+  const [useTemplate, setUseTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState<string>("");
+  const [templateCategory, setTemplateCategory] = useState<string>("");
+  const [templateSpeciality, setTemplateSpeciality] = useState<string>("");
+  const [templateDescription, setTemplateDescription] = useState<string>("");
+  const [soapTemplateContent, setSoapTemplateContent] = useState<{
+    subjective: string;
+    objective: string;
+    assessment: string;
+    plan: string;
+  }>({
+    subjective: "",
+    objective: "",
+    assessment: "",
+    plan: "",
+  });
 
   // Fetch SOAP data and workflow information
   useEffect(() => {
@@ -55,15 +75,39 @@ const WalkInSoap: React.FC = () => {
     setError("");
     
     try {
+      const payload: any = {
+        patient_id: patientId,
+        visit_id: visitId,
+      };
+
+      const hasTemplateContent =
+        !!soapTemplateContent.subjective.trim() ||
+        !!soapTemplateContent.objective.trim() ||
+        !!soapTemplateContent.assessment.trim() ||
+        !!soapTemplateContent.plan.trim();
+
+      if (useTemplate && hasTemplateContent) {
+        payload.template = {
+          template_name: templateName || "Ad-hoc SOAP Template",
+          category: templateCategory || undefined,
+          speciality: templateSpeciality || undefined,
+          description: templateDescription || undefined,
+          soap_content: {
+            subjective: soapTemplateContent.subjective || undefined,
+            objective: soapTemplateContent.objective || undefined,
+            assessment: soapTemplateContent.assessment || undefined,
+            plan: soapTemplateContent.plan || undefined,
+          },
+          uploaded_at: new Date().toISOString(),
+        };
+      }
+
       const response = await authorizedFetch(`${BACKEND_BASE_URL}/notes/soap/generate`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          patient_id: patientId,
-          visit_id: visitId
-        })
+        body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
@@ -151,25 +195,174 @@ const WalkInSoap: React.FC = () => {
       {/* SOAP Content */}
       <div className="bg-white rounded-lg border border-gray-200">
         {!soapData ? (
-          <div className="p-8 text-center">
-            <div className="mb-4">
-              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
+          <div className="p-6">
+            {!showGenerationPanel ? (
+              <div className="text-center py-8">
+                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">SOAP Note Not Generated</h3>
+                <p className="text-gray-600 mb-6">
+                  Click below to configure (optional) a one-time SOAP template and generate the SOAP summary.
+                </p>
+                <button
+                  onClick={() => setShowGenerationPanel(true)}
+                  className="px-6 py-3 bg-green-600 text-white rounded-md hover:bg-green-700"
+                >
+                  Prepare SOAP Generation
+                </button>
               </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">SOAP Note Not Generated</h3>
-              <p className="text-gray-600 mb-6">
-                Generate a SOAP note based on the patient's transcription and vitals data.
-              </p>
-              <button
-                onClick={generateSoap}
-                disabled={loading}
-                className="px-6 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? "Generating..." : "Generate SOAP Note"}
-              </button>
-            </div>
+            ) : (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">SOAP Generation Settings</h3>
+                  <p className="text-gray-600 text-sm">
+                    You can fill this template form to guide the SOAP summary for this visit, or skip it and
+                    generate using the default format.
+                  </p>
+                </div>
+
+                <div className="border rounded-lg p-4 bg-gray-50">
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="flex items-center space-x-2 text-sm text-gray-800">
+                      <input
+                        type="checkbox"
+                        className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                        checked={useTemplate}
+                        onChange={(e) => setUseTemplate(e.target.checked)}
+                      />
+                      <span>Use custom SOAP template for this generation only</span>
+                    </label>
+                    <span className="text-xs text-gray-500">
+                      If unchecked, the default SOAP structure is used.
+                    </span>
+                  </div>
+
+                  {useTemplate && (
+                    <div className="space-y-4 mt-4">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Template Name</label>
+                          <input
+                            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                            value={templateName}
+                            onChange={(e) => setTemplateName(e.target.value)}
+                            placeholder="e.g., General Template"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                          <input
+                            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                            value={templateCategory}
+                            onChange={(e) => setTemplateCategory(e.target.value)}
+                            placeholder="e.g., General / Primary Care"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Speciality</label>
+                          <input
+                            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                            value={templateSpeciality}
+                            onChange={(e) => setTemplateSpeciality(e.target.value)}
+                            placeholder="e.g., Primary Care"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Description (optional)
+                        </label>
+                        <textarea
+                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 min-h-[60px]"
+                          value={templateDescription}
+                          onChange={(e) => setTemplateDescription(e.target.value)}
+                          placeholder="Describe how you want this SOAP summary to be structured."
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Subjective Template
+                          </label>
+                          <textarea
+                            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 min-h-[90px]"
+                            value={soapTemplateContent.subjective}
+                            onChange={(e) =>
+                              setSoapTemplateContent((prev) => ({ ...prev, subjective: e.target.value }))
+                            }
+                            placeholder="e.g., Patient reports [symptoms] for [duration]..."
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Objective Template
+                          </label>
+                          <textarea
+                            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 min-h-[90px]"
+                            value={soapTemplateContent.objective}
+                            onChange={(e) =>
+                              setSoapTemplateContent((prev) => ({ ...prev, objective: e.target.value }))
+                            }
+                            placeholder="e.g., Vital signs: [blood_pressure], [heart_rate]..."
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Assessment Template
+                          </label>
+                          <textarea
+                            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 min-h-[90px]"
+                            value={soapTemplateContent.assessment}
+                            onChange={(e) =>
+                              setSoapTemplateContent((prev) => ({ ...prev, assessment: e.target.value }))
+                            }
+                            placeholder="e.g., Clinical impression: [assessment]..."
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Plan Template
+                          </label>
+                          <textarea
+                            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 min-h-[90px]"
+                            value={soapTemplateContent.plan}
+                            onChange={(e) =>
+                              setSoapTemplateContent((prev) => ({ ...prev, plan: e.target.value }))
+                            }
+                            placeholder="e.g., Plan: [treatments], [follow_up]..."
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-6 flex flex-wrap gap-3 justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowGenerationPanel(false);
+                        setUseTemplate(false);
+                      }}
+                      className="px-4 py-2 border border-gray-300 rounded-md text-sm text-gray-700 bg-white hover:bg-gray-50"
+                    >
+                      Back to Actions
+                    </button>
+                    <button
+                      onClick={generateSoap}
+                      disabled={loading}
+                      className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {loading ? "Generating..." : "Generate SOAP Summary"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="p-6">

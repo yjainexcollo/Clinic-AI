@@ -64,10 +64,28 @@ export interface PreVisitSummaryResponse {
   red_flags?: Array<{ flag: string; description: string }>;
 }
 
+export interface SoapTemplate {
+  template_name?: string;
+  category?: string;
+  speciality?: string;
+  description?: string;
+  soap_content?: {
+    subjective?: string;
+    objective?: string;
+    assessment?: string;
+    plan?: string;
+  };
+  tags?: string[];
+  appointment_types?: string[];
+  uploaded_at?: string;
+}
+
 export interface SoapNoteRequest {
   patient_id: string;
   visit_id: string;
   transcript?: string;
+  // Optional per-visit SOAP template; when omitted, backend uses default behavior.
+  template?: SoapTemplate;
 }
 
 export interface SoapNote {
@@ -417,7 +435,9 @@ class ApiClient {
   async getTranscript(patientId: string, visitId: string): Promise<ApiResponse<any>> {
     return this.request<any>({
       method: 'GET',
-      url: `/notes/${patientId}/visits/${visitId}/transcript`,
+      // Backend endpoint returns TranscriptionSessionDTO (transcript + structured_dialogue)
+      // Route is /notes/{patient_id}/visits/{visit_id}/dialogue
+      url: `/notes/${patientId}/visits/${visitId}/dialogue`,
     });
   }
 
