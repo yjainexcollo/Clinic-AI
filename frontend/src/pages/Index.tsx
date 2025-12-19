@@ -15,7 +15,6 @@ import OCRQualityFeedback from "../components/OCRQualityFeedback";
 import SummaryView from "../components/SummaryView";
 import TranscriptView from "../components/TranscriptView";
 import MedicationImageUploader from "../components/MedicationImageUploader";
-import { LanguageToggle } from "../components/LanguageToggle";
 import { useLanguage } from "../contexts/LanguageContext";
 import {
   AlertDialog,
@@ -164,9 +163,7 @@ const Index = () => {
         setCurrentQuestion(storedFirstQuestion);
       } else {
         // Fallback to a default question (same as registration)
-        const defaultQuestion = language === 'sp' 
-          ? "¿Por qué ha venido hoy? ¿Cuál es la principal preocupación con la que necesita ayuda?"
-          : "Why have you come in today? What is the main concern you want help with?";
+        const defaultQuestion = "Why have you come in today? What is the main concern you want help with?";
         setCurrentQuestion(defaultQuestion);
       }
       
@@ -925,26 +922,22 @@ const Index = () => {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {language === 'sp' ? '⚠️ Advertencia de Actualización' : '⚠️ Refresh Warning'}
+              ⚠️ Refresh Warning
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {language === 'sp' 
-                ? 'Si continúa con la actualización, todos sus datos de admisión se perderán y el formulario comenzará desde el principio. ¿Está seguro de que desea continuar?'
-                : 'If you continue with refresh, all your intake data will be lost and the form will start from the beginning. Are you sure you want to continue?'}
+              If you continue with refresh, all your intake data will be lost and the form will start from the beginning. Are you sure you want to continue?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setShowRefreshWarning(false)}>
-              {language === 'sp' ? 'Cancelar' : 'Cancel'}
+              Cancel
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={resetIntakeSession}
               disabled={isResettingSession}
               className="bg-red-600 hover:bg-red-700"
             >
-              {isResettingSession 
-                ? (language === 'sp' ? 'Reiniciando...' : 'Resetting...')
-                : (language === 'sp' ? 'Sí, reiniciar' : 'Yes, Reset')}
+              {isResettingSession ? 'Resetting...' : 'Yes, Reset'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -956,10 +949,10 @@ const Index = () => {
         <div className="max-w-4xl mx-auto px-4 py-6">
           <div className="text-center">
             <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">
-              {language === 'sp' ? 'Asistente de Admisión Clínica' : COPY.app.title}
+              {COPY.app.title}
             </h1>
             <p className="text-gray-600 text-sm md:text-base">
-              {language === 'sp' ? 'Proporcione información médica para comenzar' : COPY.app.subtitle}
+              {COPY.app.subtitle}
             </p>
           </div>
         </div>
@@ -1055,7 +1048,7 @@ const Index = () => {
                           onChange={(e) => setCurrentAnswer(e.target.value)}
                           onKeyPress={handleKeyPress}
                           className="medical-input"
-                          placeholder={language === 'sp' ? 'Escriba su respuesta aquí...' : 'Type your answer here...'}
+                          placeholder="Type your answer here..."
                           required
                         />
                         {allowsImageUpload && patientId && (visitId || localStorage.getItem(`visit_${patientId}`)) && (
@@ -1074,7 +1067,7 @@ const Index = () => {
                       disabled={questions.length === 0 ? selectedSymptoms.length === 0 : !currentAnswer.trim()}
                       className="medical-button w-full flex items-center justify-center gap-2"
                     >
-                      {language === 'sp' ? 'Siguiente' : COPY.form.nextButton}
+                      {COPY.form.nextButton}
                     </button>
                   </div>
                 </form>
@@ -1082,7 +1075,7 @@ const Index = () => {
                 <div className="flex flex-col items-center justify-center py-8">
                   <div className="w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin mb-4"></div>
                   <span className="text-blue-500 text-lg font-medium">
-                    {language === 'sp' ? 'Esperando la siguiente pregunta...' : 'Waiting for next question...'}
+                    Waiting for next question...
                   </span>
                 </div>
               )}
@@ -1093,7 +1086,7 @@ const Index = () => {
           {!isComplete && questions.length > 0 && (
             <div className="medical-card mt-6">
               <h3 className="text-lg font-semibold text-gray-800 mb-3">
-                {language === 'sp' ? 'Respuestas anteriores' : 'Previous answers'}
+                Previous answers
               </h3>
               <div className="space-y-3">
                 {questions.map((qa, idx) => (
@@ -1154,14 +1147,14 @@ const Index = () => {
                           className="medical-button"
                           disabled={!editingValue.trim() || isLoading}
                         >
-                          {language === 'sp' ? 'Guardar' : 'Save'}
+                          Save
                         </button>
                         <button
                           onClick={() => { setEditingIndex(null); setEditingValue(""); }}
                           className="px-3 py-2 rounded-md bg-gray-200 text-gray-800"
                           disabled={isLoading}
                         >
-                          {language === 'sp' ? 'Cancelar' : 'Cancel'}
+                          Cancel
                         </button>
                       </div>
                     ) : (
@@ -1170,9 +1163,7 @@ const Index = () => {
                         <button
                           onClick={() => {
                             const ok = window.confirm(
-                              language === 'sp' 
-                                ? "Editar esta respuesta eliminará todas las preguntas posteriores y tendrá que continuar desde aquí. ¿Desea proceder?"
-                                : "Editing this answer will remove all subsequent questions and you will need to continue from here. Do you want to proceed?"
+                              "Editing this answer will remove all subsequent questions and you will need to continue from here. Do you want to proceed?"
                             );
                             if (!ok) return;
                             setEditingIndex(idx);
@@ -1180,7 +1171,7 @@ const Index = () => {
                           }}
                           className="text-blue-600 hover:underline text-sm"
                         >
-                          {language === 'sp' ? 'Editar' : 'Edit'}
+                          Edit
                         </button>
                       </div>
                     )}
@@ -2006,12 +1997,10 @@ const Index = () => {
           <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 text-center">
             <div className="w-10 h-10 border-2 border-cyan-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
             <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              {language === 'sp' ? 'Creando Resumen Post-Visita…' : 'Creating Post-Visit Summary…'}
+              Creating Post-Visit Summary…
             </h3>
             <p className="text-sm text-gray-600">
-              {language === 'sp' 
-                ? 'Esto puede tomar unos minutos. El resumen estará disponible cuando esté listo.' 
-                : 'This may take up to a few minutes. The summary will be available when ready.'}
+              This may take up to a few minutes. The summary will be available when ready.
             </p>
           </div>
         </div>

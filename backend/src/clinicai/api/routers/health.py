@@ -97,16 +97,8 @@ async def readiness_check(request: Request):
         checks["azure_blob_storage"] = f"error: {str(e)[:50]}"
         all_ok = False
     
-    # Check Azure Key Vault
-    try:
-        from ...core.key_vault import get_key_vault_service
-        key_vault = get_key_vault_service()
-        if key_vault and key_vault.is_available:
-            checks["azure_key_vault"] = "ok"
-        else:
-            checks["azure_key_vault"] = "not_configured"
-    except Exception as e:
-        checks["azure_key_vault"] = f"error: {str(e)[:50]}"
+    # Key Vault removed - using environment variables only
+    checks["azure_key_vault"] = "not_used"
     
     # Check Application Insights
     app_insights_conn = os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")

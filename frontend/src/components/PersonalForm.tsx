@@ -107,6 +107,8 @@ const PersonalForm: React.FC<PersonalFormProps> = ({ onPatientCreated }) => {
       console.log("Backend registration response:", backendResp);
 
       if (backendResp && backendResp.patient_id) {
+        // Persist language preference for this visit (set once on personal info page)
+        localStorage.setItem(`language_${backendResp.patient_id}`, language);
         // Persist travel history flag for later use if needed
         localStorage.setItem(`travel_${backendResp.patient_id}`, JSON.stringify(form.travelHistory));
         // Persist visit id and patient name for intake

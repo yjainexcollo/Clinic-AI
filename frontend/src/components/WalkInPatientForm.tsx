@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { ArrowLeft, UserPlus, Loader2, CheckCircle } from "lucide-react";
 import { workflowService, CreateWalkInVisitRequest } from "../services/workflowService";
-import { LanguageToggle, Language } from "./LanguageToggle";
+// Language toggle removed - only on PersonalForm.tsx
 import { useLanguage } from "../contexts/LanguageContext";
 
 export interface WalkInPatientFormProps {
@@ -189,14 +189,6 @@ const WalkInPatientForm: React.FC<WalkInPatientFormProps> = ({ onPatientCreated,
   return (
     <div className="min-h-screen bg-gradient-to-br from-medical-primary-light to-gray-50 flex items-center justify-center p-4">
       <div className="medical-card max-w-md w-full">
-        {/* Language Toggle */}
-        <div className="mb-4 flex justify-end">
-          <LanguageToggle
-            selectedLanguage={language}
-            onLanguageChange={setLanguage}
-          />
-        </div>
-        
         {/* Walk-in banner */}
         <div className="mb-4 rounded-md border bg-green-50 p-3 text-green-800">
           <div className="text-sm">{language === 'sp' ? 'Paciente sin cita' : 'Walk-in Patient'}</div>

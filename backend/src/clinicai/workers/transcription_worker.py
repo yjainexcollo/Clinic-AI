@@ -509,11 +509,11 @@ class TranscriptionWorker:
                 
                 # P0-1: Only delete message if DB save succeeded
                 if db_save_success:
-                try:
-                    await self.queue_service.delete_message(message_id, latest_pop_receipt)
+                    try:
+                        await self.queue_service.delete_message(message_id, latest_pop_receipt)
                         logger.info(f"✅ ACK_AFTER_DB_SAVE_OK (permanent error): visit={visit_id}, message_id={message_id}")
-                except Exception as delete_error:
-                    logger.error(f"Failed to delete message after permanent error: {delete_error}", exc_info=True)
+                    except Exception as delete_error:
+                        logger.error(f"Failed to delete message after permanent error: {delete_error}", exc_info=True)
                 else:
                     logger.error(
                         f"❌ ACK_SKIPPED_DB_SAVE_FAILED (permanent error): visit={visit_id}, message_id={message_id}. "
@@ -710,8 +710,11 @@ class TranscriptionWorker:
         import signal
         if hasattr(signal, 'SIGTERM'):
             loop = asyncio.get_event_loop()
-            loop.add_signal_handler(signal.SIGTERM, signal_handler)
-            loop.add_signal_handler(signal.SIGINT, signal_handler)
+            try:
+                loop.add_signal_handler(signal.SIGTERM, signal_handler)
+                loop.add_signal_handler(signal.SIGINT, signal_handler)
+            except NotImplementedError:
+                logger.warning("Signal handlers not supported on this platform; relying on default cancellation.")
         
         while not shutdown_event.is_set():
             try:
@@ -723,21 +726,21 @@ class TranscriptionWorker:
                 # Poll queue for messages (batch dequeue if slots available)
                 if batch_size > 0:
                     jobs = await self.queue_service.dequeue_transcription_job(max_messages=batch_size)
-                poll_count += 1
-                
+                    poll_count += 1
+                    
                     if jobs:
                         # Handle single job (backward compatible) or batch
                         job_list = jobs if isinstance(jobs, list) else [jobs]
                         
                         for job in job_list:
-                if job:
-                    # Process job in background with concurrency limit
+                            if job:
+                                # Process job in background with concurrency limit
                                 task = asyncio.create_task(handle_job(job))
                                 active_tasks.add(task)
                                 task.add_done_callback(active_tasks.discard)
-                else:
-                    # No messages, wait before next poll
-                    await asyncio.sleep(self.poll_interval)
+                    else:
+                        # No messages, wait before next poll
+                        await asyncio.sleep(self.poll_interval)
                 else:
                     # No free slots, wait a bit before checking again
                     await asyncio.sleep(1)

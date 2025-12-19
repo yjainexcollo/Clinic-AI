@@ -489,6 +489,17 @@ async def answer_intake_question(
                 "details": e.details or {},
             },
         )
+    except ValueError as ve:
+        # ValueError from question generation logic (e.g., failed to generate question)
+        logger.error(f"ValueError in answer_intake_question: {ve}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error": "QUESTION_GENERATION_FAILED",
+                "message": str(ve),
+                "details": {},
+            },
+        )
     except Exception as e:
         logger.error("Unhandled error in answer_intake_question", exc_info=True)
         raise HTTPException(

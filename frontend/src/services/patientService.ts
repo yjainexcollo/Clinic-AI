@@ -104,6 +104,7 @@ export interface BackendAnswerRequest {
   patient_id: string;
   visit_id: string;
   answer: string;
+  language?: string;
 }
 
 // Backend answer response
@@ -168,6 +169,9 @@ export async function answerIntakeBackend(
     form.append("patient_id", payload.patient_id);
     form.append("visit_id", payload.visit_id);
     form.append("answer", payload.answer);
+    if (payload.language) {
+      form.append("language", payload.language);
+    }
     files.forEach((f) => form.append("medication_images", f));
     resp = await authorizedFetch(`${BACKEND_BASE_URL}/patients/consultations/answer`, {
       method: "POST",

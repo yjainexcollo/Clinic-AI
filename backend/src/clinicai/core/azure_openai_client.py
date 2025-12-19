@@ -453,8 +453,7 @@ def create_azure_openai_client(enable_cache: bool = False) -> AzureOpenAIClient:
     if not settings.azure_openai.endpoint or not settings.azure_openai.api_key:
         raise ValueError(
             "Azure OpenAI endpoint and API key must be configured. "
-            "Set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY environment variables "
-            "or add them to Azure Key Vault."
+            "Set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY environment variables."
         )
     
     return AzureOpenAIClient(
