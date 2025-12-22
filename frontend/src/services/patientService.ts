@@ -35,38 +35,13 @@ const BACKEND_BASE_URL: string = rawBackendUrl
   ? normalizeBaseUrl(rawBackendUrl)
   : normalizeBaseUrl(""); // Will use default production URL
 
-const API_KEY = (import.meta as any).env?.VITE_API_KEY as string | undefined;
+// Authentication disabled - API_KEY no longer required
+const API_KEY = undefined;
 
-if (!API_KEY) {
-  console.warn(
-    "[PatientService] VITE_API_KEY is not set. Backend requests will be rejected with 401 Unauthorized."
-  );
-}
-
-function addAuthHeader(headers?: HeadersInit): HeadersInit {
-  if (!API_KEY) {
-    return headers ?? {};
-  }
-
-  if (!headers) {
-    return { 'X-API-Key': API_KEY };
-  }
-
-  if (headers instanceof Headers) {
-    headers.set('X-API-Key', API_KEY);
-    return headers;
-  }
-
-  if (Array.isArray(headers)) {
-    const filtered = headers.filter(([key]) => key.toLowerCase() !== 'x-api-key');
-    return [...filtered, ['X-API-Key', API_KEY]];
-  }
-
-  return { ...headers, 'X-API-Key': API_KEY };
-}
-
+// Authentication disabled - authorizedFetch is now just a regular fetch wrapper
 export function authorizedFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
-  const headers = addAuthHeader(init.headers);
+  // No authentication headers added
+  const headers = init.headers;
   return fetch(input, { ...init, headers });
 }
 
@@ -521,11 +496,24 @@ export interface SoapNoteResponse {
   confidence_score?: number | null;
 }
 
-export async function generateSoapNote(patientId: string, visitId: string): Promise<{ message: string } | any> {
+export async function generateSoapNote(
+  patientId: string, 
+  visitId: string, 
+  template?: any
+): Promise<{ message: string } | any> {
+  const payload: any = {
+    patient_id: patientId,
+    visit_id: visitId,
+  };
+  
+  if (template) {
+    payload.template = template;
+  }
+  
   const res = await authorizedFetch(`${BACKEND_BASE_URL}/notes/soap/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ patient_id: patientId, visit_id: visitId }),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const t = await res.text();

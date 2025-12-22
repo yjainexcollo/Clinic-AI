@@ -77,6 +77,8 @@ export interface SoapTemplate {
   };
   tags?: string[];
   appointment_types?: string[];
+  is_favorite?: boolean;
+  status?: string;
   uploaded_at?: string;
 }
 

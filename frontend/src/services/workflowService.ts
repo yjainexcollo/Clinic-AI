@@ -1,7 +1,8 @@
 import axios from "axios";
 import { API_CONFIG, buildApiUrl } from "../config/api";
 
-const API_KEY = import.meta.env?.VITE_API_KEY as string | undefined;
+// Authentication disabled - API_KEY no longer required
+const API_KEY = undefined;
 
 export interface CreateWalkInVisitRequest {
   name: string;
@@ -55,25 +56,17 @@ export class WorkflowService {
     // Configure axios defaults
     axios.defaults.headers.common["Content-Type"] = "application/json";
     axios.defaults.timeout = 15000;
-
-    if (!API_KEY) {
-      console.warn(
-        "[WorkflowService] VITE_API_KEY is not set. Workflow requests to the backend will be rejected with 401 Unauthorized."
-      );
-    }
+    // Authentication disabled - no warnings needed
   }
 
   private buildHeaders(
     extra: Record<string, string> = {}
   ): Record<string, string> {
+    // Authentication disabled - no API key headers
     const headers: Record<string, string> = {
       Accept: "application/json",
       ...extra,
     };
-
-    if (API_KEY) {
-      headers["X-API-Key"] = API_KEY;
-    }
 
     return headers;
   }

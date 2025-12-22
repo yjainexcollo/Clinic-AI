@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { BACKEND_BASE_URL, authorizedFetch } from "../services/patientService";
+import { BACKEND_BASE_URL, authorizedFetch, getDoctorPreferences } from "../services/patientService";
 import { workflowService } from "../services/workflowService";
 
 const WalkInSoap: React.FC = () => {
@@ -13,12 +13,17 @@ const WalkInSoap: React.FC = () => {
   const [error, setError] = useState("");
   const [soapData, setSoapData] = useState<any>(null);
   const [workflowInfo, setWorkflowInfo] = useState<any>(null);
+  const [soapOrder, setSoapOrder] = useState<string[]>(["subjective", "objective", "assessment", "plan"]);
   const [showGenerationPanel, setShowGenerationPanel] = useState(autoOpenGeneration);
   const [useTemplate, setUseTemplate] = useState(false);
   const [templateName, setTemplateName] = useState<string>("");
   const [templateCategory, setTemplateCategory] = useState<string>("");
   const [templateSpeciality, setTemplateSpeciality] = useState<string>("");
   const [templateDescription, setTemplateDescription] = useState<string>("");
+  const [templateTags, setTemplateTags] = useState<string>("");
+  const [templateAppointmentTypes, setTemplateAppointmentTypes] = useState<string>("");
+  const [templateIsFavorite, setTemplateIsFavorite] = useState<boolean>(false);
+  const [templateStatus, setTemplateStatus] = useState<string>("active");
   const [soapTemplateContent, setSoapTemplateContent] = useState<{
     subjective: string;
     objective: string;
@@ -38,6 +43,34 @@ const WalkInSoap: React.FC = () => {
       
       setLoading(true);
       try {
+        // Load doctor preferences to honor SOAP ordering (reuse logic from scheduled flow)
+        try {
+          const pref = await getDoctorPreferences();
+          const DEFAULT_SOAP = ["subjective", "objective", "assessment", "plan"];
+          const allowed = new Set(DEFAULT_SOAP);
+          const fromServer = Array.isArray(pref.soap_order) ? pref.soap_order : [];
+          const cleaned: string[] = [];
+          const seen = new Set<string>();
+          for (const key of fromServer) {
+            const lower = (key || "").toString().trim().toLowerCase();
+            if (allowed.has(lower) && !seen.has(lower)) {
+              cleaned.push(lower);
+              seen.add(lower);
+            }
+          }
+          // Append any missing keys in default order
+          for (const key of DEFAULT_SOAP) {
+            if (!seen.has(key)) {
+              cleaned.push(key);
+              seen.add(key);
+            }
+          }
+          setSoapOrder(cleaned.length ? cleaned : DEFAULT_SOAP);
+        } catch (prefErr) {
+          console.warn("Failed to load doctor preferences for SOAP order (walk-in):", prefErr);
+          setSoapOrder(["subjective", "objective", "assessment", "plan"]);
+        }
+
         // Fetch SOAP data
         const soapResponse = await authorizedFetch(`${BACKEND_BASE_URL}/notes/${encodeURIComponent(patientId)}/visits/${encodeURIComponent(visitId)}/soap`, {
           headers: { Accept: "application/json" },
@@ -98,6 +131,10 @@ const WalkInSoap: React.FC = () => {
             assessment: soapTemplateContent.assessment || undefined,
             plan: soapTemplateContent.plan || undefined,
           },
+          tags: templateTags ? templateTags.split(',').map(t => t.trim()).filter(t => t) : undefined,
+          appointment_types: templateAppointmentTypes ? templateAppointmentTypes.split(',').map(t => t.trim()).filter(t => t) : undefined,
+          is_favorite: templateIsFavorite || undefined,
+          status: templateStatus || undefined,
           uploaded_at: new Date().toISOString(),
         };
       }
@@ -287,6 +324,59 @@ const WalkInSoap: React.FC = () => {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Tags (comma-separated)
+                          </label>
+                          <input
+                            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                            value={templateTags}
+                            onChange={(e) => setTemplateTags(e.target.value)}
+                            placeholder="e.g., Test, Follow-up, Primary Care"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Appointment Types (comma-separated)
+                          </label>
+                          <input
+                            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                            value={templateAppointmentTypes}
+                            onChange={(e) => setTemplateAppointmentTypes(e.target.value)}
+                            placeholder="e.g., Follow-up, Consultation"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Status
+                          </label>
+                          <select
+                            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                            value={templateStatus}
+                            onChange={(e) => setTemplateStatus(e.target.value)}
+                          >
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                            <option value="draft">Draft</option>
+                          </select>
+                        </div>
+                        <div className="flex items-center pt-6">
+                          <label className="flex items-center gap-2 text-sm text-gray-800">
+                            <input
+                              type="checkbox"
+                              className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                              checked={templateIsFavorite}
+                              onChange={(e) => setTemplateIsFavorite(e.target.checked)}
+                            />
+                            Mark as favorite
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
                             Subjective Template
                           </label>
                           <textarea
@@ -370,69 +460,91 @@ const WalkInSoap: React.FC = () => {
               <h2 className="text-xl font-semibold text-gray-900">SOAP Note</h2>
             </div>
 
-            {/* SOAP Sections */}
+            {/* SOAP Sections (ordered by doctor preferences) */}
             <div className="space-y-6">
-              {/* Subjective */}
-              <div className="border-l-4 border-blue-500 pl-4">
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Subjective</h3>
-                <div className="prose max-w-none">
-                  <p className="text-gray-700 whitespace-pre-wrap">{soapData.subjective || "No subjective information available."}</p>
-                </div>
-              </div>
-
-              {/* Objective */}
-              <div className="border-l-4 border-green-500 pl-4">
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Objective</h3>
-                <div className="prose max-w-none">
-                  {soapData.objective ? (
-                    <div className="text-gray-700">
-                      {typeof soapData.objective === 'string' ? (
-                        <p className="whitespace-pre-wrap">{soapData.objective}</p>
-                      ) : (
-                        <div>
-                          {soapData.objective.vital_signs && (
-                            <div className="mb-4">
-                              <h4 className="font-medium text-gray-900 mb-2">Vital Signs:</h4>
-                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                                {Object.entries(soapData.objective.vital_signs).map(([key, value]) => (
-                                  <div key={key} className="bg-gray-50 p-2 rounded">
-                                    <span className="font-medium capitalize">{key.replace(/_/g, ' ')}:</span> {String(value)}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          {soapData.objective.physical_exam && (
-                            <div>
-                              <h4 className="font-medium text-gray-900 mb-2">Physical Examination:</h4>
-                              <p className="whitespace-pre-wrap">{JSON.stringify(soapData.objective.physical_exam, null, 2)}</p>
-                            </div>
-                          )}
-                        </div>
-                      )}
+              {soapOrder.map((section) => {
+                if (section === "subjective") {
+                  return (
+                    <div key="subjective" className="border-l-4 border-blue-500 pl-4">
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">Subjective</h3>
+                      <div className="prose max-w-none">
+                        <p className="text-gray-700 whitespace-pre-wrap">
+                          {soapData.subjective || "No subjective information available."}
+                        </p>
+                      </div>
                     </div>
-                  ) : (
-                    <p className="text-gray-700">No objective information available.</p>
-                  )}
-                </div>
-              </div>
+                  );
+                }
 
-              {/* Assessment */}
-              <div className="border-l-4 border-yellow-500 pl-4">
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Assessment</h3>
-                <div className="prose max-w-none">
-                  <p className="text-gray-700 whitespace-pre-wrap">{soapData.assessment || "No assessment available."}</p>
-                </div>
-              </div>
+                if (section === "objective") {
+                  return (
+                    <div key="objective" className="border-l-4 border-green-500 pl-4">
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">Objective</h3>
+                      <div className="prose max-w-none">
+                        {soapData.objective ? (
+                          <div className="text-gray-700">
+                            {typeof soapData.objective === "string" ? (
+                              <p className="whitespace-pre-wrap">{soapData.objective}</p>
+                            ) : (
+                              <div>
+                                {soapData.objective.vital_signs && (
+                                  <div className="mb-4">
+                                    <h4 className="font-medium text-gray-900 mb-2">Vital Signs:</h4>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                      {Object.entries(soapData.objective.vital_signs).map(([key, value]) => (
+                                        <div key={key} className="bg-gray-50 p-2 rounded">
+                                          <span className="font-medium capitalize">{key.replace(/_/g, " ")}:</span>{" "}
+                                          {String(value)}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                {soapData.objective.physical_exam && (
+                                  <div>
+                                    <h4 className="font-medium text-gray-900 mb-2">Physical Examination:</h4>
+                                    <p className="whitespace-pre-wrap">
+                                      {JSON.stringify(soapData.objective.physical_exam, null, 2)}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-gray-700">No objective information available.</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
 
-              {/* Plan */}
-              <div className="border-l-4 border-red-500 pl-4">
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Plan</h3>
-                <div className="prose max-w-none">
-                  <p className="text-gray-700 whitespace-pre-wrap">{soapData.plan || "No plan available."}</p>
-                </div>
-              </div>
+                if (section === "assessment") {
+                  return (
+                    <div key="assessment" className="border-l-4 border-yellow-500 pl-4">
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">Assessment</h3>
+                      <div className="prose max-w-none">
+                        <p className="text-gray-700 whitespace-pre-wrap">
+                          {soapData.assessment || "No assessment available."}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                }
 
+                if (section === "plan") {
+                  return (
+                    <div key="plan" className="border-l-4 border-red-500 pl-4">
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">Plan</h3>
+                      <div className="prose max-w-none">
+                        <p className="text-gray-700 whitespace-pre-wrap">{soapData.plan || "No plan available."}</p>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return null;
+              })}
               {/* Highlights and Red Flags */}
               {(soapData.highlights || soapData.red_flags) && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

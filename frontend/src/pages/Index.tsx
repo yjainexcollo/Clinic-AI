@@ -1498,48 +1498,10 @@ const Index = () => {
                       return;
                     }
 
-                    // For scheduled visits, keep existing direct generation behavior.
-                    try {
-                      setShowPostVisitProcessing(true); // Reuse loading state
-
-                      const response = await authorizedFetch(`${BACKEND_BASE_URL}/notes/soap/generate`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-                        body: JSON.stringify({ patient_id: patientId, visit_id: visitId })
-                      });
-
-                      if (response.ok) {
-                        // Set localStorage flag and update state
-                        try {
-                          localStorage.setItem(`soap_done_${patientId}_${visitId}`, '1');
-                        } catch {}
-                        setHasSoap(true);
-                        alert('SOAP summary generation started successfully! You can view it using the "View SOAP Summary" button.');
-                      } else {
-                        const errorData = await response.json();
-                        console.error('SOAP generation error - Full response:', JSON.stringify(errorData, null, 2));
-                        // Extract detailed error message
-                        let errorMsg = 'Failed to generate SOAP summary';
-                        if (errorData.detail) {
-                          if (typeof errorData.detail === 'string') {
-                            errorMsg = errorData.detail;
-                          } else if (errorData.detail.message) {
-                            errorMsg = errorData.detail.message;
-                          } else if (errorData.detail.error) {
-                            errorMsg = `${errorData.detail.error}: ${errorData.detail.message || 'Unknown error'}`;
-                          }
-                        } else if (errorData.message) {
-                          errorMsg = errorData.message;
-                        }
-                        // Show detailed error with all available info
-                        const details = errorData.detail?.details ? `\nDetails: ${JSON.stringify(errorData.detail.details)}` : '';
-                        alert(`Error: ${errorMsg}${details}\n\nPlease ensure:\n- Transcript is complete\n- Vitals are filled\n- Visit status is correct`);
-                      }
-                      setShowPostVisitProcessing(false);
-                    } catch (e) {
-                      setShowPostVisitProcessing(false);
-                      alert('Failed to generate SOAP summary. Please ensure transcript and vitals are complete.');
-                    }
+                    // For scheduled visits, navigate to SOAP page where user can configure template options
+                    const soapRoute = `/soap/${encodeURIComponent(patientId)}/${encodeURIComponent(visitId)}`;
+                    window.location.href = soapRoute;
+                    return;
                   }}
                   disabled={hasSoap}
                   className={`w-full py-3 px-4 rounded-md transition-colors font-medium ${

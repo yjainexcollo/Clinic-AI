@@ -32,6 +32,10 @@ export const SoapNote: React.FC = () => {
   const [templateCategory, setTemplateCategory] = useState<string>('');
   const [templateSpeciality, setTemplateSpeciality] = useState<string>('');
   const [templateDescription, setTemplateDescription] = useState<string>('');
+  const [templateTags, setTemplateTags] = useState<string>('');
+  const [templateAppointmentTypes, setTemplateAppointmentTypes] = useState<string>('');
+  const [templateIsFavorite, setTemplateIsFavorite] = useState<boolean>(false);
+  const [templateStatus, setTemplateStatus] = useState<string>('active');
   const [soapTemplateContent, setSoapTemplateContent] = useState<{
     subjective: string;
     objective: string;
@@ -108,6 +112,10 @@ export const SoapNote: React.FC = () => {
             assessment: soapTemplateContent.assessment || undefined,
             plan: soapTemplateContent.plan || undefined,
           },
+          tags: templateTags ? templateTags.split(',').map(t => t.trim()).filter(t => t) : undefined,
+          appointment_types: templateAppointmentTypes ? templateAppointmentTypes.split(',').map(t => t.trim()).filter(t => t) : undefined,
+          is_favorite: templateIsFavorite || undefined,
+          status: templateStatus || undefined,
           uploaded_at: new Date().toISOString(),
         };
       }
@@ -441,24 +449,42 @@ export const SoapNote: React.FC = () => {
                 {useTemplate && (
                   <div className="space-y-4 mt-4">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <Input
-                        label="Template Name"
-                        value={templateName}
-                        onChange={(e) => setTemplateName(e.target.value)}
-                        placeholder="e.g., General Template"
-                      />
-                      <Input
-                        label="Category"
-                        value={templateCategory}
-                        onChange={(e) => setTemplateCategory(e.target.value)}
-                        placeholder="e.g., General / Primary Care"
-                      />
-                      <Input
-                        label="Speciality"
-                        value={templateSpeciality}
-                        onChange={(e) => setTemplateSpeciality(e.target.value)}
-                        placeholder="e.g., Primary Care"
-                      />
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Template Name
+                        </label>
+                        <input
+                          type="text"
+                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-medical-primary focus:border-medical-primary"
+                          value={templateName}
+                          onChange={(e) => setTemplateName(e.target.value)}
+                          placeholder="e.g., General Template"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Category
+                        </label>
+                        <input
+                          type="text"
+                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-medical-primary focus:border-medical-primary"
+                          value={templateCategory}
+                          onChange={(e) => setTemplateCategory(e.target.value)}
+                          placeholder="e.g., General / Primary Care"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Speciality
+                        </label>
+                        <input
+                          type="text"
+                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-medical-primary focus:border-medical-primary"
+                          value={templateSpeciality}
+                          onChange={(e) => setTemplateSpeciality(e.target.value)}
+                          placeholder="e.g., Primary Care"
+                        />
+                      </div>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -470,6 +496,59 @@ export const SoapNote: React.FC = () => {
                         onChange={(e) => setTemplateDescription(e.target.value)}
                         placeholder="Explain how you want this SOAP template to be used."
                       />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Tags (comma-separated)
+                        </label>
+                        <input
+                          type="text"
+                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-medical-primary focus:border-medical-primary"
+                          value={templateTags}
+                          onChange={(e) => setTemplateTags(e.target.value)}
+                          placeholder="e.g., Test, Follow-up, Primary Care"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Appointment Types (comma-separated)
+                        </label>
+                        <input
+                          type="text"
+                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-medical-primary focus:border-medical-primary"
+                          value={templateAppointmentTypes}
+                          onChange={(e) => setTemplateAppointmentTypes(e.target.value)}
+                          placeholder="e.g., Follow-up, Consultation"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Status
+                        </label>
+                        <select
+                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-medical-primary focus:border-medical-primary"
+                          value={templateStatus}
+                          onChange={(e) => setTemplateStatus(e.target.value)}
+                        >
+                          <option value="active">Active</option>
+                          <option value="inactive">Inactive</option>
+                          <option value="draft">Draft</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center pt-6">
+                        <label className="flex items-center gap-2 text-sm text-gray-800">
+                          <input
+                            type="checkbox"
+                            className="rounded border-gray-300 text-medical-primary focus:ring-medical-primary"
+                            checked={templateIsFavorite}
+                            onChange={(e) => setTemplateIsFavorite(e.target.checked)}
+                          />
+                          Mark as favorite
+                        </label>
+                      </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
