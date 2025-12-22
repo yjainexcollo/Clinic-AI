@@ -832,8 +832,11 @@ class TranscriptionWorker:
         import signal
         if hasattr(signal, 'SIGTERM'):
             loop = asyncio.get_event_loop()
-            loop.add_signal_handler(signal.SIGTERM, signal_handler)
-            loop.add_signal_handler(signal.SIGINT, signal_handler)
+            try:
+                loop.add_signal_handler(signal.SIGTERM, signal_handler)
+                loop.add_signal_handler(signal.SIGINT, signal_handler)
+            except NotImplementedError:
+                logger.warning("Signal handlers not supported on this platform; relying on default cancellation.")
         
         while not shutdown_event.is_set():
             try:

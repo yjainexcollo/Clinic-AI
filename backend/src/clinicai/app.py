@@ -119,28 +119,8 @@ async def lifespan(app: FastAPI):
             sys.stderr.flush()
             raise
 
-        # Initialize Azure Key Vault (if configured)
-        try:
-            msg = "Initializing Azure Key Vault..."
-            print(msg, flush=True)
-            logger.info(msg)
-            from .core.key_vault import get_key_vault_service
-            key_vault = get_key_vault_service()
-            if key_vault and key_vault.is_available:
-                msg = "✅ Azure Key Vault initialized"
-                print(msg, flush=True)
-                logger.info(msg)
-                logging.info("Azure Key Vault initialized successfully")
-            else:
-                msg = "⚠️  Azure Key Vault not available (using environment variables)"
-                print(msg, flush=True)
-                logger.warning(msg)
-                logging.debug("Azure Key Vault not configured or not accessible")
-        except Exception as e:
-            msg = f"⚠️  Azure Key Vault initialization failed: {e}"
-            print(msg, flush=True)
-            logger.warning(msg)
-            logging.debug(f"Azure Key Vault initialization skipped: {e}")
+        # Using environment variables for all secrets (Key Vault removed)
+        logger.info("✅ Using environment variables for configuration")
 
         # Initialize Azure Blob Storage
         try:

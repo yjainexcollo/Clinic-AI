@@ -230,7 +230,17 @@ class AnswerIntakeUseCase:
         if visit.symptom == "" and visit.intake_session.current_question_count == 1:
             visit.symptom = request.answer.strip()
 
+        # Apply diagnostic consent limit (only affects max_questions, doesn't stop early)
+        # This is safe to call after each answer as it only adjusts the limit based on consent
         self._apply_diagnostic_consent_limit(visit)
+        
+        # Ensure max_questions is at least 2 after first question (defensive check)
+        if visit.intake_session.current_question_count == 1 and visit.intake_session.max_questions < 2:
+            logger.warning(
+                "max_questions was set to %d after first question, resetting to minimum 2",
+                visit.intake_session.max_questions
+            )
+            visit.intake_session.max_questions = 2
 
         # Check if we should stop asking questions
         should_stop = await self._question_service.should_stop_asking(
@@ -244,13 +254,40 @@ class AnswerIntakeUseCase:
         is_complete = False
 
         logger.info(
-            "Completion check: should_stop=%s, can_ask_more=%s, current_count=%s",
+            "Completion check: should_stop=%s, can_ask_more=%s, current_count=%s, max_questions=%s, status=%s",
             should_stop,
             visit.can_ask_more_questions(),
             visit.intake_session.current_question_count,
+            visit.intake_session.max_questions,
+            visit.intake_session.status,
         )
+        
+        # Defensive check: if we've only asked 1 question, we should NOT stop
+        if visit.intake_session.current_question_count == 1 and should_stop:
+            logger.warning(
+                "should_stop returned True after first question - this should not happen. "
+                "Forcing should_stop=False. max_questions=%s",
+                visit.intake_session.max_questions
+            )
+            should_stop = False
 
         if should_stop or not visit.can_ask_more_questions():
+            # Defensive check: don't complete if we've only asked 1 question (chief complaint)
+            # This should never happen, but if it does, it's a bug we need to catch
+            if visit.intake_session.current_question_count <= 1:
+                logger.error(
+                    "CRITICAL: Attempted to complete intake after only %d question(s). "
+                    "This should not happen. current_count=%d, max_questions=%d, should_stop=%s, can_ask_more=%s",
+                    visit.intake_session.current_question_count,
+                    visit.intake_session.current_question_count,
+                    visit.intake_session.max_questions,
+                    should_stop,
+                    visit.can_ask_more_questions(),
+                )
+                raise ValueError(
+                    f"Cannot complete intake after only {visit.intake_session.current_question_count} question(s). "
+                    f"This indicates a bug in question generation logic."
+                )
             # Complete the intake
             visit.complete_intake()
             is_complete = True
@@ -269,6 +306,9 @@ class AnswerIntakeUseCase:
             # Initialize asked_categories list for tracking (code-truth)
             # First, try to use existing asked_categories from session
             asked_categories: List[str] = list(visit.intake_session.asked_categories) if visit.intake_session.asked_categories else []
+            # Ensure asked_categories is not None (defensive check)
+            if asked_categories is None:
+                asked_categories = []
             # If asked_categories is empty or shorter than expected, reconstruct from existing questions
             if len(asked_categories) < len(visit.intake_session.questions_asked) - 1:  # -1 because Q1 has no category
                 asked_categories = []
@@ -335,6 +375,25 @@ class AnswerIntakeUseCase:
             max_attempts = 6
             attempt = 0
             next_question = None
+            logger.info(
+                "Generating next question: current_count=%d, max_count=%d, step_number=%d, asked_categories=%s",
+                visit.intake_session.current_question_count,
+                visit.intake_session.max_questions,
+                visit.intake_session.current_question_count + 1,
+                asked_categories,
+            )
+            # Defensive check: ensure we have room for more questions
+            if visit.intake_session.current_question_count >= visit.intake_session.max_questions:
+                logger.error(
+                    "CRITICAL: Attempted to generate next question when current_count (%d) >= max_questions (%d). "
+                    "This should not happen - check completion logic.",
+                    visit.intake_session.current_question_count,
+                    visit.intake_session.max_questions,
+                )
+                raise ValueError(
+                    f"Cannot generate next question: current_count ({visit.intake_session.current_question_count}) "
+                    f">= max_questions ({visit.intake_session.max_questions})"
+                )
             while attempt < max_attempts and not next_question:
                 attempt += 1
                 try:
@@ -356,26 +415,119 @@ class AnswerIntakeUseCase:
                         patient_id=patient.patient_id.value,
                         question_number=visit.intake_session.current_question_count + 1,
                     )
+                    logger.info(
+                        "Generated candidate question (attempt %d): %s",
+                        attempt,
+                        candidate[:100] if candidate else "None/Empty",
+                    )
                     if candidate and candidate.strip() and candidate not in asked_questions:
+                        # Defensive check: don't accept closing question too early
+                        closing_question_en = "Is there anything else you'd like to share about your condition?"
+                        closing_question_es = "¿Hay algo más que le gustaría compartir sobre su condición?"
+                        is_closing = (
+                            candidate.strip() == closing_question_en or
+                            candidate.strip() == closing_question_es or
+                            "anything else" in candidate.lower() or
+                            "algo más" in candidate.lower()
+                        )
+                        if is_closing and visit.intake_session.current_question_count < 2:
+                            logger.error(
+                                "CRITICAL: Closing question returned too early (current_count=%d). "
+                                "This should not happen - check question generation logic. "
+                                "Rejecting this candidate and continuing to next attempt.",
+                                visit.intake_session.current_question_count
+                            )
+                            # Don't raise ValueError - just reject this candidate and continue trying
+                            # This allows the retry loop to attempt generating a proper question
+                            continue
                         next_question = candidate
+                        # Update asked_categories in session
                         visit.intake_session.asked_categories = list(asked_categories)
+                        logger.info("Next question set: %s", next_question[:100])
                         break
-                except DuplicateQuestionError:
+                    else:
+                        logger.warning(
+                            "Candidate question rejected: empty=%s, duplicate=%s",
+                            not (candidate and candidate.strip()),
+                            candidate in asked_questions if candidate else False,
+                        )
+                except DuplicateQuestionError as e:
                     # Service signaled a duplicate; try again with a new candidate
+                    logger.warning("DuplicateQuestionError on attempt %d: %s", attempt, e)
                     continue
-                except Exception:
-                    # Any unexpected failure from the multi-agent pipeline – break out
-                    # and let completion logic decide whether to stop instead of
-                    # falling back to generic questions.
-                    break
+                except ValueError as ve:
+                    # ValueError indicates a critical failure (e.g., failed to generate question)
+                    # Log the error but continue trying - we have max_attempts to handle this
+                    logger.error(
+                        "ValueError generating next question (attempt %d): %s",
+                        attempt,
+                        str(ve),
+                        exc_info=True,
+                    )
+                    # Only re-raise if we've exhausted all attempts
+                    if attempt >= max_attempts:
+                        logger.error("Exhausted all attempts after ValueError - re-raising")
+                        raise
+                    # Otherwise, continue trying
+                    continue
+                except Exception as e:
+                    # Log the exception for debugging
+                    logger.error(
+                        "Exception generating next question (attempt %d): %s",
+                        attempt,
+                        str(e),
+                        exc_info=True,
+                    )
+                    # Continue trying instead of breaking - we have max_attempts to handle this
+                    # Only break if we've exhausted all attempts
+                    if attempt >= max_attempts:
+                        logger.error("Exhausted all attempts to generate next question")
+                        break
+                    continue
 
             if not next_question:
                 # No safe next question from the multi-agent pipeline after several
-                # attempts. Instead of asking a generic fallback question (which can
-                # re-open already covered topics), treat this as an early completion.
-                visit.complete_intake()
-                is_complete = True
-                message = "Intake completed; no further questions were needed."
+                # attempts. Log the issue for debugging.
+                logger.error(
+                    "Failed to generate next question after %d attempts. "
+                    "current_count=%d, max_questions=%d, step_number=%d, asked_categories=%s, "
+                    "should_stop=%s, can_ask_more=%s",
+                    max_attempts,
+                    visit.intake_session.current_question_count,
+                    visit.intake_session.max_questions,
+                    visit.intake_session.current_question_count + 1,
+                    asked_categories,
+                    should_stop,
+                    visit.can_ask_more_questions(),
+                )
+                # Only complete if we've asked at least the minimum expected questions
+                # For non-chronic: minimum 2 questions (chief complaint + duration)
+                # For chronic: minimum varies but should be at least 2
+                min_expected = 2
+                if visit.intake_session.current_question_count < min_expected:
+                    # This is an error - we should have more questions
+                    logger.error(
+                        "CRITICAL: Intake completing too early: only %d questions asked, expected at least %d. "
+                        "This should not happen - check question generation logic. "
+                        "max_questions=%d, should_stop=%s, can_ask_more=%s",
+                        visit.intake_session.current_question_count,
+                        min_expected,
+                        visit.intake_session.max_questions,
+                        should_stop,
+                        visit.can_ask_more_questions(),
+                    )
+                    # Don't complete - raise an error instead so we can debug
+                    raise ValueError(
+                        f"Failed to generate question after first answer. "
+                        f"current_count={visit.intake_session.current_question_count}, "
+                        f"max_questions={visit.intake_session.max_questions}, "
+                        f"should_stop={should_stop}, can_ask_more={visit.can_ask_more_questions()}"
+                    )
+                else:
+                    # We've asked enough questions, safe to complete
+                    visit.complete_intake()
+                    is_complete = True
+                    message = "Intake completed; no further questions were needed."
             else:
                 visit.set_pending_question(next_question)
                 message = (

@@ -54,51 +54,28 @@ class OpenAISoapService(SoapService):
         except Exception:
             pass
 
-    def _translate_vitals_to_spanish(self, vitals_text: str) -> str:
-        """Translate vitals text from English to Spanish."""
-        if not vitals_text:
-            return vitals_text
-            
-        # Translation mappings
-        translations = {
-            "Blood pressure": "Presión arterial",
-            "Heart rate": "Frecuencia cardíaca", 
-            "Respiratory rate": "Frecuencia respiratoria",
-            "Temperature": "Temperatura",
-            "SpO₂": "SpO₂",  # Keep same
-            "Height": "Altura",
-            "Weight": "Peso",
-            "Pain score": "Escala de dolor",
-            "Left arm": "Brazo izquierdo",
-            "Right arm": "Brazo derecho",
-            "Left": "Izquierdo",
-            "Right": "Derecho",
-            "Sitting": "Sentado",
-            "Standing": "De pie", 
-            "Lying": "Acostado",
-            "Regular": "Regular",
-            "Irregular": "Irregular",
-            "Oral": "Oral",
-            "Axillary": "Axilar",
-            "Tympanic": "Timpánico",
-            "Rectal": "Rectal",
-            "on room air": "en aire ambiente"
-        }
-        
-        translated_text = vitals_text
-        for english, spanish in translations.items():
-            translated_text = translated_text.replace(english, spanish)
-            
-        return translated_text
-
     def _normalize_language(self, language: str) -> str:
-        """Normalize language code to handle both 'sp' and 'es' for backward compatibility."""
+        """Normalize language code - supports en, es/sp, and future languages."""
         if not language:
             return "en"
         normalized = language.lower().strip()
-        if normalized in ['es', 'sp']:
-            return 'sp'
-        return normalized if normalized in ['en', 'sp'] else 'en'
+        # Map variations to standard codes
+        if normalized in ['es', 'sp', 'spanish', 'español']:
+            return "es"
+        if normalized in ['en', 'english']:
+            return "en"
+        # Default to English for unknown codes
+        return "en"
+
+    def _get_output_language_name(self, language_code: str) -> str:
+        """Convert language code to full name for LLM prompts."""
+        mapping = {
+            "en": "English",
+            "es": "Spanish",
+            "hi": "Hindi",
+            "fr": "French",
+        }
+        return mapping.get(language_code, "English")
 
     async def _get_doctor_preferences(self, doctor_id: Optional[str]) -> Optional[Dict[str, Any]]:
         """Fetch doctor preferences with 1s timeout; fail-open on errors."""
@@ -123,7 +100,6 @@ class OpenAISoapService(SoapService):
         vitals: Optional[Dict[str, Any]] = None,
         language: str = "en",
         doctor_id: Optional[str] = None,
-        template: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Generate SOAP note using OpenAI GPT-4."""
         # Normalize language code
@@ -152,9 +128,6 @@ class OpenAISoapService(SoapService):
             if 'vitals' in pre_visit_summary:
                 vitals_data = pre_visit_summary['vitals']['data']
                 vitals_text = self._format_vitals_for_soap(vitals_data)
-                # Translate vitals to Spanish if needed
-                if lang == "sp":
-                    vitals_text = self._translate_vitals_to_spanish(vitals_text)
                 context_parts.append(f"Vitals Data: {vitals_text}")
         
         if intake_data and intake_data.get('questions_asked'):
@@ -212,27 +185,6 @@ class OpenAISoapService(SoapService):
                     pass
         
         context = "\n\n".join(context_parts) if context_parts else "No additional context available"
-
-        # Optional: template instructions (per-visit, not global)
-        template_instructions = ""
-        if template:
-            try:
-                soap_content = (template.get("soap_content") or {}) if isinstance(template, dict) else {}
-                template_instructions_lines: List[str] = [
-                    "The doctor has provided a custom SOAP template for this visit.",
-                    "Follow the structure, tone, and ordering indicated by this template.",
-                    "Replace any placeholders like [patient_name], [blood_pressure], etc. with actual values from the transcript and context.",
-                    "If any section is missing in the template, use the default structure for that section.",
-                    "",
-                    f"Subjective Template: {soap_content.get('subjective', '')}",
-                    f"Objective Template: {soap_content.get('objective', '')}",
-                    f"Assessment Template: {soap_content.get('assessment', '')}",
-                    f"Plan Template: {soap_content.get('plan', '')}",
-                ]
-                template_instructions = "\n".join(template_instructions_lines)
-            except Exception:
-                # Fail-open: ignore bad template structure, fall back to defaults
-                template_instructions = ""
         
         # Build preference snippet
         pref_snippet = (
@@ -242,71 +194,19 @@ class OpenAISoapService(SoapService):
             f"- Language override: {language_override or 'none'}\n"
         )
 
-        # Create language-aware prompt
-        if lang == "sp":
-            prompt = f"""
-Eres un escribano clínico que genera notas SOAP a partir de consultas médico-paciente.
+        # Normalize language and get output language name
+        lang = self._normalize_language(language)
+        output_language = self._get_output_language_name(lang)
+        
+        # Create prompt with output_language variable
+        prompt = f"""
+You are a clinical scribe generating SOAP notes from doctor-patient consultations.
 
-{template_instructions if template_instructions else ""}
-
-CONTEXTO:
-{context}
-
-TRANSCRIPCIÓN DE CONSULTA:
-{transcript}
-
-INSTRUCCIONES:
-{pref_snippet}
-1. Genera una nota SOAP completa basada en la transcripción y contexto
-2. NO hagas diagnósticos o recomendaciones de tratamiento a menos que sean explícitamente declarados por el médico
-3. Usa terminología médica apropiadamente
-4. Sé objetivo y factual
-5. Si la información no está clara o falta, marca como "No claro" o "No discutido"
-6. Enfócate en lo que realmente se dijo durante la consulta
-7. Nivel de detalle preferido: {detail_level}
-8. Formato preferido: {formatting_pref}
-
-FORMATO REQUERIDO (JSON):
-{{
-    "subjective": "Síntomas reportados por el paciente, preocupaciones e historial discutido",
-    "objective": {{
-        "vital_signs": {{
-            "blood_pressure": "120/80 mmHg",
-            "heart_rate": "74 bpm",
-            "temperature": "36.4C",
-            "SpO2": "92% en aire ambiente",
-            "weight": "80 kg"
-        }},
-        "physical_exam": {{
-            "general_appearance": "El paciente parece cansado pero cooperativo",
-            "HEENT": "No discutido",
-            "cardiac": "No discutido",
-            "respiratory": "No discutido",
-            "abdominal": "No discutido",
-            "neuro": "No discutido",
-            "extremities": "No discutido",
-            "gait": "No discutido"
-        }}
-    }},
-    "assessment": "Impresiones clínicas y razonamiento discutido por el médico",
-    "plan": "Plan de tratamiento, instrucciones de seguimiento y próximos pasos discutidos",
-    "highlights": ["Punto clínico clave 1", "Punto clínico clave 2", "Punto clínico clave 3"],
-    "red_flags": ["Cualquier síntoma o hallazgo preocupante mencionado"],
-    "model_info": {{
-        "model": "{self._settings.soap.model}",
-        "temperature": {self._settings.soap.temperature},
-        "max_tokens": {self._settings.soap.max_tokens}
-    }},
-    "confidence_score": 0.95
-}}
-
-Genera la nota SOAP ahora:
-"""
-        else:
-            prompt = f"""
-You are a clinical scribe generating SOAP notes from doctor-patient consultations. 
-
-{template_instructions if template_instructions else ""}
+Language rules:
+- Write all natural-language text values (subjective, assessment, plan, physical_exam descriptions) in {output_language}.
+- Do NOT translate JSON keys, field names, or structure.
+- Keep JSON keys in English (e.g., "subjective", "objective", "blood_pressure").
+- If the transcript contains mixed languages, still output in {output_language}.
 
 CONTEXT:
 {context}
@@ -318,9 +218,9 @@ INSTRUCTIONS:
 {pref_snippet}
 1. Generate a comprehensive SOAP note based on the transcript and context
 2. Do NOT make diagnoses or treatment recommendations unless explicitly stated by the physician
-3. Use medical terminology appropriately
+3. Use medical terminology appropriately in {output_language}
 4. Be objective and factual
-5. If information is unclear or missing, mark as "Unclear" or "Not discussed"
+5. If information is unclear or missing, mark as "Unclear" or "Not discussed" (in {output_language})
 6. Focus on what was actually said during the consultation
 7. In the Objective, include BOTH:
    - Vital signs from the provided Objective Vitals, if present
@@ -625,83 +525,17 @@ You are a clinical scribe. Generate accurate, structured SOAP notes from medical
         """Generate post-visit summary for patient sharing."""
         # Normalize language code
         lang = self._normalize_language(language)
+        output_language = self._get_output_language_name(lang)
         
-        # Create the prompt for post-visit summary
-        if lang == "sp":
-            prompt = f"""
-Estás generando un resumen post-consulta para un paciente para compartir por WhatsApp. Debe ser claro, completo y amigable para el paciente.
-
-INFORMACIÓN DEL PACIENTE:
-- Nombre: {patient_data.get('name', 'Paciente')}
-- Edad: {patient_data.get('age', 'N/A')}
-- Fecha de Visita: {patient_data.get('visit_date', 'N/A')}
-- Motivo de Consulta: {patient_data.get('symptom', 'N/A')}
-
-DATOS DE NOTA SOAP:
-- Subjetivo: {soap_data.get('subjective', '')}
-- Objetivo: {soap_data.get('objective', '')}
-- Evaluación: {soap_data.get('assessment', '')}
-- Plan: {soap_data.get('plan', '')}
-- Aspectos Destacados: {soap_data.get('highlights', [])}
-- Señales de Alerta: {soap_data.get('red_flags', [])}
-
-INSTRUCCIONES:
-Genera un resumen post-consulta completo siguiendo esta estructura exacta en formato JSON:
-
-{{
-    "key_findings": [
-        "Hallazgo clave 1 de la consulta",
-        "Hallazgo clave 2 de la consulta",
-        "Hallazgo clave 3 de la consulta"
-    ],
-    "diagnosis": "Diagnóstico en lenguaje simple y amigable para el paciente",
-    "medications": [
-        {{
-            "name": "Nombre del medicamento (genérico preferido)",
-            "dosage": "Cantidad de dosis",
-            "frequency": "Con qué frecuencia tomarlo",
-            "duration": "Por cuánto tiempo tomarlo",
-            "purpose": "Para qué sirve"
-        }}
-    ],
-    "other_recommendations": [
-        "Recomendación de estilo de vida 1",
-        "Consejo dietético 2",
-        "Recomendaciones de fisioterapia o ejercicio"
-    ],
-    "tests_ordered": [
-        {{
-            "test_name": "Nombre de la prueba",
-            "purpose": "Por qué se necesita esta prueba",
-            "instructions": "Cuándo y dónde realizarla"
-        }}
-    ],
-    "next_appointment": "Detalles de la próxima cita si está programada",
-    "red_flag_symptoms": [
-        "Señal de advertencia 1 - cuándo regresar inmediatamente",
-        "Señal de advertencia 2 - cuándo ir a emergencias",
-        "Señal de advertencia 3 - síntomas a vigilar"
-    ],
-    "patient_instructions": [
-        "Instrucción clara 1 (qué hacer)",
-        "Instrucción clara 2 (qué no hacer)",
-        "Instrucción clara 3 (cuidado en casa)"
-    ],
-    "reassurance_note": "Mensaje alentador y tranquilizador para el paciente"
-}}
-
-Asegúrate de que todo el contenido esté:
-- Escrito en lenguaje simple y claro
-- Amigable para el paciente y fácil de entender
-- Completo pero conciso
-- Accionable con instrucciones específicas
-- Alentador y de apoyo
-
-Genera el resumen post-consulta ahora:
-"""
-        else:
-            prompt = f"""
+        # Create the prompt for post-visit summary with output_language
+        prompt = f"""
 You are generating a post-visit summary for a patient to share via WhatsApp. This should be clear, comprehensive, and patient-friendly.
+
+Language rules:
+- Write all natural-language text values (key_findings, diagnosis, medications descriptions, recommendations, instructions) in {output_language}.
+- Do NOT translate JSON keys, field names, or structure.
+- Keep JSON keys in English (e.g., "key_findings", "diagnosis", "medications").
+- Make all content patient-friendly and easy to understand in {output_language}.
 
 PATIENT INFORMATION:
 - Name: {patient_data.get('name', 'Patient')}

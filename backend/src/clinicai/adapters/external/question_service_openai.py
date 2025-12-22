@@ -28,12 +28,28 @@ logger = logging.getLogger("clinicai")
 # SHARED UTILITIES
 # =============================================================================
 def _normalize_language(language: str) -> str:
+    """Normalize language code - supports en, es/sp, and future languages."""
     if not language:
         return "en"
     normalized = language.lower().strip()
-    if normalized in ["es", "sp"]:
-        return "sp"
-    return normalized if normalized in ["en", "sp"] else "en"
+    # Map variations to standard codes
+    if normalized in ['es', 'sp', 'spanish', 'español']:
+        return "es"
+    if normalized in ['en', 'english']:
+        return "en"
+    # Default to English for unknown codes
+    return "en"
+
+
+def _get_output_language_name(language_code: str) -> str:
+    """Convert language code to full name for LLM prompts."""
+    mapping = {
+        "en": "English",
+        "es": "Spanish",
+        "hi": "Hindi",
+        "fr": "French",
+    }
+    return mapping.get(language_code, "English")
 
 
 def _format_qa_pairs(qa_pairs: List[Dict[str, str]]) -> str:
@@ -259,10 +275,17 @@ class MedicalContextAnalyzer:
         question_number: Optional[int] = None,
     ) -> MedicalContext:
         lang = self._normalize_language(language)
-        system_prompt = """You are AGENT-01 "MEDICAL CONTEXT ANALYZER" - Clinical Strategist.
+        output_language = _get_output_language_name(lang)
+        system_prompt = f"""You are AGENT-01 "MEDICAL CONTEXT ANALYZER" - Clinical Strategist.
+
+Language rules:
+- Write all natural-language text values (medical_reasoning, normalized_complaint, core_symptom_phrase, identified_flags) in {output_language}.
+- Do NOT translate JSON keys, enums, codes, or field names.
+- Keep all JSON structure in English (keys, boolean values, etc.).
+
 Return ONLY one JSON object with this schema:
-{
-"condition_properties": {
+{{
+"condition_properties": {{
 "is_chronic": <true|false|null>,
 "is_hereditary": <true|false|null>,
 "has_complications": <true|false|null>,
@@ -276,21 +299,21 @@ Return ONLY one JSON object with this schema:
 "acuity_level": "<acute|subacute|chronic|null>",
 "is_new_problem": <true|false|null>,
 "is_followup": <true|false|null>
-},
+}},
 "triage_level": "<routine|urgent|emergency>",
-"red_flags": {
+"red_flags": {{
 "possible_emergency": <true|false>,
 "needs_urgent_attention": <true|false>,
-"identified_flags": ["<string>", "..."]
-},
-"normalized_complaint": "<short label or null>",
-"core_symptom_phrase": "<short phrase or null>",
+"identified_flags": ["<string in {output_language}>", "..."]
+}},
+"normalized_complaint": "<short label in {output_language} or null>",
+"core_symptom_phrase": "<short phrase in {output_language} or null>",
 "priority_topics": ["<topic>", "..."],
 "avoid_topics": ["<topic>", "..."],
 "topic_plan": ["<topic>", "..."],
-"medical_reasoning": "<2-4 sentences>",
+"medical_reasoning": "<2-4 sentences in {output_language}>",
 "prompt_version": "med_ctx_v4"
-}
+}}
 ALLOWED TOPICS (must use exactly):
 duration, associated_symptoms, current_medications, past_medical_history,
 triggers, travel_history, lifestyle_functional_impact, family_history,
@@ -453,22 +476,29 @@ class AnswerExtractor:
                 redundant_categories=[],
                 topic_counts=None,
             )
-        system_prompt = """You are AGENT-02 "COVERAGE & FACT EXTRACTOR".
+        lang = self._normalize_language(language)
+        output_language = _get_output_language_name(lang)
+        system_prompt = f"""You are AGENT-02 "COVERAGE & FACT EXTRACTOR".
+
+Language rules:
+- Write all natural-language text values (extracted_facts text content) in {output_language}.
+- Do NOT translate JSON keys, enums, codes, or field names.
+- Keep all JSON structure in English (keys, boolean values, etc.).
 Return ONLY JSON:
-{
+{{
 "topics_covered": ["<topic>", "..."],
 "information_gaps": ["<topic>", "..."],
-"extracted_facts": {
+"extracted_facts": {{
 "duration": "<text or null>",
 "medications": "<text or null>",
 "pain_severity": "<text or null>",
 "associated_symptoms": "<text or null>"
-},
+}},
 "already_mentioned_duration": <true|false>,
 "already_mentioned_medications": <true|false>,
 "redundant_categories": ["<topic>", "..."],
-"topic_counts": { "<topic>": <int>, "...": <int> }
-}
+"topic_counts": {{ "<topic>": <int>, "...": <int> }}
+}}
 CRITICAL RULES:
 - topics_covered and information_gaps MUST be DISJOINT (no overlap).
 - topics_covered may include a topic ONLY if a question about that topic exists in history.
@@ -685,6 +715,7 @@ class QuestionGenerator:
         question_number: Optional[int] = None,
     ) -> str:
         lang = self._normalize_language(language)
+        output_language = _get_output_language_name(lang)
         qa_history = ""
         if asked_questions and previous_answers:
             all_qa = []
@@ -694,13 +725,19 @@ class QuestionGenerator:
             qa_history = self._format_qa_pairs(all_qa) if all_qa else ""
         # ✅ Clear, focused prompt without refusal option
         system_prompt = f"""You are AGENT-03 "INTAKE QUESTION GENERATOR" for clinical intake interviews.
+
+Language rules:
+- Generate the question text in {output_language}.
+- Keep the question natural, conversational, and appropriate for a medical interview in {output_language}.
+- Do NOT translate topic names or technical terms unnecessarily - use medical terminology appropriate for {output_language}.
+
 Your task: Generate ONE clear, concise medical question about the topic: {chosen_topic}
 Requirements:
 - Output ONLY the question text (no quotes, no numbering, no explanations)
 - Question must end with "?"
 - Keep it under {max_words} words
 - Focus ONLY on {chosen_topic} - do not combine with other topics
-- Use natural, conversational language appropriate for a medical interview
+- Use natural, conversational language appropriate for a medical interview in {output_language}
 - Do not repeat questions from the conversation history
 - Make the question specific and easy for the patient to answer
 Topic-specific guidance:
@@ -786,8 +823,13 @@ Generate ONE question now, strictly about {chosen_topic}.
                 )
             except Exception as e:
                 logger.warning("Agent3: failed to persist interaction (attempt 1): %s", e)
-        # If question is empty or doesn't match topic => retry once
-        if (not q1) or (not self._question_matches_topic(chosen_topic, q1)):
+        # If question is empty or (for English) doesn't match topic => retry once
+        # NOTE: For Spanish and other non-English languages, we SKIP strict keyword matching
+        #       to avoid rejecting good questions just because keywords are English-only.
+        if (not q1) or (
+            output_language == "English"
+            and not self._question_matches_topic(chosen_topic, q1)
+        ):
             correction = f"""
 Your previous question was not clearly focused on the topic: {chosen_topic}
 Please generate a question that is SPECIFICALLY about {chosen_topic}.
@@ -821,7 +863,10 @@ Return ONE question ONLY.
                     )
                 except Exception as e:
                     logger.warning("Agent3: failed to persist interaction (attempt 2): %s", e)
-            if q2 and self._question_matches_topic(chosen_topic, q2):
+            if q2 and (
+                output_language != "English"
+                or self._question_matches_topic(chosen_topic, q2)
+            ):
                 return q2
             # deterministic fallback
             return self._postprocess_question_text(self._get_fallback_question(chosen_topic))
@@ -964,9 +1009,11 @@ class OpenAIQuestionService(QuestionService):
         return _normalize_language(language)
 
     def _closing(self, language: str) -> str:
+        """Return closing question in the specified language."""
         lang = self._normalize_language(language)
-        return "¿Hay algo más que le gustaría compartir sobre su condición?" if lang == "sp" else \
-            "Is there anything else you'd like to share about your condition?"
+        if lang == "es":
+            return "¿Hay algo más que le gustaría compartir sobre su condición?"
+        return "Is there anything else you'd like to share about your condition?"
 
     async def generate_first_question(
         self,
@@ -976,9 +1023,11 @@ class OpenAIQuestionService(QuestionService):
         patient_id: Optional[str] = None,
         question_number: Optional[int] = None,
     ) -> str:
+        """Generate first question in the specified language."""
         lang = self._normalize_language(language)
-        return "¿Por qué ha venido hoy? ¿Cuál es la principal preocupación con la que necesita ayuda?" if lang == "sp" else \
-            "Why have you come in today? What is the main concern you want help with?"
+        if lang == "es":
+            return "¿Por qué ha venido hoy? ¿Cuál es la principal preocupación con la que necesita ayuda?"
+        return "Why have you come in today? What is the main concern you want help with?"
 
     async def generate_next_question(
         self,
@@ -1022,6 +1071,10 @@ class OpenAIQuestionService(QuestionService):
         # =============================================================================
         # ✅ COVERAGE/REDUNDANCY IS 100% CODE-TRUTH (asked_categories-driven)
         # =============================================================================
+        # Ensure asked_categories is initialized (defensive check)
+        if asked_categories is None:
+            asked_categories = []
+            logger.warning("asked_categories was None in generate_next_question, initializing to empty list")
         topic_counts = _topic_counts_from_asked_categories(asked_categories)
         topics_covered_truth = list(topic_counts.keys())
         redundant_truth = [t for t, c in topic_counts.items() if c > 1]
@@ -1088,6 +1141,12 @@ class OpenAIQuestionService(QuestionService):
                 max_count = min(max_count, 10)
         # =============================================================================
         step_number = current_count + 1  # 1-based (step 1 = chief complaint, handled separately)
+        logger.info(
+            "Strict sequence: current_count=%d, step_number=%d, max_count=%d",
+            current_count,
+            step_number,
+            max_count,
+        )
         next_topic: Optional[str] = None
         # Step 2: duration (include cause)
         if step_number == 2:
@@ -1124,9 +1183,6 @@ class OpenAIQuestionService(QuestionService):
         elif step_number == 9:
             if is_chronic or is_hereditary:
                 # Return consent question directly (not a topic)
-                lang = self._normalize_language(language)
-                if lang == "sp":
-                    return "¿Le gustaría responder algunas preguntas diagnósticas detalladas relacionadas con sus síntomas?"
                 return "Would you like to answer some detailed diagnostic questions related to your symptoms?"
             elif is_women_health:
                 next_topic = "menstrual_cycle"
@@ -1171,7 +1227,11 @@ class OpenAIQuestionService(QuestionService):
             return self._closing(language)
         # Safety check: beyond max_count (should not reach here normally due to step-based logic)
         elif current_count >= max_count:
-            logger.info("Max count reached (current_count=%d, max_count=%d) - returning closing question", current_count, max_count)
+            logger.warning(
+                "Max count reached (current_count=%d, max_count=%d, step_number=%d) - returning closing question. "
+                "This should not happen for step_number < 10 (non-chronic) or step_number < 13 (chronic with consent).",
+                current_count, max_count, step_number
+            )
             return self._closing(language)
         # Safety check: beyond step 13 (should not reach here normally)
         elif step_number > 13:
@@ -1179,7 +1239,17 @@ class OpenAIQuestionService(QuestionService):
             return self._closing(language)
         # If no topic determined, fallback to closing
         if not next_topic:
-            logger.warning("Strict sequence: no topic for step %d -> closing", step_number)
+            logger.error(
+                "CRITICAL: Strict sequence: no topic determined for step %d (current_count=%d, max_count=%d) -> closing. "
+                "This should not happen - check step logic.",
+                step_number, current_count, max_count
+            )
+            # For early steps (2-9), this is a critical error - don't complete intake
+            if step_number < 10:
+                raise ValueError(
+                    f"Failed to determine topic for step {step_number} (current_count={current_count}, max_count={max_count}). "
+                    f"This indicates a bug in the strict sequence logic."
+                )
             return self._closing(language)
         # Validate topic is allowed and not in avoid list
         allowed = set(ALLOWED_TOPICS)
@@ -1196,6 +1266,9 @@ class OpenAIQuestionService(QuestionService):
         # =============================================================================
         if asked_categories is not None:
             asked_categories.append(next_topic)
+            logger.info("Appended topic '%s' to asked_categories (now: %s)", next_topic, asked_categories)
+        else:
+            logger.warning("asked_categories is None - cannot track topic '%s'", next_topic)
         # =============================================================================
         # Determine deep diagnostic question number if applicable
         deep_diag_num = None
@@ -1231,6 +1304,14 @@ class OpenAIQuestionService(QuestionService):
             patient_id=patient_id,
             question_number=question_number,
         )
+        if not q or not q.strip():
+            logger.error("Question generator returned empty question for topic '%s' at step %d", next_topic, step_number)
+            # Don't return closing question here - let the caller handle it
+            # This is a critical error - we should not complete intake after just 1-2 questions
+            raise ValueError(
+                f"Failed to generate question for topic '{next_topic}' at step {step_number}. "
+                f"This should not happen - check LLM response and question generation logic."
+            )
         validation = await self._safety_validator.validate_question(
             question=q,
             medical_context=medical_context,
@@ -1241,7 +1322,9 @@ class OpenAIQuestionService(QuestionService):
         if not validation.is_valid:
             logger.error("OptionA: safety invalid: %s", validation.issues)
             return self._closing(language)
-        return validation.corrected_question or q
+        final_question = validation.corrected_question or q
+        logger.info("Generated question for step %d (topic: %s): %s", step_number, next_topic, final_question[:100])
+        return final_question
 
     async def should_stop_asking(self, disease: str, previous_answers: List[str], current_count: int, max_count: int = 10) -> bool:
         return current_count >= max_count
@@ -1317,25 +1400,14 @@ class OpenAIQuestionService(QuestionService):
 
         # Section configuration from doctor preferences (pre_visit_config)
         raw_sections = (prefs or {}).get("pre_visit_config") or []
-        # Default behavior:
-        # - If NO config present at all -> all sections enabled (fail-open, legacy behavior).
-        # - If ANY config present       -> sections are opt-in and must be explicitly enabled.
-        if raw_sections:
-            default_section_state = {
-                "chief_complaint": False,
-                "hpi": False,
-                "history": False,
-                "review_of_systems": False,
-                "current_medication": False,
-            }
-        else:
-            default_section_state = {
-                "chief_complaint": True,
-                "hpi": True,
-                "history": True,
-                "review_of_systems": True,
-                "current_medication": True,
-            }
+        # Default: all sections enabled when no config present
+        default_section_state = {
+            "chief_complaint": True,
+            "hpi": True,
+            "history": True,
+            "review_of_systems": True,
+            "current_medication": True,
+        }
         enabled_sections = default_section_state.copy()
         try:
             for sec in raw_sections:
@@ -1352,188 +1424,70 @@ class OpenAIQuestionService(QuestionService):
         enable_ros = enabled_sections.get("review_of_systems", True)
         enable_meds = enabled_sections.get("current_medication", True)
 
-        if lang == "sp":
-            # Build dynamic Spanish headings based on enabled sections
-            headings_lines_es: list[str] = []
-            if enable_cc:
-                headings_lines_es.append("Motivo de Consulta:")
-            if enable_hpi:
-                headings_lines_es.append("HPI:")
-            if enable_history:
-                headings_lines_es.append("Historia:")
-            if enable_ros:
-                headings_lines_es.append("Revisión de Sistemas:")
-            if enable_meds:
-                headings_lines_es.append("Medicación Actual:")
-            headings_text_es = "\n".join(headings_lines_es) + ("\n\n" if headings_lines_es else "\n\n")
+        # Build dynamic English headings based on enabled sections
+        headings_lines = []
+        if enable_cc:
+            headings_lines.append("Chief Complaint:")
+        if enable_hpi:
+            headings_lines.append("HPI:")
+        if enable_history:
+            headings_lines.append("History:")
+        if enable_ros:
+            headings_lines.append("Review of Systems:")
+        if enable_meds:
+            headings_lines.append("Current Medication:")
+        headings_text = "\n".join(headings_lines) + ("\n\n" if headings_lines else "\n\n")
 
-            # Dynamic example block based on enabled sections
-            example_lines_es: list[str] = []
-            if enable_cc:
-                example_lines_es.append("Motivo de Consulta: El paciente reporta dolor de cabeza severo por 3 días.")
-            if enable_hpi:
-                example_lines_es.append(
-                    "HPI: El paciente describe una semana de dolores de cabeza persistentes que comienzan en la mañana "
-                    "y empeoran durante el día, llegando hasta 8/10 en los últimos 3 días."
-                )
-            if enable_history:
-                example_lines_es.append(
-                    "Historia: Médica: hipertensión; Quirúrgica: colecistectomía hace cinco años; Estilo de vida: no fumador."
-                )
-            if enable_meds:
-                example_lines_es.append(
-                    "Medicación Actual: En medicamentos: lisinopril 10 mg diario e ibuprofeno según necesidad."
-                )
-            example_block_es = "\n".join(example_lines_es) + ("\n\n" if example_lines_es else "\n\n")
-
-            # Dynamic guidelines text based on enabled sections
-            guidelines_es_lines: list[str] = []
-            if enable_cc:
-                guidelines_es_lines.append(
-                    "- Motivo de Consulta: Una línea en las propias palabras del paciente si está disponible."
-                )
-            if enable_hpi:
-                guidelines_es_lines.append(
-                    "- HPI: UN párrafo legible tejiendo OLDCARTS en prosa."
-                )
-            if enable_history:
-                guidelines_es_lines.append(
-                    "- Historia: Una línea combinando elementos médicos, quirúrgicos, familiares y de estilo de vida "
-                    "(solo si 'Historia' está en los encabezados)."
-                )
-            if enable_ros:
-                guidelines_es_lines.append(
-                    "- Revisión de Sistemas: Una línea narrativa resumiendo positivos/negativos por sistemas "
-                    "(solo si 'Revisión de Sistemas' está en los encabezados)."
-                )
-            if enable_meds:
-                guidelines_es_lines.append(
-                    "- Medicación Actual: Una línea narrativa con medicamentos/suplementos realmente declarados por el "
-                    "paciente o mención de imágenes de medicamentos (solo si 'Medicación Actual' está en los encabezados)."
-                )
-            guidelines_text_es = "\n".join(guidelines_es_lines) + ("\n\n" if guidelines_es_lines else "\n\n")
-
-            prompt = (
-                "Rol y Tarea\n"
-                "Eres un Asistente de Admisión Clínica.\n"
-                "Tu tarea es generar un Resumen Pre-Consulta conciso y clínicamente útil (~180-200 palabras) "
-                "basado estrictamente en las respuestas de admisión proporcionadas.\n\n"
+        lang = self._normalize_language(language)
+        output_language = _get_output_language_name(lang)
+        
+        prompt = (
+                f"Role & Task\n"
+                f"You are a Clinical Intake Assistant.\n"
+                f"Your task is to generate a concise, clinically useful Pre-Visit Summary (~180–200 words) based strictly on "
+                f"the provided intake responses.\n\n"
+                f"Language rules:\n"
+                f"- Write all natural-language text (section content, patient-facing phrasing) in {output_language}.\n"
+                f"- Do NOT translate section headings - use the exact headings provided below.\n"
+                f"- Keep medical terminology appropriate for {output_language}.\n\n"
                 f"{prefs_snippet}"
-                "Reglas Críticas\n"
-                "- No inventes, adivines o expandas más allá de la entrada proporcionada.\n"
-                "- La salida debe ser texto plano con encabezados de sección, una sección por línea "
-                "(sin líneas en blanco adicionales).\n"
-                "- Usa solo los encabezados exactos listados a continuación. No agregues, renombres o "
-                "reordenes encabezados.\n"
-                "- Sin viñetas, numeración o formato markdown.\n"
-                "- Escribe en un tono de entrega clínica: corto, factual, sin duplicados y neutral.\n"
-                "- Incluye una sección SOLO si contiene contenido real de las respuestas del paciente.\n"
-                "- No uses marcadores de posición como \"N/A\", \"No proporcionado\", \"no reportado\", o \"niega\".\n"
-                "- No incluyas secciones para temas que no fueron preguntados o discutidos.\n"
-                "- No incluyas secciones que NO estén presentes en la lista de encabezados proporcionada.\n"
-                "- Usa frases orientadas al paciente: \"El paciente reporta...\", \"Niega...\", \"En medicamentos:...\".\n"
-                "- No incluyas observaciones clínicas, diagnósticos, planes, signos vitales o hallazgos del examen "
-                "(la pre-consulta es solo lo reportado por el paciente).\n"
-                "- Normaliza pronunciaciones médicas obvias a términos correctos sin agregar nueva información.\n\n"
-                "Encabezados (usa MAYÚSCULAS EXACTAS; incluye solo si tienes datos reales de las respuestas del paciente)\n"
-                f"{headings_text_es}"
-                "Pautas de Contenido por Sección (aplican solo a los encabezados listados arriba)\n"
-                f"{guidelines_text_es}"
-                "Ejemplo de Formato\n"
-                "(Estructura y tono solamente—el contenido será diferente; cada sección en una sola línea.)\n"
-                f"{example_block_es}"
-                f"{f'Imágenes de Medicamentos: {medication_images_info}' if medication_images_info else ''}\n\n"
-                f"Respuestas de Admisión:\n{self._format_intake_answers(intake_answers)}"
-            )
-        else:
-            # Build dynamic English headings based on enabled sections
-            headings_lines = []
-            if enable_cc:
-                headings_lines.append("Chief Complaint:")
-            if enable_hpi:
-                headings_lines.append("HPI:")
-            if enable_history:
-                headings_lines.append("History:")
-            if enable_ros:
-                headings_lines.append("Review of Systems:")
-            if enable_meds:
-                headings_lines.append("Current Medication:")
-            headings_text = "\n".join(headings_lines) + ("\n\n" if headings_lines else "\n\n")
-
-            # Dynamic example block based on enabled sections
-            example_lines: list[str] = []
-            if enable_cc:
-                example_lines.append("Chief Complaint: Patient reports severe headache for 3 days.")
-            if enable_hpi:
-                example_lines.append(
-                    "HPI: The patient describes a week of persistent headaches that begin in the morning and worsen through "
-                    "the day, reaching up to 8/10 over the last 3 days."
-                )
-            if enable_history:
-                example_lines.append(
-                    "History: Medical: hypertension; Surgical: cholecystectomy five years ago; Lifestyle: non-smoker."
-                )
-            if enable_meds:
-                example_lines.append(
-                    "Current Medication: On meds: lisinopril 10 mg daily and ibuprofen as needed; allergies included only if "
-                    "the patient explicitly stated them."
-                )
-            example_block = "\n".join(example_lines) + ("\n\n" if example_lines else "\n\n")
-
-            # Dynamic guidelines text based on enabled sections
-            guidelines_lines: list[str] = []
-            if enable_cc:
-                guidelines_lines.append(
-                    "- Chief Complaint: One line in the patient's own words if available."
-                )
-            if enable_hpi:
-                guidelines_lines.append(
-                    "- HPI: ONE readable paragraph weaving OLDCARTS into prose (only if HPI is listed)."
-                )
-            if enable_history:
-                guidelines_lines.append(
-                    "- History: One line combining medical/surgical/family/lifestyle history (only if History is listed)."
-                )
-            if enable_ros:
-                guidelines_lines.append(
-                    "- Review of Systems: One narrative line summarizing system-based positives/negatives "
-                    "(only if Review of Systems is listed)."
-                )
-            if enable_meds:
-                guidelines_lines.append(
-                    "- Current Medication: One narrative line with meds/supplements actually stated by the patient or "
-                    "mention of medication images (only if Current Medication is listed)."
-                )
-            guidelines_text = "\n".join(guidelines_lines) + ("\n\n" if guidelines_lines else "\n\n")
-
-            prompt = (
-                "Role & Task\n"
-                "You are a Clinical Intake Assistant.\n"
-                "Your task is to generate a concise, clinically useful Pre-Visit Summary (~180–200 words) based strictly on "
-                "the provided intake responses.\n\n"
-                f"{prefs_snippet}"
-                "Critical Rules\n"
-                "- Do not invent, guess, or expand beyond the provided input.\n"
-                "- Output must be plain text with section headings, one section per line (no extra blank lines).\n"
-                "- Use only the exact headings listed below. Do not add, rename, or reorder headings.\n"
-                "- No bullets, numbering, or markdown formatting.\n"
-                "- Write in a clinical handover tone: short, factual, deduplicated, and neutral.\n"
-                "- Include a section ONLY if it contains actual content from the patient's responses.\n"
-                "- Do not use placeholders like \"N/A\", \"Not provided\", \"not reported\", or \"denies\".\n"
-                "- Do not include sections for topics that were not asked about or discussed.\n"
-                "- Do NOT include sections that are not present in the headings list below (for example, omit 'History' if it is not listed).\n"
-                "- Use patient-facing phrasing: \"Patient reports …\", \"Denies …\", \"On meds: …\".\n"
-                "- Do not include clinician observations, diagnoses, plans, vitals, or exam findings "
-                "(previsit is patient-reported only).\n"
-                "- Normalize obvious medical mispronunciations to correct terms (e.g., \"diabities\" -> \"diabetes\") "
-                "without adding new information.\n\n"
-                "Headings (use EXACT casing; include only if you have actual data from patient responses)\n"
+                f"Critical Rules\n"
+                f"- Do not invent, guess, or expand beyond the provided input.\n"
+                f"- Output must be plain text with section headings, one section per line (no extra blank lines).\n"
+                f"- Use only the exact headings listed below. Do not add, rename, or reorder headings.\n"
+                f"- No bullets, numbering, or markdown formatting.\n"
+                f"- Write in a clinical handover tone: short, factual, deduplicated, and neutral.\n"
+                f"- Include a section ONLY if it contains actual content from the patient's responses.\n"
+                f"- Do not use placeholders like \"N/A\", \"Not provided\", \"not reported\", or \"denies\".\n"
+                f"- Do not include sections for topics that were not asked about or discussed.\n"
+                f"- Do NOT include sections that are not present in the headings list below (for example, omit 'History' if it is not listed).\n"
+                f"- Use patient-facing phrasing: \"Patient reports …\", \"Denies …\", \"On meds: …\" (in {output_language}).\n"
+                f"- Do not include clinician observations, diagnoses, plans, vitals, or exam findings "
+                f"(previsit is patient-reported only).\n"
+                f"- Normalize obvious medical mispronunciations to correct terms (e.g., \"diabities\" -> \"diabetes\") "
+                f"without adding new information.\n\n"
+                f"Headings (use EXACT casing; include only if you have actual data from patient responses)\n"
                 f"{headings_text}"
-                "Content Guidelines per Section (apply only to the headings listed above)\n"
-                f"{guidelines_text}"
+                f"Content Guidelines per Section (apply only to the headings listed above)\n"
+                "- Chief Complaint: One line in the patient's own words if available.\n"
+                "- HPI: ONE readable paragraph weaving OLDCARTS into prose (only if HPI is listed).\n"
+                "- History: One line combining medical/surgical/family/lifestyle history (only if History is listed).\n"
+                "- Review of Systems: One narrative line summarizing system-based positives/negatives (only if Review of Systems is listed).\n"
+                "- Current Medication: One narrative line with meds/supplements actually stated by the patient or mention of "
+                "medication images (only if Current Medication is listed).\n\n"
                 "Example Format\n"
                 "(Structure and tone only—content will differ; each section on a single line.)\n"
-                f"{example_block}"
+                "Chief Complaint: Patient reports severe headache for 3 days.\n"
+                "HPI: The patient describes a week of persistent headaches that begin in the morning and worsen through the "
+                "day, reaching up to 8/10 over the last 3 days. Pain is over both temples and feels different from prior "
+                "migraines; fatigue is prominent and nausea is denied. Episodes are aggravated by stress and later in the "
+                "day, with minimal relief from over-the-counter analgesics and some relief using cold compresses. No "
+                "radiation is reported, evenings are typically worse, and there have been no recent changes in medications "
+                "or lifestyle.\n"
+                "History: Medical: hypertension; Surgical: cholecystectomy five years ago; Lifestyle: non-smoker, occasional "
+                "alcohol, high-stress job.\n"
+                "Current Medication: On meds: lisinopril 10 mg daily and ibuprofen as needed; allergies included only if the "
+                "patient explicitly stated them.\n\n"
                 f"{f'Medication Images: {medication_images_info}' if medication_images_info else ''}\n\n"
                 f"Intake Responses:\n{self._format_intake_answers(intake_answers)}"
             )
@@ -1565,17 +1519,6 @@ class OpenAIQuestionService(QuestionService):
             )
             response_text = (resp.choices[0].message.content or "").strip()
             cleaned = self._clean_summary_markdown(response_text)
-
-            # Post-process to hard-enforce disabled sections (History, Current Medication, etc.)
-            cleaned = self._strip_disabled_sections(
-                cleaned,
-                lang=lang,
-                enable_cc=enable_cc,
-                enable_hpi=enable_hpi,
-                enable_history=enable_history,
-                enable_ros=enable_ros,
-                enable_meds=enable_meds,
-            )
 
             return {
                 "summary": cleaned,
@@ -1715,45 +1658,7 @@ class OpenAIQuestionService(QuestionService):
         """Use LLM to analyze question-answer pairs for subtle abusive language."""
         lang = self._normalize_language(language)
 
-        if lang == "sp":
-            prompt = f"""
-Analiza estas respuestas de admisión del paciente para detectar LENGUAJE ABUSIVO O INAPROPIADO:
-
-IMPORTANTE: Busca lenguaje abusivo, ofensivo, o inapropiado, incluyendo:
-- Profanidad directa o disfrazada
-- Insultos, desprecios, o lenguaje degradante
-- Lenguaje sexual inapropiado
-- Comentarios racistas, sexistas, o discriminatorios
-- Amenazas o lenguaje agresivo
-- Sarcasmo ofensivo o pasivo-agresivo
-- Lenguaje que sea inapropiado en un contexto médico
-
-NO marques como abusivo:
-- Lenguaje médico técnico
-- Descripciones de síntomas
-- Respuestas apropiadas a preguntas médicas
-- Expresiones de dolor o frustración legítima
-
-Para cada respuesta, determina si contiene lenguaje abusivo o inapropiado.
-
-Responde SOLO en formato JSON con este esquema:
-{{
-    "abusive_language": [
-        {{
-            "question": "pregunta completa",
-            "answer": "respuesta completa",
-            "reason": "explicación específica de por qué es lenguaje abusivo"
-        }}
-    ]
-}}
-
-Si no hay lenguaje abusivo, devuelve: {{"abusive_language": []}}
-
-Respuestas a analizar:
-{self._format_qa_pairs(questions_asked)}
-"""
-        else:
-            prompt = f"""
+        prompt = f"""
 Analyze these patient intake responses for ABUSIVE OR INAPPROPRIATE LANGUAGE:
 
 IMPORTANT: Look for abusive, offensive, or inappropriate language, including:
@@ -1851,11 +1756,7 @@ Responses to analyze:
 
     def _get_llm_abusive_language_message(self, reason: str, language: str = "en") -> str:
         """Get message for LLM-detected abusive language."""
-        lang = self._normalize_language(language)
-        if lang == "sp":
-            return f"⚠️ BANDERA ROJA: Lenguaje abusivo detectado. Razón: {reason}"
-        else:
-            return f"⚠️ RED FLAG: Abusive language detected. Reason: {reason}"
+        return f"⚠️ RED FLAG: Abusive language detected. Reason: {reason}"
 
     def _contains_abusive_language(self, text: str, language: str = "en") -> bool:
         """Check if text contains abusive or inappropriate language."""
@@ -1888,41 +1789,11 @@ Responses to analyze:
             "goddamn",
         ]
 
-        spanish_abusive = [
-            "puta",
-            "puto",
-            "mierda",
-            "joder",
-            "coño",
-            "cabrón",
-            "hijo de puta",
-            "estúpido",
-            "idiota",
-            "imbécil",
-            "retrasado",
-            "maricón",
-            "joto",
-            "pinche",
-            "chingado",
-            "verga",
-            "pendejo",
-            "culero",
-            "mamón",
-        ]
-
-        abusive_words = spanish_abusive if lang == "sp" else english_abusive
-
-        return any(word in text_lower for word in abusive_words)
+        return any(word in text_lower for word in english_abusive)
 
     def _get_abusive_language_message(self, language: str = "en") -> str:
         """Get message for abusive language red flag."""
-        lang = self._normalize_language(language)
-        if lang == "sp":
-            return (
-                "⚠️ BANDERA ROJA: El paciente utilizó lenguaje inapropiado o abusivo en sus respuestas."
-            )
-        else:
-            return "⚠️ RED FLAG: Patient used inappropriate or abusive language in their responses."
+        return "⚠️ RED FLAG: Patient used inappropriate or abusive language in their responses."
 
     # ----------------------
     # Helpers
@@ -2114,55 +1985,3 @@ Responses to analyze:
 
         flush_section()
         return "\n".join(cleaned)
-
-    def _strip_disabled_sections(
-        self,
-        summary: str,
-        lang: str,
-        enable_cc: bool,
-        enable_hpi: bool,
-        enable_history: bool,
-        enable_ros: bool,
-        enable_meds: bool,
-    ) -> str:
-        """
-        Final safety net: remove any section headings that are disabled in doctor preferences.
-        This protects against the LLM occasionally emitting a disallowed section.
-        """
-        if not summary:
-            return summary
-
-        is_spanish = self._normalize_language(lang) == "sp"
-        lines = summary.splitlines()
-        out_lines: List[str] = []
-
-        for line in lines:
-            stripped = line.lstrip()
-            # English headings
-            if not is_spanish:
-                if not enable_cc and stripped.startswith("Chief Complaint:"):
-                    continue
-                if not enable_hpi and stripped.startswith("HPI:"):
-                    continue
-                if not enable_history and stripped.startswith("History:"):
-                    continue
-                if not enable_ros and stripped.startswith("Review of Systems:"):
-                    continue
-                if not enable_meds and stripped.startswith("Current Medication:"):
-                    continue
-            else:
-                # Spanish headings
-                if not enable_cc and stripped.startswith("Motivo de Consulta:"):
-                    continue
-                if not enable_hpi and stripped.startswith("HPI:"):
-                    continue
-                if not enable_history and stripped.startswith("Historia:"):
-                    continue
-                if not enable_ros and stripped.startswith("Revisión de Sistemas:"):
-                    continue
-                if not enable_meds and stripped.startswith("Medicación Actual:"):
-                    continue
-
-            out_lines.append(line)
-
-        return "\n".join(out_lines)
