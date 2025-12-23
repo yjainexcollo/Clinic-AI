@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { apiClient } from '../lib/api';
-import type { VitalsRequest, SoapTemplate } from '../lib/api';
+import type { VitalsRequest } from '../lib/api';
 import { useAppStore } from '../lib/store';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -25,24 +25,6 @@ export const SoapNote: React.FC = () => {
     height: '',
   });
   const [showVitalsForm, setShowVitalsForm] = useState(false);
-
-  // Optional per-visit SOAP template (ad-hoc, not stored as a global default)
-  const [useTemplate, setUseTemplate] = useState(false);
-  const [templateName, setTemplateName] = useState<string>('');
-  const [templateCategory, setTemplateCategory] = useState<string>('');
-  const [templateSpeciality, setTemplateSpeciality] = useState<string>('');
-  const [templateDescription, setTemplateDescription] = useState<string>('');
-  const [soapTemplateContent, setSoapTemplateContent] = useState<{
-    subjective: string;
-    objective: string;
-    assessment: string;
-    plan: string;
-  }>({
-    subjective: '',
-    objective: '',
-    assessment: '',
-    plan: '',
-  });
 
   const patientId = currentPatient?.patient_id || location.state?.patient_id;
   const visitId = currentVisit?.visit_id || location.state?.visit_id;
@@ -84,33 +66,10 @@ export const SoapNote: React.FC = () => {
 
   const generateSoapMutation = useMutation({
     mutationFn: () => {
-      const payload: { patient_id: string; visit_id: string; template?: SoapTemplate } = {
+      const payload = {
         patient_id: patientId!,
         visit_id: visitId!,
       };
-
-      // Only attach template if explicitly enabled and at least one section has content
-      const hasTemplateContent =
-        !!soapTemplateContent.subjective.trim() ||
-        !!soapTemplateContent.objective.trim() ||
-        !!soapTemplateContent.assessment.trim() ||
-        !!soapTemplateContent.plan.trim();
-
-      if (useTemplate && hasTemplateContent) {
-        payload.template = {
-          template_name: templateName || 'Ad-hoc SOAP Template',
-          category: templateCategory || undefined,
-          speciality: templateSpeciality || undefined,
-          description: templateDescription || undefined,
-          soap_content: {
-            subjective: soapTemplateContent.subjective || undefined,
-            objective: soapTemplateContent.objective || undefined,
-            assessment: soapTemplateContent.assessment || undefined,
-            plan: soapTemplateContent.plan || undefined,
-          },
-          uploaded_at: new Date().toISOString(),
-        };
-      }
 
       return apiClient.generateSoapNote(payload);
     },
@@ -418,125 +377,16 @@ export const SoapNote: React.FC = () => {
               </h2>
               <p className="text-gray-600 mb-4">
                 Generate a SOAP note from the consultation transcript and vitals data.
-                Optionally, apply a one-time custom template for this visit.
               </p>
 
-              {/* One-time template controls */}
-              <div className="border-t border-gray-200 pt-4 mt-4">
-                <div className="flex items-center justify-between mb-3">
-                  <label className="flex items-center gap-2 text-sm text-gray-800">
-                    <input
-                      type="checkbox"
-                      className="rounded border-gray-300 text-medical-primary focus:ring-medical-primary"
-                      checked={useTemplate}
-                      onChange={(e) => setUseTemplate(e.target.checked)}
-                    />
-                    Use custom SOAP template for this generation only
-                  </label>
-                  <span className="text-xs text-gray-500">
-                    If disabled, the default AI format is used.
-                  </span>
-                </div>
-
-                {useTemplate && (
-                  <div className="space-y-4 mt-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <Input
-                        label="Template Name"
-                        value={templateName}
-                        onChange={(e) => setTemplateName(e.target.value)}
-                        placeholder="e.g., General Template"
-                      />
-                      <Input
-                        label="Category"
-                        value={templateCategory}
-                        onChange={(e) => setTemplateCategory(e.target.value)}
-                        placeholder="e.g., General / Primary Care"
-                      />
-                      <Input
-                        label="Speciality"
-                        value={templateSpeciality}
-                        onChange={(e) => setTemplateSpeciality(e.target.value)}
-                        placeholder="e.g., Primary Care"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Description (optional)
-                      </label>
-                      <textarea
-                        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-medical-primary focus:border-medical-primary min-h-[60px]"
-                        value={templateDescription}
-                        onChange={(e) => setTemplateDescription(e.target.value)}
-                        placeholder="Explain how you want this SOAP template to be used."
-                      />
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Subjective Template
-                        </label>
-                        <textarea
-                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-medical-primary focus:border-medical-primary min-h-[100px]"
-                          value={soapTemplateContent.subjective}
-                          onChange={(e) =>
-                            setSoapTemplateContent((prev) => ({ ...prev, subjective: e.target.value }))
-                          }
-                          placeholder="e.g., Patient reports [symptoms] for [duration]..."
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Objective Template
-                        </label>
-                        <textarea
-                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-medical-primary focus:border-medical-primary min-h-[100px]"
-                          value={soapTemplateContent.objective}
-                          onChange={(e) =>
-                            setSoapTemplateContent((prev) => ({ ...prev, objective: e.target.value }))
-                          }
-                          placeholder="e.g., Vital signs: [blood_pressure], [heart_rate]..."
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Assessment Template
-                        </label>
-                        <textarea
-                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-medical-primary focus:border-medical-primary min-h-[100px]"
-                          value={soapTemplateContent.assessment}
-                          onChange={(e) =>
-                            setSoapTemplateContent((prev) => ({ ...prev, assessment: e.target.value }))
-                          }
-                          placeholder="e.g., Clinical impression: [assessment]..."
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Plan Template
-                        </label>
-                        <textarea
-                          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-medical-primary focus:border-medical-primary min-h-[100px]"
-                          value={soapTemplateContent.plan}
-                          onChange={(e) =>
-                            setSoapTemplateContent((prev) => ({ ...prev, plan: e.target.value }))
-                          }
-                          placeholder="e.g., Plan: [treatments], [follow_up]..."
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="mt-6 flex justify-end">
-                  <Button
-                    onClick={() => generateSoapMutation.mutate()}
-                    isLoading={generateSoapMutation.isPending}
-                    size="lg"
-                  >
-                    Generate SOAP Note
-                  </Button>
-                </div>
+              <div className="mt-6 flex justify-end">
+                <Button
+                  onClick={() => generateSoapMutation.mutate()}
+                  isLoading={generateSoapMutation.isPending}
+                  size="lg"
+                >
+                  Generate SOAP Note
+                </Button>
               </div>
             </div>
           </div>

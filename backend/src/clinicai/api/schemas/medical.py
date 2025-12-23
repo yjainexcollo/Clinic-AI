@@ -83,13 +83,6 @@ class SOAPNoteRequest(BaseModel):
     patient_id: str = Field(..., min_length=10, max_length=200, description="Opaque/encrypted Patient ID (can be longer when encoded)")
     visit_id: str = Field(..., min_length=10, max_length=200, description="Opaque/encrypted Visit ID (can be longer when encoded)")
     transcript: Optional[str] = Field(None, description="Optional transcript text. If not provided, will use stored transcript from visit.")
-    template: Optional[SoapTemplateSchema] = Field(
-        None,
-        description=(
-            "Optional per-visit SOAP template. If provided, the generator will "
-            "follow this structure; if omitted, default behavior is used."
-        ),
-    )
 
 
 class SOAPNoteResponse(BaseModel):

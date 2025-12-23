@@ -46,6 +46,34 @@ function parsePythonDict(str: string): any {
   }
 }
 
+const translateLabel = (key: string, t: (key: string) => string): string => {
+  const normalized = key.replace(/_/g, " ").trim().toLowerCase();
+  const map: Record<string, string> = {
+    "blood pressure": t("vitals.blood_pressure"),
+    "systolic": t("vitals.systolic"),
+    "diastolic": t("vitals.diastolic"),
+    "heart rate": t("vitals.heart_rate"),
+    "pulse": t("vitals.heart_rate"),
+    "temperature": t("vitals.temperature"),
+    "oxygen": t("vitals.oxygen_saturation"),
+    "spo2": t("vitals.oxygen_saturation"),
+    "oxygen saturation": t("vitals.oxygen_saturation"),
+    "weight": t("vitals.weight"),
+    "height": t("vitals.height"),
+    "bmi": t("vitals.calculated_bmi"),
+    "respiratory rate": t("vitals.respiratory_rate"),
+    "general appearance": t("physical.general_appearance"),
+    "heent": t("physical.heent"),
+    "cardiac": t("physical.cardiac"),
+    "respiratory": t("physical.respiratory"),
+    "abdominal": t("physical.abdominal"),
+    "neuro": t("physical.neuro"),
+    "extremities": t("physical.extremities"),
+    "gait": t("physical.gait"),
+  };
+  return map[normalized] || key.replace(/_/g, " ");
+};
+
 function renderObjective(obj: any, t: (key: string) => string): React.ReactNode {
   if (obj == null) return <span className="opacity-60">{t('soap.not_discussed')}</span>;
   let data: any = obj;
@@ -93,11 +121,11 @@ function renderObjective(obj: any, t: (key: string) => string): React.ReactNode 
       <div className="space-y-3">
         {vital && typeof vital === "object" && (
           <div>
-            <div className="text-sm font-semibold mb-1">Vital Signs</div>
+            <div className="text-sm font-semibold mb-1">{t("soap.vital_signs")}</div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {Object.entries(vital).map(([k, v]) => (
                 <div key={k} className="flex items-start gap-2 text-sm">
-                  <span className="min-w-28 font-medium capitalize text-gray-700">{k.replace(/_/g, " ")}</span>
+                  <span className="min-w-28 font-medium capitalize text-gray-700">{translateLabel(k, t)}</span>
                   <span className="flex-1">{String(v)}</span>
                 </div>
               ))}
@@ -106,12 +134,12 @@ function renderObjective(obj: any, t: (key: string) => string): React.ReactNode 
         )}
         {physical && (
           <div>
-            <div className="text-sm font-semibold mb-1">Physical Exam</div>
+            <div className="text-sm font-semibold mb-1">{t("soap.physical_examination")}</div>
             {typeof physical === "object" && !Array.isArray(physical) ? (
               <div className="space-y-2">
                 {Object.entries(physical).map(([k, v]) => (
                   <div key={k} className="flex items-start gap-2 text-sm">
-                    <span className="min-w-28 font-medium capitalize text-gray-700">{k.replace(/_/g, " ")}</span>
+                    <span className="min-w-28 font-medium capitalize text-gray-700">{translateLabel(k, t)}</span>
                     <span className="flex-1">{String(v)}</span>
                   </div>
                 ))}
@@ -125,13 +153,13 @@ function renderObjective(obj: any, t: (key: string) => string): React.ReactNode 
           <div className="space-y-2">
             {Object.entries(data).map(([k, v]) => (
               <div key={k} className="flex items-start gap-2 text-sm">
-                <span className="min-w-28 font-medium capitalize text-gray-700">{k.replace(/_/g, " ")}</span>
+                <span className="min-w-28 font-medium capitalize text-gray-700">{translateLabel(k, t)}</span>
                 <span className="flex-1">
                   {typeof v === "object" && v !== null ? (
                     <div className="space-y-1">
                       {Object.entries(v).map(([subK, subV]) => (
                         <div key={subK} className="flex items-start gap-2">
-                          <span className="min-w-20 text-xs font-medium text-gray-600">{subK.replace(/_/g, " ")}</span>
+                          <span className="min-w-20 text-xs font-medium text-gray-600">{translateLabel(subK, t)}</span>
                           <span className="text-xs">{String(subV)}</span>
                         </div>
                       ))}

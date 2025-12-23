@@ -26,6 +26,7 @@ class CreateWalkInVisitRequestSchema(BaseModel):
     mobile: str = Field(..., description="Patient mobile number")
     age: int = Field(None, description="Patient age")
     gender: str = Field(None, description="Patient gender")
+    language: str = Field("en", description="Patient language preference (e.g., 'en', 'sp')")
 
 
 class CreateWalkInVisitResponseSchema(BaseModel):
@@ -68,7 +69,8 @@ async def create_walk_in_visit(
             name=request.name,
             mobile=request.mobile,
             age=request.age,
-            gender=request.gender
+            gender=request.gender,
+            language=request.language or "en"
         )
         
         # Execute use case

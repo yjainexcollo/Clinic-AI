@@ -17,6 +17,7 @@ class SoapService(ABC):
         intake_data: Optional[Dict[str, Any]] = None,
         pre_visit_summary: Optional[Dict[str, Any]] = None,
         vitals: Optional[Dict[str, Any]] = None,
+        language: str = "en",
         doctor_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
@@ -28,6 +29,8 @@ class SoapService(ABC):
             intake_data: Pre-visit intake responses
             pre_visit_summary: Pre-visit summary from Step-02
             vitals: Objective vitals captured via vitals form
+            language: Language code for output (e.g., 'en', 'es', 'sp')
+            doctor_id: Optional doctor identifier for preference lookup
             
         Returns:
             Dict containing structured SOAP note data

@@ -51,11 +51,14 @@ class RegisterPatientUseCase:
             )
             settings = get_settings()
             visit.intake_session.max_questions = settings.intake.max_questions
-            # Update patient's language preference for this visit
-            existing_patient.language = request.language
+            # Update patient's language preference for this visit (normalize to 'sp' for consistency)
+            normalized_language = request.language or "en"
+            if normalized_language in ['es', 'sp']:
+                normalized_language = 'sp'  # Store as 'sp' for consistency
+            existing_patient.language = normalized_language
             first_question = await self._question_service.generate_first_question(
                 disease=visit.symptom or "general consultation",
-                language=request.language
+                language=normalized_language
             )
             visit.set_pending_question(first_question)
             

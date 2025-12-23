@@ -4,6 +4,29 @@ interface TranscriptViewProps {
   content: string;
 }
 
+type Speaker = "Doctor" | "Patient" | "Family Member";
+
+// Normalize possible role labels (including Spanish) to the canonical speaker names
+function canonicalizeSpeaker(raw: string | undefined | null): Speaker | null {
+  if (!raw) return null;
+  const key = raw.trim().toLowerCase();
+  const aliases: Record<string, Speaker> = {
+    doctor: "Doctor",
+    doctora: "Doctor",
+    dr: "Doctor",
+    "dr.": "Doctor",
+    medico: "Doctor",
+    "médico": "Doctor",
+    patient: "Patient",
+    paciente: "Patient",
+    pt: "Patient",
+    "family member": "Family Member",
+    familiar: "Family Member",
+    "miembro de la familia": "Family Member",
+  };
+  return aliases[key] ?? null;
+}
+
 function parseDialogue(content: string): Array<{ speaker: "Doctor" | "Patient" | "Family Member"; text: string }>
 {
   const items: Array<{ speaker: "Doctor" | "Patient" | "Family Member"; text: string }> = [];
@@ -12,17 +35,18 @@ function parseDialogue(content: string): Array<{ speaker: "Doctor" | "Patient" |
   // 1) Try to extract ordered pairs via regex even if JSON has duplicate keys
   // This preserves order when LLM returns an object like { "Doctor": "..", "Patient": "..", "Doctor": ".." }
   // It also works on pretty-printed strings.
-  const pairRe = /"(Doctor|Patient|Family Member)"\s*:\s*"([\s\S]*?)"\s*(?:,|\}|$)/g;
+  const pairRe = /"([^"]+)"\s*:\s*"([\s\S]*?)"\s*(?:,|\}|$)/g;
   try {
     let m: RegExpExecArray | null;
     while ((m = pairRe.exec(raw)) !== null) {
-      const role = (m[1] === "Doctor" || m[1] === "Family Member") ? (m[1] as any) : "Patient";
+      const canonical = canonicalizeSpeaker(m[1]);
+      if (!canonical) continue;
       // Unescape common JSON escapes
       const text = m[2]
         .replace(/\\n/g, "\n")
         .replace(/\\t/g, "\t")
         .replace(/\\\"/g, '"');
-      items.push({ speaker: role, text });
+      items.push({ speaker: canonical, text });
     }
     if (items.length > 0) return items;
   } catch {
@@ -36,9 +60,9 @@ function parseDialogue(content: string): Array<{ speaker: "Doctor" | "Patient" |
       for (const item of data) {
         if (item && typeof item === "object") {
           for (const [k, v] of Object.entries(item)) {
-            const key = k.trim();
-            if ((key === "Doctor" || key === "Patient" || key === "Family Member") && typeof v === "string") {
-              items.push({ speaker: key as "Doctor" | "Patient" | "Family Member", text: v });
+            const canonical = canonicalizeSpeaker(k);
+            if (canonical && typeof v === "string") {
+              items.push({ speaker: canonical, text: v });
             }
           }
         }
@@ -47,9 +71,9 @@ function parseDialogue(content: string): Array<{ speaker: "Doctor" | "Patient" |
     }
     if (data && typeof data === "object") {
       for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
-        const key = k.trim();
-        if ((key === "Doctor" || key === "Patient" || key === "Family Member") && typeof v === "string") {
-          items.push({ speaker: key as "Doctor" | "Patient" | "Family Member", text: v });
+        const canonical = canonicalizeSpeaker(k);
+        if (canonical && typeof v === "string") {
+          items.push({ speaker: canonical, text: v });
         }
       }
       if (items.length > 0) return items;
@@ -63,12 +87,12 @@ function parseDialogue(content: string): Array<{ speaker: "Doctor" | "Patient" |
   const out: Array<{ speaker: "Doctor" | "Patient" | "Family Member"; text: string }> = [];
   let next: "Doctor" | "Patient" | "Family Member" = "Doctor";
   for (const line of lines) {
-    const m = line.match(/^\s*(Doctor|Patient|Family Member)\s*:\s*(.*)$/i);
+    const m = line.match(/^\s*([^:]+)\s*:\s*(.*)$/);
     if (m) {
-      const low = m[1].toLowerCase();
-      const sp = low === "doctor" ? "Doctor" : (low === "family member" ? "Family Member" : "Patient");
-      out.push({ speaker: sp, text: m[2] });
-      next = sp === "Doctor" ? "Patient" : "Doctor";
+      const canonical = canonicalizeSpeaker(m[1]);
+      const speaker = canonical ?? next;
+      out.push({ speaker, text: m[2] });
+      next = speaker === "Doctor" ? "Patient" : "Doctor";
     } else {
       out.push({ speaker: next, text: line });
       next = next === "Doctor" ? "Patient" : "Doctor";

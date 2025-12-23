@@ -4,11 +4,13 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiClient } from '../lib/api';
 import { Button } from '../components/ui/button';
 import { FileText, AlertTriangle, ArrowRight, ArrowLeft, Image as ImageIcon } from 'lucide-react';
+import { useLanguage } from '../contexts/LanguageContext';
 
 export const PreVisitSummary: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [error, setError] = useState<string | null>(null);
+  const { t, language } = useLanguage();
 
   const patientId = location.state?.patient_id;
   const visitId = location.state?.visit_id;
@@ -69,6 +71,25 @@ export const PreVisitSummary: React.FC = () => {
 
   const summary = summaryData?.success ? summaryData.data : null;
 
+  // Localize common section headings inside the generated summary text for Spanish users
+  const translateSummaryText = (text: string | undefined | null): string => {
+    if (!text) return '';
+    if (language !== 'sp') return text;
+    const replacements: Array<[RegExp, string]> = [
+      [/^\s*Chief Complaint\s*:/gim, `${t('previsit.heading.chief_complaint')}:`],
+      [/^\s*HPI\s*:/gim, `${t('previsit.heading.hpi')}:`],
+      [/^\s*History\s*:/gim, `${t('previsit.heading.history')}:`],
+      [/^\s*Current Medication[s]?\s*:/gim, `${t('previsit.heading.current_medication')}:`],
+      [/^\s*Medications?\s*:/gim, `${t('previsit.heading.current_medication')}:`],
+      [/^\s*Plan\s*:/gim, `${t('previsit.heading.plan')}:`],
+    ];
+    let output = text;
+    for (const [re, val] of replacements) {
+      output = output.replace(re, val);
+    }
+    return output;
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#e6f3f8] to-gray-50 py-8 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl mx-auto">
@@ -79,7 +100,7 @@ export const PreVisitSummary: React.FC = () => {
             className="inline-flex items-center text-gray-600 hover:text-gray-900 transition-colors mb-6 group"
           >
             <ArrowLeft className="h-4 w-4 mr-2 group-hover:-translate-x-1 transition-transform" />
-            Back to Home
+            {t('previsit.back_home')}
           </button>
           
           <div className="flex items-center space-x-4 mb-2">
@@ -87,8 +108,8 @@ export const PreVisitSummary: React.FC = () => {
               <FileText className="h-7 w-7 text-white" />
             </div>
             <div>
-              <h1 className="text-3xl md:text-4xl font-bold text-gray-900">Pre-Visit Summary</h1>
-              <p className="text-gray-600 mt-1">Clinical summary prepared for the doctor</p>
+              <h1 className="text-3xl md:text-4xl font-bold text-gray-900">{t('previsit.title')}</h1>
+              <p className="text-gray-600 mt-1">{t('previsit.subtitle')}</p>
             </div>
           </div>
         </div>
@@ -112,10 +133,12 @@ export const PreVisitSummary: React.FC = () => {
                   <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
                     <FileText className="h-5 w-5 text-blue-600" />
                   </div>
-                  <h2 className="text-xl font-semibold text-gray-900">Clinical Summary</h2>
+                  <h2 className="text-xl font-semibold text-gray-900">{t('previsit.clinical_summary')}</h2>
                 </div>
                 <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-6">
-                  <p className="text-gray-800 whitespace-pre-wrap leading-relaxed">{summary.summary}</p>
+                  <p className="text-gray-800 whitespace-pre-wrap leading-relaxed">
+                    {translateSummaryText(summary.summary)}
+                  </p>
                 </div>
               </div>
 
@@ -124,7 +147,7 @@ export const PreVisitSummary: React.FC = () => {
                 <div className="bg-red-50 border-2 border-red-300 rounded-xl p-6">
                   <div className="flex items-center space-x-3 mb-4">
                     <AlertTriangle className="h-6 w-6 text-red-600" />
-                    <h3 className="text-lg font-semibold text-red-900">Red Flags</h3>
+                    <h3 className="text-lg font-semibold text-red-900">{t('previsit.red_flags')}</h3>
                   </div>
                   <ul className="space-y-2">
                     {summary.red_flags.map((flag: any, index: number) => (
@@ -146,7 +169,7 @@ export const PreVisitSummary: React.FC = () => {
                     <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
                       <ImageIcon className="h-5 w-5 text-green-600" />
                     </div>
-                    <h3 className="text-xl font-semibold text-gray-900">Medication Images</h3>
+                    <h3 className="text-xl font-semibold text-gray-900">{t('previsit.medication_images')}</h3>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                     {summary.medication_images.map((img: any) => (
@@ -170,10 +193,10 @@ export const PreVisitSummary: React.FC = () => {
           ) : (
             <div className="text-center py-12">
               <FileText className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-600 mb-6">No summary available. Generating...</p>
+              <p className="text-gray-600 mb-6">{t('previsit.no_summary')}</p>
               <div className="flex flex-col items-center justify-center mt-4">
                 <div className="w-12 h-12 border-4 border-[#2E86AB] border-t-transparent rounded-full animate-spin mb-4"></div>
-                <p className="text-gray-600">Generating summary...</p>
+                <p className="text-gray-600">{t('previsit.generating_summary')}</p>
               </div>
             </div>
           )}
@@ -185,7 +208,7 @@ export const PreVisitSummary: React.FC = () => {
               className="flex-1" 
               size="lg"
             >
-              Continue to Vitals Form
+              {t('previsit.continue_vitals')}
               <ArrowRight className="h-5 w-5 ml-2" />
             </Button>
             <Button
@@ -193,7 +216,7 @@ export const PreVisitSummary: React.FC = () => {
               onClick={() => navigate('/')}
               size="lg"
             >
-              Back to Home
+              {t('previsit.back_home')}
             </Button>
           </div>
         </div>

@@ -76,6 +76,41 @@ class OpenAISoapService(SoapService):
             "fr": "French",
         }
         return mapping.get(language_code, "English")
+    
+    def _get_vitals_labels(self, language_code: str) -> Dict[str, str]:
+        """Get translated vitals labels based on language."""
+        lang = self._normalize_language(language_code)
+        
+        if lang == "es":
+            return {
+                "blood_pressure": "Presión arterial",
+                "heart_rate": "Frecuencia cardíaca",
+                "respiratory_rate": "Frecuencia respiratoria",
+                "temperature": "Temperatura",
+                "oxygen_saturation": "SpO₂",
+                "height": "Altura",
+                "weight": "Peso",
+                "pain_score": "Escala de dolor",
+                "on_room_air": "al aire ambiente",
+                "breaths_per_min": "respiraciones/min",
+                "bpm": "lpm",
+                "observation_notes": "Notas de observación",
+            }
+        else:  # English (default)
+            return {
+                "blood_pressure": "Blood pressure",
+                "heart_rate": "Heart rate",
+                "respiratory_rate": "Respiratory rate",
+                "temperature": "Temperature",
+                "oxygen_saturation": "SpO₂",
+                "height": "Height",
+                "weight": "Weight",
+                "pain_score": "Pain score",
+                "on_room_air": "on room air",
+                "breaths_per_min": "breaths/min",
+                "bpm": "bpm",
+                "observation_notes": "Observation notes",
+            }
 
     async def _get_doctor_preferences(self, doctor_id: Optional[str]) -> Optional[Dict[str, Any]]:
         """Fetch doctor preferences with 1s timeout; fail-open on errors."""
@@ -127,7 +162,7 @@ class OpenAISoapService(SoapService):
             # Add vitals data if available
             if 'vitals' in pre_visit_summary:
                 vitals_data = pre_visit_summary['vitals']['data']
-                vitals_text = self._format_vitals_for_soap(vitals_data)
+                vitals_text = self._format_vitals_for_soap(vitals_data, lang)
                 context_parts.append(f"Vitals Data: {vitals_text}")
         
         if intake_data and intake_data.get('questions_asked'):
@@ -140,6 +175,9 @@ class OpenAISoapService(SoapService):
         if vitals:
             try:
                 v = vitals or {}
+                # Get translated labels based on language
+                labels = self._get_vitals_labels(lang)
+                
                 def _val(k: str) -> Optional[str]:
                     x = v.get(k)
                     if x in (None, ""):
@@ -147,40 +185,42 @@ class OpenAISoapService(SoapService):
                     return str(x)
                 vitals_parts: list[str] = []
                 if _val("systolic") and _val("diastolic"):
-                    arm = f" ({v.get('bpArm')} arm)" if v.get('bpArm') else ""
+                    arm = f" ({v.get('bpArm')} brazo)" if v.get('bpArm') and lang == "es" else (f" ({v.get('bpArm')} arm)" if v.get('bpArm') else "")
                     pos = f" ({v.get('bpPosition')})" if v.get('bpPosition') else ""
-                    vitals_parts.append(f"Blood pressure {_val('systolic')}/{_val('diastolic')} mmHg{arm}{pos}")
+                    vitals_parts.append(f"{labels['blood_pressure']} {_val('systolic')}/{_val('diastolic')} mmHg{arm}{pos}")
                 if _val("heartRate"):
                     rhythm = f" ({v.get('rhythm')})" if v.get('rhythm') else ""
-                    vitals_parts.append(f"Heart rate {_val('heartRate')} bpm{rhythm}")
+                    vitals_parts.append(f"{labels['heart_rate']} {_val('heartRate')} {labels['bpm']}{rhythm}")
                 if _val("respiratoryRate"):
-                    vitals_parts.append(f"Respiratory rate {_val('respiratoryRate')} breaths/min")
+                    vitals_parts.append(f"{labels['respiratory_rate']} {_val('respiratoryRate')} {labels['breaths_per_min']}")
                 if _val("temperature"):
                     unit = (v.get("tempUnit") or "C").replace("°", "")
                     method = f" ({v.get('tempMethod')})" if v.get('tempMethod') else ""
-                    vitals_parts.append(f"Temperature {_val('temperature')}{unit}{method}")
+                    vitals_parts.append(f"{labels['temperature']} {_val('temperature')}{unit}{method}")
                 if _val("oxygenSaturation"):
-                    vitals_parts.append(f"SpO₂ {_val('oxygenSaturation')}% on room air")
+                    vitals_parts.append(f"{labels['oxygen_saturation']} {_val('oxygenSaturation')}% {labels['on_room_air']}")
                 h = _val("height"); w = _val("weight")
                 if h or w:
                     h_unit = v.get("heightUnit") or "cm"
                     w_unit = v.get("weightUnit") or "kg"
                     hw: list[str] = []
                     if h:
-                        hw.append(f"Height {h} {h_unit}")
+                        hw.append(f"{labels['height']} {h} {h_unit}")
                     if w:
-                        hw.append(f"Weight {w} {w_unit}")
+                        hw.append(f"{labels['weight']} {w} {w_unit}")
                     if hw:
                         vitals_parts.append(", ".join(hw))
                 if _val("painScore"):
-                    vitals_parts.append(f"Pain score {_val('painScore')}/10")
+                    vitals_parts.append(f"{labels['pain_score']} {_val('painScore')}/10")
                 if v.get("notes"):
-                    vitals_parts.append(f"Observation notes: {v.get('notes')}")
+                    vitals_parts.append(f"{labels['observation_notes']}: {v.get('notes')}")
                 if vitals_parts:
-                    context_parts.append("Objective Vitals (from form):\n- " + "\n- ".join(vitals_parts))
+                    context_label = "Signos Vitales Objetivos (del formulario):" if lang == "es" else "Objective Vitals (from form):"
+                    context_parts.append(f"{context_label}\n- " + "\n- ".join(vitals_parts))
             except Exception:
                 try:
-                    context_parts.append("Objective Vitals (raw JSON):\n" + json.dumps(vitals))
+                    context_label = "Signos Vitales Objetivos (JSON):" if lang == "es" else "Objective Vitals (raw JSON):"
+                    context_parts.append(f"{context_label}\n" + json.dumps(vitals))
                 except Exception:
                     pass
         
@@ -207,6 +247,7 @@ Language rules:
 - Do NOT translate JSON keys, field names, or structure.
 - Keep JSON keys in English (e.g., "subjective", "objective", "blood_pressure").
 - If the transcript contains mixed languages, still output in {output_language}.
+- IMPORTANT: The vitals data provided in CONTEXT are already formatted in {output_language}. Use them exactly as provided, maintaining the same language.
 
 CONTEXT:
 {context}
@@ -223,7 +264,7 @@ INSTRUCTIONS:
 5. If information is unclear or missing, mark as "Unclear" or "Not discussed" (in {output_language})
 6. Focus on what was actually said during the consultation
 7. In the Objective, include BOTH:
-   - Vital signs from the provided Objective Vitals, if present
+   - Vital signs from the provided Objective Vitals, if present (use them exactly as formatted in CONTEXT)
    - Physical exam and other transcript-derived observable findings (e.g., general appearance, HEENT, cardiac, respiratory, abdominal, neuro, extremities, gait) when mentioned
    If explicit exam elements are not stated, include any transcript-derived objective observations (e.g., affect, speech, respiratory effort) when available.
 8. Incorporate the Objective Vitals provided in CONTEXT succinctly; do not replace transcript-derived exam with vitals—combine them.
@@ -402,46 +443,49 @@ You are a clinical scribe. Generate accurate, structured SOAP notes from medical
 
         return normalized
 
-    def _format_vitals_for_soap(self, vitals_data: Dict[str, Any]) -> str:
+    def _format_vitals_for_soap(self, vitals_data: Dict[str, Any], language: str = "en") -> str:
         """Format vitals data for SOAP note generation."""
+        lang = self._normalize_language(language)
+        labels = self._get_vitals_labels(lang)
         parts = []
         
         # Blood Pressure
         if vitals_data.get('systolic') and vitals_data.get('diastolic'):
-            bp_text = f"Blood pressure {vitals_data['systolic']}/{vitals_data['diastolic']} mmHg"
+            bp_text = f"{labels['blood_pressure']} {vitals_data['systolic']}/{vitals_data['diastolic']} mmHg"
             if vitals_data.get('bpArm'):
-                bp_text += f" ({vitals_data['bpArm']} arm)"
+                arm_label = "brazo" if lang == "es" else "arm"
+                bp_text += f" ({vitals_data['bpArm']} {arm_label})"
             if vitals_data.get('bpPosition'):
                 bp_text += f" ({vitals_data['bpPosition']})"
             parts.append(bp_text)
         
         # Heart Rate
         if vitals_data.get('heartRate'):
-            hr_text = f"Heart rate {vitals_data['heartRate']} bpm"
+            hr_text = f"{labels['heart_rate']} {vitals_data['heartRate']} {labels['bpm']}"
             if vitals_data.get('rhythm'):
                 hr_text += f" ({vitals_data['rhythm']})"
             parts.append(hr_text)
         
         # Respiratory Rate
         if vitals_data.get('respiratoryRate'):
-            parts.append(f"Respiratory rate {vitals_data['respiratoryRate']} breaths/min")
+            parts.append(f"{labels['respiratory_rate']} {vitals_data['respiratoryRate']} {labels['breaths_per_min']}")
         
         # Temperature
         if vitals_data.get('temperature'):
-            temp_text = f"Temperature {vitals_data['temperature']}{vitals_data.get('tempUnit', '°C')}"
+            temp_text = f"{labels['temperature']} {vitals_data['temperature']}{vitals_data.get('tempUnit', '°C')}"
             if vitals_data.get('tempMethod'):
                 temp_text += f" ({vitals_data['tempMethod']})"
             parts.append(temp_text)
         
         # Oxygen Saturation
         if vitals_data.get('oxygenSaturation'):
-            parts.append(f"SpO₂ {vitals_data['oxygenSaturation']}% on room air")
+            parts.append(f"{labels['oxygen_saturation']} {vitals_data['oxygenSaturation']}% {labels['on_room_air']}")
         
         # Height, Weight, BMI
         if vitals_data.get('height') and vitals_data.get('weight'):
             height_text = f"{vitals_data['height']} {vitals_data.get('heightUnit', 'cm')}"
             weight_text = f"{vitals_data['weight']} {vitals_data.get('weightUnit', 'kg')}"
-            parts.append(f"Height {height_text}, Weight {weight_text}")
+            parts.append(f"{labels['height']} {height_text}, {labels['weight']} {weight_text}")
             
             # Calculate BMI if both height and weight are provided
             try:
@@ -461,15 +505,17 @@ You are a clinical scribe. Generate accurate, structured SOAP notes from medical
                 
                 if height_val > 0 and weight_val > 0:
                     bmi = weight_val / (height_val * height_val)
-                    parts.append(f"BMI {bmi:.1f}")
+                    bmi_label = "IMC" if lang == "es" else "BMI"
+                    parts.append(f"{bmi_label} {bmi:.1f}")
             except (ValueError, ZeroDivisionError):
                 pass  # Skip BMI calculation if conversion fails
         
         # Pain Score
         if vitals_data.get('painScore'):
-            parts.append(f"Pain score {vitals_data['painScore']}/10")
+            parts.append(f"{labels['pain_score']} {vitals_data['painScore']}/10")
         
-        return ", ".join(parts) + "." if parts else "No vitals recorded"
+        no_vitals_msg = "No se registraron signos vitales" if lang == "es" else "No vitals recorded"
+        return ", ".join(parts) + "." if parts else no_vitals_msg
 
     async def validate_soap_structure(self, soap_data: Dict[str, Any]) -> bool:
         """Validate SOAP note structure and completeness."""

@@ -99,19 +99,13 @@ class GenerateSoapNoteUseCase:
         intake_data = visit.get_intake_summary() if visit.is_intake_complete() else None
         pre_visit_summary = visit.get_pre_visit_summary()
         vitals = visit.get_vitals()
-        # Optional per-visit SOAP template (may come from request or already stored on visit)
-        template = request.template or getattr(visit, "get_soap_template", lambda: None)()
 
         try:
             # Get patient language for SOAP generation
             patient_language = getattr(patient, 'language', 'en') or 'en'
             # Normalize language code (handle both 'sp' and 'es' for backward compatibility)
             if patient_language in ['es', 'sp']:
-                patient_language = 'sp'
-            
-            # If a template was provided, persist it on the visit for this generation
-            if template is not None and hasattr(visit, "store_soap_template"):
-                visit.store_soap_template(template)
+                patient_language = 'es'
 
             # Generate SOAP note
             soap_result = await self._soap_service.generate_soap_note(
@@ -122,7 +116,6 @@ class GenerateSoapNoteUseCase:
                 vitals=vitals,
                 language=patient_language,
                 doctor_id="D123",  # Temporary hardcoded doctor_id for preferences
-                template=template,
             )
 
             # Validate SOAP structure
@@ -156,7 +149,6 @@ class GenerateSoapNoteUseCase:
                         "pre_visit_summary": pre_visit_summary,
                         "vitals": vitals,
                         "language": patient_language,
-                        "template": template,
                     },
                     response_text=soap_result,
                     metadata={"prompt_version": "soap_v1"},

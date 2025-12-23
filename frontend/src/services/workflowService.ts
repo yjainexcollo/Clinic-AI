@@ -8,6 +8,7 @@ export interface CreateWalkInVisitRequest {
   mobile: string;
   age?: number;
   gender?: string;
+  language?: string;
 }
 
 export interface CreateWalkInVisitResponse {
