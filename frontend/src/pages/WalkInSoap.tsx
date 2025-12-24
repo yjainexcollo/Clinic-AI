@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { BACKEND_BASE_URL, authorizedFetch } from "../services/patientService";
+import { BACKEND_BASE_URL, authorizedFetch, getDoctorPreferences, DoctorPreferencesResponse } from "../services/patientService";
 import { workflowService } from "../services/workflowService";
 import { useLanguage } from "../contexts/LanguageContext";
 
@@ -41,6 +41,7 @@ const WalkInSoap: React.FC = () => {
   const [error, setError] = useState("");
   const [soapData, setSoapData] = useState<any>(null);
   const [workflowInfo, setWorkflowInfo] = useState<any>(null);
+  const [soapOrder, setSoapOrder] = useState<string[]>(["subjective", "objective", "assessment", "plan"]);
 
   // Sync language from localStorage if available (set during patient registration)
   useEffect(() => {
@@ -90,6 +91,36 @@ const WalkInSoap: React.FC = () => {
     };
 
     fetchData();
+    
+    // Load doctor preferences (SOAP order)
+    (async () => {
+      try {
+        const pref: DoctorPreferencesResponse = await getDoctorPreferences();
+        const DEFAULT_SOAP = ["subjective", "objective", "assessment", "plan"];
+        const allowed = new Set(DEFAULT_SOAP);
+        const fromServer = Array.isArray(pref.soap_order) ? pref.soap_order : [];
+        const cleaned: string[] = [];
+        const seen = new Set<string>();
+        for (const key of fromServer) {
+          const lower = (key || "").toString().trim().toLowerCase();
+          if (allowed.has(lower) && !seen.has(lower)) {
+            cleaned.push(lower);
+            seen.add(lower);
+          }
+        }
+        // Append any missing keys in default order
+        for (const key of DEFAULT_SOAP) {
+          if (!seen.has(key)) {
+            cleaned.push(key);
+            seen.add(key);
+          }
+        }
+        setSoapOrder(cleaned.length ? cleaned : DEFAULT_SOAP);
+      } catch {
+        // On any error, silently fall back to default order
+        setSoapOrder(["subjective", "objective", "assessment", "plan"]);
+      }
+    })();
   }, [patientId, visitId]);
 
   const generateSoap = async () => {
@@ -223,94 +254,112 @@ const WalkInSoap: React.FC = () => {
               <h2 className="text-xl font-semibold text-gray-900">{t('soap.title')}</h2>
             </div>
 
-            {/* SOAP Sections */}
+            {/* SOAP Sections - rendered in doctor's preferred order */}
             <div className="space-y-6">
-              {/* Subjective */}
-              <div className="border-l-4 border-blue-500 pl-4">
-                <h3 className="text-lg font-medium text-gray-900 mb-2">{t('soap.subjective')}</h3>
-                <div className="prose max-w-none">
-                  <p className="text-gray-700 whitespace-pre-wrap">{soapData.subjective || t('soap.no_subjective')}</p>
-                </div>
-              </div>
-
-              {/* Objective */}
-              <div className="border-l-4 border-green-500 pl-4">
-                <h3 className="text-lg font-medium text-gray-900 mb-2">{t('soap.objective')}</h3>
-                <div className="prose max-w-none">
-                  {soapData.objective ? (
-                    <div className="text-gray-700">
-                      {typeof soapData.objective === 'string' ? (
-                        <p className="whitespace-pre-wrap">{soapData.objective}</p>
-                      ) : (
-                        <div>
-                          {soapData.objective.vital_signs && (
-                            <div className="mb-4">
-                              <h4 className="font-medium text-gray-900 mb-2">{t('soap.vital_signs')}:</h4>
-                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                                {Object.entries(soapData.objective.vital_signs).map(([key, value]) => (
-                                  <div key={key} className="bg-gray-50 p-2 rounded">
-                                    <span className="font-medium">{translateLabel(key, t)}:</span> {String(value)}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          {soapData.objective.physical_exam && (
-                            <div>
-                              <h4 className="font-medium text-gray-900 mb-2">{t('soap.physical_examination')}:</h4>
-                              {(() => {
-                                let examData = soapData.objective.physical_exam;
-                                // Try to parse if it's a string
-                                if (typeof examData === 'string') {
-                                  try {
-                                    examData = JSON.parse(examData);
-                                  } catch (e) {
-                                    // If parsing fails, display as-is
-                                    return <p className="whitespace-pre-wrap">{examData}</p>;
-                                  }
-                                }
-                                // If it's an object, display with translated labels
-                                if (typeof examData === 'object' && !Array.isArray(examData)) {
-                                  return (
-                                    <div className="space-y-2">
-                                      {Object.entries(examData).map(([key, value]) => (
-                                        <div key={key} className="flex items-start gap-2 text-sm">
-                                          <span className="min-w-32 font-medium text-gray-700">{translateLabel(key, t)}:</span>
-                                          <span className="flex-1">{String(value)}</span>
+              {soapOrder.map((sectionKey) => {
+                const key = sectionKey.toLowerCase();
+                
+                if (key === "subjective") {
+                  return (
+                    <div key="subjective" className="border-l-4 border-blue-500 pl-4">
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">{t('soap.subjective')}</h3>
+                      <div className="prose max-w-none">
+                        <p className="text-gray-700 whitespace-pre-wrap">{soapData.subjective || t('soap.no_subjective')}</p>
+                      </div>
+                    </div>
+                  );
+                }
+                
+                if (key === "objective") {
+                  return (
+                    <div key="objective" className="border-l-4 border-green-500 pl-4">
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">{t('soap.objective')}</h3>
+                      <div className="prose max-w-none">
+                        {soapData.objective ? (
+                          <div className="text-gray-700">
+                            {typeof soapData.objective === 'string' ? (
+                              <p className="whitespace-pre-wrap">{soapData.objective}</p>
+                            ) : (
+                              <div>
+                                {soapData.objective.vital_signs && (
+                                  <div className="mb-4">
+                                    <h4 className="font-medium text-gray-900 mb-2">{t('soap.vital_signs')}:</h4>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                      {Object.entries(soapData.objective.vital_signs).map(([key, value]) => (
+                                        <div key={key} className="bg-gray-50 p-2 rounded">
+                                          <span className="font-medium">{translateLabel(key, t)}:</span> {String(value)}
                                         </div>
                                       ))}
                                     </div>
-                                  );
-                                }
-                                // Fallback to stringified display
-                                return <p className="whitespace-pre-wrap">{JSON.stringify(examData, null, 2)}</p>;
-                              })()}
-                            </div>
-                          )}
-                        </div>
-                      )}
+                                  </div>
+                                )}
+                                {soapData.objective.physical_exam && (
+                                  <div>
+                                    <h4 className="font-medium text-gray-900 mb-2">{t('soap.physical_examination')}:</h4>
+                                    {(() => {
+                                      let examData = soapData.objective.physical_exam;
+                                      // Try to parse if it's a string
+                                      if (typeof examData === 'string') {
+                                        try {
+                                          examData = JSON.parse(examData);
+                                        } catch (e) {
+                                          // If parsing fails, display as-is
+                                          return <p className="whitespace-pre-wrap">{examData}</p>;
+                                        }
+                                      }
+                                      // If it's an object, display with translated labels
+                                      if (typeof examData === 'object' && !Array.isArray(examData)) {
+                                        return (
+                                          <div className="space-y-2">
+                                            {Object.entries(examData).map(([key, value]) => (
+                                              <div key={key} className="flex items-start gap-2 text-sm">
+                                                <span className="min-w-32 font-medium text-gray-700">{translateLabel(key, t)}:</span>
+                                                <span className="flex-1">{String(value)}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        );
+                                      }
+                                      // Fallback to stringified display
+                                      return <p className="whitespace-pre-wrap">{JSON.stringify(examData, null, 2)}</p>;
+                                    })()}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-gray-700">{t('soap.no_objective')}</p>
+                        )}
+                      </div>
                     </div>
-                  ) : (
-                    <p className="text-gray-700">{t('soap.no_objective')}</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Assessment */}
-              <div className="border-l-4 border-yellow-500 pl-4">
-                <h3 className="text-lg font-medium text-gray-900 mb-2">{t('soap.assessment')}</h3>
-                <div className="prose max-w-none">
-                  <p className="text-gray-700 whitespace-pre-wrap">{soapData.assessment || t('soap.no_assessment')}</p>
-                </div>
-              </div>
-
-              {/* Plan */}
-              <div className="border-l-4 border-red-500 pl-4">
-                <h3 className="text-lg font-medium text-gray-900 mb-2">{t('soap.plan')}</h3>
-                <div className="prose max-w-none">
-                  <p className="text-gray-700 whitespace-pre-wrap">{soapData.plan || t('soap.no_plan')}</p>
-                </div>
-              </div>
+                  );
+                }
+                
+                if (key === "assessment") {
+                  return (
+                    <div key="assessment" className="border-l-4 border-yellow-500 pl-4">
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">{t('soap.assessment')}</h3>
+                      <div className="prose max-w-none">
+                        <p className="text-gray-700 whitespace-pre-wrap">{soapData.assessment || t('soap.no_assessment')}</p>
+                      </div>
+                    </div>
+                  );
+                }
+                
+                if (key === "plan") {
+                  return (
+                    <div key="plan" className="border-l-4 border-red-500 pl-4">
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">{t('soap.plan')}</h3>
+                      <div className="prose max-w-none">
+                        <p className="text-gray-700 whitespace-pre-wrap">{soapData.plan || t('soap.no_plan')}</p>
+                      </div>
+                    </div>
+                  );
+                }
+                
+                return null;
+              })}
 
               {/* Highlights and Red Flags */}
               {(soapData.highlights || soapData.red_flags) && (
