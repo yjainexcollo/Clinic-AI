@@ -116,16 +116,38 @@ const DoctorPreferences: React.FC = () => {
         setDoctorId(pref.doctor_id);
         setSoapOrder(pref.soap_order || ["subjective", "objective", "assessment", "plan"]);
 
-        // Ensure we populate config from backend or defaults if empty
+        // Ensure we populate config with ALL sections (backend + defaults)
         if (pref.pre_visit_config && pref.pre_visit_config.length > 0) {
-          setPreVisitConfig(pref.pre_visit_config);
+          const merged: PreVisitSectionConfig[] = PRE_VISIT_SECTIONS.map((s) => {
+            const existing = pref.pre_visit_config.find((c) => c.section_key === s.key);
+            if (existing) {
+              return {
+                section_key: existing.section_key,
+                enabled: existing.enabled,
+                // If backend has no selected_fields, fall back to default fields
+                selected_fields:
+                  Array.isArray(existing.selected_fields) && existing.selected_fields.length > 0
+                    ? existing.selected_fields
+                    : s.fields,
+              };
+            }
+            // Ensure every section key exists at least once
+            return {
+              section_key: s.key,
+              enabled: true,
+              selected_fields: s.fields,
+            };
+          });
+          setPreVisitConfig(merged);
         } else {
           // Fallback default structure if backend sends empty
-          setPreVisitConfig(PRE_VISIT_SECTIONS.map(s => ({
-            section_key: s.key,
-            enabled: true,
-            selected_fields: s.fields,
-          })));
+          setPreVisitConfig(
+            PRE_VISIT_SECTIONS.map((s) => ({
+              section_key: s.key,
+              enabled: true,
+              selected_fields: s.fields,
+            }))
+          );
         }
       } catch (e: any) {
         if (!mounted) return;
@@ -170,26 +192,49 @@ const DoctorPreferences: React.FC = () => {
   };
 
   const toggleSection = (sectionKey: string) => {
-    const nextConfig = preVisitConfig.map(c => {
-      if (c.section_key === sectionKey) {
-        return { ...c, enabled: !c.enabled };
+    setPreVisitConfig((prev) => {
+      const existing = prev.find((c) => c.section_key === sectionKey);
+      if (!existing) {
+        const def = PRE_VISIT_SECTIONS.find((s) => s.key === sectionKey);
+        // Toggling from implicit "on" → "off"
+        return [
+          ...prev,
+          {
+            section_key: sectionKey,
+            enabled: false,
+            selected_fields: def?.fields ?? [],
+          },
+        ];
       }
-      return c;
+      return prev.map((c) =>
+        c.section_key === sectionKey ? { ...c, enabled: !c.enabled } : c
+      );
     });
-    setPreVisitConfig(nextConfig);
   };
 
   const toggleField = (sectionKey: string, field: string) => {
-    const nextConfig = preVisitConfig.map(c => {
-      if (c.section_key === sectionKey) {
-        const currentFields = new Set(c.selected_fields);
-        if (currentFields.has(field)) currentFields.delete(field);
-        else currentFields.add(field);
-        return { ...c, selected_fields: Array.from(currentFields) };
+    setPreVisitConfig((prev) => {
+      const existing = prev.find((c) => c.section_key === sectionKey);
+      if (!existing) {
+        // Create a new section config with just this field selected
+        return [
+          ...prev,
+          {
+            section_key: sectionKey,
+            enabled: true,
+            selected_fields: [field],
+          },
+        ];
       }
-      return c;
+      const currentFields = new Set(existing.selected_fields || []);
+      if (currentFields.has(field)) currentFields.delete(field);
+      else currentFields.add(field);
+      return prev.map((c) =>
+        c.section_key === sectionKey
+          ? { ...c, selected_fields: Array.from(currentFields) }
+          : c
+      );
     });
-    setPreVisitConfig(nextConfig);
   };
 
   if (loading) {
