@@ -75,18 +75,29 @@ export const PreVisitSummary: React.FC = () => {
   const translateSummaryText = (text: string | undefined | null): string => {
     if (!text) return '';
     if (language !== 'sp') return text;
-    const replacements: Array<[RegExp, string]> = [
-      [/^\s*Chief Complaint\s*:/gim, `${t('previsit.heading.chief_complaint')}:`],
-      [/^\s*HPI\s*:/gim, `${t('previsit.heading.hpi')}:`],
-      [/^\s*History\s*:/gim, `${t('previsit.heading.history')}:`],
-      [/^\s*Current Medication[s]?\s*:/gim, `${t('previsit.heading.current_medication')}:`],
-      [/^\s*Medications?\s*:/gim, `${t('previsit.heading.current_medication')}:`],
-      [/^\s*Plan\s*:/gim, `${t('previsit.heading.plan')}:`],
-    ];
+    
+    // Match headings anywhere in the text
+    // Order matters: replace "Current Medication" first, then "Medication" to avoid double replacement
     let output = text;
-    for (const [re, val] of replacements) {
-      output = output.replace(re, val);
-    }
+    
+    // Chief Complaint
+    output = output.replace(/Chief Complaint\s*:/gi, `${t('previsit.heading.chief_complaint')}:`);
+    
+    // HPI
+    output = output.replace(/HPI\s*:/gi, `${t('previsit.heading.hpi')}:`);
+    
+    // History
+    output = output.replace(/History\s*:/gi, `${t('previsit.heading.history')}:`);
+    
+    // Current Medication(s) - must come before "Medication" to avoid partial matches
+    output = output.replace(/Current Medication[s]?\s*:/gi, `${t('previsit.heading.current_medication')}:`);
+    
+    // Medications (standalone) - only match if not already replaced by "Current Medication"
+    output = output.replace(/\bMedications?\s*:/gi, `${t('previsit.heading.current_medication')}:`);
+    
+    // Plan
+    output = output.replace(/Plan\s*:/gi, `${t('previsit.heading.plan')}:`);
+    
     return output;
   };
 

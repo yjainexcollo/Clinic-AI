@@ -4,6 +4,35 @@ import { BACKEND_BASE_URL, authorizedFetch } from "../services/patientService";
 import { workflowService } from "../services/workflowService";
 import { useLanguage } from "../contexts/LanguageContext";
 
+// Translate vital signs and physical exam labels
+const translateLabel = (key: string, t: (key: string) => string): string => {
+  const normalized = key.replace(/_/g, " ").trim().toLowerCase();
+  const map: Record<string, string> = {
+    "blood pressure": t("vitals.blood_pressure"),
+    "systolic": t("vitals.systolic"),
+    "diastolic": t("vitals.diastolic"),
+    "heart rate": t("vitals.heart_rate"),
+    "pulse": t("vitals.heart_rate"),
+    "temperature": t("vitals.temperature"),
+    "oxygen": t("vitals.oxygen_saturation"),
+    "spo2": t("vitals.oxygen_saturation"),
+    "oxygen saturation": t("vitals.oxygen_saturation"),
+    "weight": t("vitals.weight"),
+    "height": t("vitals.height"),
+    "bmi": t("vitals.calculated_bmi"),
+    "respiratory rate": t("vitals.respiratory_rate"),
+    "general appearance": t("physical.general_appearance"),
+    "heent": t("physical.heent"),
+    "cardiac": t("physical.cardiac"),
+    "respiratory": t("physical.respiratory"),
+    "abdominal": t("physical.abdominal"),
+    "neuro": t("physical.neuro"),
+    "extremities": t("physical.extremities"),
+    "gait": t("physical.gait"),
+  };
+  return map[normalized] || key.replace(/_/g, " ");
+};
+
 const WalkInSoap: React.FC = () => {
   const { patientId = "", visitId = "" } = useParams();
   const navigate = useNavigate();
@@ -220,7 +249,7 @@ const WalkInSoap: React.FC = () => {
                               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                                 {Object.entries(soapData.objective.vital_signs).map(([key, value]) => (
                                   <div key={key} className="bg-gray-50 p-2 rounded">
-                                    <span className="font-medium capitalize">{key.replace(/_/g, ' ')}:</span> {String(value)}
+                                    <span className="font-medium">{translateLabel(key, t)}:</span> {String(value)}
                                   </div>
                                 ))}
                               </div>
@@ -229,7 +258,33 @@ const WalkInSoap: React.FC = () => {
                           {soapData.objective.physical_exam && (
                             <div>
                               <h4 className="font-medium text-gray-900 mb-2">{t('soap.physical_examination')}:</h4>
-                              <p className="whitespace-pre-wrap">{JSON.stringify(soapData.objective.physical_exam, null, 2)}</p>
+                              {(() => {
+                                let examData = soapData.objective.physical_exam;
+                                // Try to parse if it's a string
+                                if (typeof examData === 'string') {
+                                  try {
+                                    examData = JSON.parse(examData);
+                                  } catch (e) {
+                                    // If parsing fails, display as-is
+                                    return <p className="whitespace-pre-wrap">{examData}</p>;
+                                  }
+                                }
+                                // If it's an object, display with translated labels
+                                if (typeof examData === 'object' && !Array.isArray(examData)) {
+                                  return (
+                                    <div className="space-y-2">
+                                      {Object.entries(examData).map(([key, value]) => (
+                                        <div key={key} className="flex items-start gap-2 text-sm">
+                                          <span className="min-w-32 font-medium text-gray-700">{translateLabel(key, t)}:</span>
+                                          <span className="flex-1">{String(value)}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  );
+                                }
+                                // Fallback to stringified display
+                                return <p className="whitespace-pre-wrap">{JSON.stringify(examData, null, 2)}</p>;
+                              })()}
                             </div>
                           )}
                         </div>
