@@ -1,3 +1,4 @@
+from __future__ import annotations
 import asyncio
 import logging
 import json
@@ -11,16 +12,17 @@ from clinicai.application.ports.services.question_service import QuestionService
 from clinicai.core.config import get_settings
 from clinicai.core.ai_factory import get_ai_client
 from clinicai.core.constants import (
-ALLOWED_TOPICS,
-TRAVEL_KEYWORDS,
-MENSTRUAL_KEYWORDS,
-HIGH_RISK_COMPLAINT_KEYWORDS,
-SIMILARITY_STOPWORDS,
+    ALLOWED_TOPICS,
+    TRAVEL_KEYWORDS,
+    MENSTRUAL_KEYWORDS,
+    HIGH_RISK_COMPLAINT_KEYWORDS,
+    SIMILARITY_STOPWORDS,
 )
 from clinicai.adapters.db.mongo.repositories.llm_interaction_repository import (
     append_intake_agent_log,
     append_phase_call,
 )
+from clinicai.adapters.db.mongo.models.patient_m import DoctorPreferencesMongo
 from clinicai.adapters.external.prompt_registry import PromptScenario, PROMPT_VERSIONS
 from clinicai.adapters.external.llm_gateway import call_llm_with_telemetry
 logger = logging.getLogger("clinicai")
@@ -28,12 +30,28 @@ logger = logging.getLogger("clinicai")
 # SHARED UTILITIES
 # =============================================================================
 def _normalize_language(language: str) -> str:
+    """
+    Normalize language code for backend LLM prompts.
+    
+    Frontend uses: 'en' or 'sp'
+    Backend normalizes to: 'en' or 'es' (for LLM prompts)
+    
+    Mapping:
+    - 'sp', 'es', 'spanish', 'español', 'es-es', 'es-mx' → 'es'
+    - unknown/empty → 'en' (default)
+    """
     if not language:
         return "en"
     normalized = language.lower().strip()
-    if normalized in ["es", "sp"]:
-        return "sp"
-    return normalized if normalized in ["en", "sp"] else "en"
+    if normalized in ["sp", "es", "spanish", "español", "es-es", "es-mx"]:
+        return "es"
+    return normalized if normalized in ["en", "es"] else "en"
+
+
+def _get_output_language_name(language: str) -> str:
+    """Get human-readable language name for LLM prompts."""
+    lang = _normalize_language(language)
+    return "Spanish" if lang == "es" else "English"
 
 
 def _format_qa_pairs(qa_pairs: List[Dict[str, str]]) -> str:
@@ -601,7 +619,7 @@ class QuestionGenerator:
     # ----------------------------
     # ✅ Topic rulebook + validator
     # ----------------------------
-    _TOPIC_KEYWORDS: Dict[str, List[str]] = {
+    _TOPIC_KEYWORDS_EN: Dict[str, List[str]] = {
         "duration": ["how long", "when did", "since when", "start", "began", "duration"],
         "associated_symptoms": [
             "symptom", "fever", "fatigue", "nausea", "vomit", "cough", "breath",
@@ -622,9 +640,31 @@ class QuestionGenerator:
         "chronic_monitoring": ["monitor", "check", "readings", "hba1c", "fasting", "logs", "follow up"],
         "lab_tests": ["lab", "blood test", "results", "hba1c", "cholesterol", "thyroid", "creatinine", "test results"],
         "screening": ["screening", "eye", "kidney", "feet", "foot", "retina", "complications", "imaging", "stress test"],
-
     }
-    _TOPIC_FALLBACK_Q: Dict[str, str] = {
+
+    _TOPIC_KEYWORDS_ES: Dict[str, List[str]] = {
+        "duration": ["cuánto tiempo", "cuándo", "desde cuándo", "inicio", "comenzó", "duración", "diagnosticaron", "causado", "causa"],
+        "associated_symptoms": [
+            "síntoma", "fiebre", "fatiga", "náusea", "vómito", "tos", "respiración",
+            "mareo", "dolor de cabeza", "micción", "sed", "visión", "pérdida de peso",
+            "hormigueo", "entumecimiento", "hinchazón"
+        ],
+        "current_medications": ["medicamento", "medicina", "tableta", "pastilla", "insulina", "metformina", "dosis", "mg", "unidades", "tomando"],
+        "past_medical_history": ["historial", "diagnosticado", "pasado", "anterior", "cirugía", "hospital", "condición"],
+        "triggers": ["desencadena", "peor", "mejor", "después", "antes", "comida", "ejercicio", "estrés", "sueño"],
+        "travel_history": ["viaje", "viajado", "vuelo", "extranjero", "fuera de la ciudad"],
+        "lifestyle_functional_impact": ["vida diaria", "trabajo", "sueño", "apetito", "actividad", "ejercicio", "dieta", "rutina", "impacto", "función"],
+        "family_history": ["familia", "madre", "padre", "hermanos", "familiar", "pariente"],
+        "allergies": ["alergia", "alérgico", "erupción", "ronchas", "reacción"],
+        "pain_assessment": ["dolor", "severidad", "0 a 10", "escala", "dónde", "ubicación", "irradia"],
+        "temporal": ["patrón", "frecuencia", "con qué frecuencia", "momento", "episodios", "va y viene", "progreso"],
+        "menstrual_cycle": ["período", "menstrual", "ciclo", "embarazada", "última regla", "sangrado"],
+        "past_evaluation": ["pruebas", "escaneo", "rayos x", "laboratorio", "doctor", "evaluación", "informe"],
+        "chronic_monitoring": ["monitorear", "revisar", "lecturas", "hba1c", "ayunas", "registros", "seguimiento"],
+        "lab_tests": ["laboratorio", "análisis de sangre", "resultados", "hba1c", "colesterol", "tiroides", "creatinina", "resultados de pruebas"],
+        "screening": ["detección", "ojos", "riñones", "pies", "pie", "retina", "complicaciones", "imágenes", "prueba de esfuerzo"],
+    }
+    _TOPIC_FALLBACK_Q_EN: Dict[str, str] = {
         "duration": "How long have you had this problem?",
         "associated_symptoms": "What other symptoms have you noticed along with this?",
         "current_medications": "Are you currently taking any medicines or insulin? If yes, which ones and what doses?",
@@ -641,20 +681,43 @@ class QuestionGenerator:
         "chronic_monitoring": "Do you regularly monitor your condition (e.g., sugar readings)? If yes, what are typical values?",
         "lab_tests": "Have you had any recent lab tests for this condition (like blood tests), and what do you remember about the results?",
         "screening": "Have you had any screening tests for complications (like eye, heart, or kidney exams) recently?",
-
     }
 
-    def _question_matches_topic(self, chosen_topic: str, question: str) -> bool:
+    _TOPIC_FALLBACK_Q_ES: Dict[str, str] = {
+        "duration": "¿Cuánto tiempo ha tenido este problema?",
+        "associated_symptoms": "¿Qué otros síntomas ha notado junto con esto?",
+        "current_medications": "¿Está tomando actualmente algún medicamento o insulina? Si es así, ¿cuáles y qué dosis?",
+        "past_medical_history": "¿Tiene alguna condición médica pasada o cirugías que deba conocer?",
+        "triggers": "¿Ha notado algo que lo mejore o empeore (comida, estrés, actividad, hora del día)?",
+        "travel_history": "¿Ha viajado a algún lugar recientemente (en las últimas semanas)?",
+        "lifestyle_functional_impact": "¿Cómo está afectando esto su rutina diaria: sueño, trabajo, dieta o actividad?",
+        "family_history": "¿Alguien en su familia tiene condiciones de salud similares (como diabetes, presión arterial, tiroides)?",
+        "allergies": "¿Tiene alguna alergia a medicamentos, alimentos o cualquier otra cosa?",
+        "pain_assessment": "Si tiene dolor, ¿dónde está y qué tan severo es en una escala de 0 a 10?",
+        "temporal": "¿Con qué frecuencia ocurre esto y está mejorando, empeorando o se mantiene igual?",
+        "menstrual_cycle": "¿Cuándo fue su último período menstrual y sus ciclos son regulares?",
+        "past_evaluation": "¿Ha tenido alguna prueba o visita al médico por esto? ¿Cuáles fueron los resultados?",
+        "chronic_monitoring": "¿Monitorea regularmente su condición (por ejemplo, lecturas de azúcar)? Si es así, ¿cuáles son los valores típicos?",
+        "lab_tests": "¿Ha tenido alguna prueba de laboratorio reciente para esta condición (como análisis de sangre) y qué recuerda sobre los resultados?",
+        "screening": "¿Ha tenido alguna prueba de detección para complicaciones (como exámenes de ojos, corazón o riñones) recientemente?",
+    }
+
+    def _question_matches_topic(self, chosen_topic: str, question: str, language: str = "en") -> bool:
         q = (question or "").strip().lower()
         if not q:
             return False
-        kws = self._TOPIC_KEYWORDS.get(chosen_topic, [])
+        lang = self._normalize_language(language)
+        keyword_dict = self._TOPIC_KEYWORDS_ES if lang == "es" else self._TOPIC_KEYWORDS_EN
+        kws = keyword_dict.get(chosen_topic, [])
         if not kws:
             return True  # if no rulebook, don't block
         return any(kw in q for kw in kws)
 
-    def _get_fallback_question(self, chosen_topic: str) -> str:
-        return self._TOPIC_FALLBACK_Q.get(chosen_topic, "Could you tell me more about that?")
+    def _get_fallback_question(self, chosen_topic: str, language: str = "en") -> str:
+        lang = self._normalize_language(language)
+        fallback_dict = self._TOPIC_FALLBACK_Q_ES if lang == "es" else self._TOPIC_FALLBACK_Q_EN
+        default_q = "¿Podría contarme más sobre eso?" if lang == "es" else "Could you tell me more about that?"
+        return fallback_dict.get(chosen_topic, default_q)
 
     async def _llm_generate_once(self, system_prompt: str, user_prompt: str) -> str:
         resp = await call_llm_with_telemetry(
@@ -692,15 +755,20 @@ class QuestionGenerator:
                 if i < len(previous_answers):
                     all_qa.append({"question": asked_questions[i], "answer": previous_answers[i]})
             qa_history = self._format_qa_pairs(all_qa) if all_qa else ""
+        lang = _normalize_language(language)
+        output_language = _get_output_language_name(language)
         # ✅ Clear, focused prompt without refusal option
         system_prompt = f"""You are AGENT-03 "INTAKE QUESTION GENERATOR" for clinical intake interviews.
 Your task: Generate ONE clear, concise medical question about the topic: {chosen_topic}
+Language Requirements:
+- Write the question in {output_language}
+- Use natural, conversational language appropriate for a medical interview in {output_language}
+- Maintain medical terminology appropriate for {output_language}
 Requirements:
 - Output ONLY the question text (no quotes, no numbering, no explanations)
 - Question must end with "?"
 - Keep it under {max_words} words
 - Focus ONLY on {chosen_topic} - do not combine with other topics
-- Use natural, conversational language appropriate for a medical interview
 - Do not repeat questions from the conversation history
 - Make the question specific and easy for the patient to answer
 Topic-specific guidance:
@@ -711,32 +779,53 @@ Topic-specific guidance:
 - triggers: Ask about what brings it on AND what makes it worse
 - lifestyle_functional_impact: Ask about daily activities, work, AND routine changes
 - temporal: Ask about frequency AND progression (better/worse/same)
-- chronic_monitoring: Ask about BOTH home monitoring (self-checks) AND professional/clinical monitoring (clinic/doctor checks), including frequency AND typical readings/values (e.g., "How often do you or your doctors check your [condition-specific metric], and what are your typical readings?")
+- chronic_monitoring: Ask about BOTH home monitoring (self-checks) AND professional/clinical monitoring (clinic/doctor checks), including frequency AND typical readings/values
  - lab_tests: Ask specifically about LAB TEST RESULTS (what lab tests, what results) for this condition.
  - screening: Ask specifically about FORMAL SCREENING EXAMS/COMPLICATION CHECKS (what screening exams, when last done) — DO NOT mix lab tests into screening.
 IMPORTANT: For deep diagnostic questions (chronic_monitoring, lab_tests, screening), follow the SPECIAL INSTRUCTION provided in the user prompt below.
+CRITICAL: Write the question in {output_language}. Use natural, conversational {output_language} appropriate for a medical interview.
 Generate the question now.
 """
         deep_diag_note = ""
         if deep_diagnostic_question_num is not None:
-            if deep_diagnostic_question_num == 1 and chosen_topic == "chronic_monitoring":
-                deep_diag_note = "\n\nDEEP DIAGNOSTIC QUESTION #1 - HOME & CLINICAL MONITORING:\n" \
-                                 "Ask about how the patient monitors this chronic condition BOTH at home and in clinical settings.\n" \
-                                 "Examples: home blood sugar readings, home BP checks, and clinic-based device or doctor checks.\n" \
-                                 "Format: Ask about frequency of monitoring AND typical values/readings (home and/or clinic).\n" \
-                                 "Example: 'How often do you or your doctors check your readings for this condition, and what are your usual values?'"
-            elif deep_diagnostic_question_num == 2 and chosen_topic == "lab_tests":
-                deep_diag_note = "\n\nDEEP DIAGNOSTIC QUESTION #2 - LAB TEST RESULTS ONLY:\n" \
-                    "Ask about RECENT LABORATORY TEST RESULTS relevant to this chronic condition.\n" \
-                    "Focus on: HbA1c, fasting glucose, kidney function tests, cholesterol panels, thyroid labs, or other condition-specific LAB tests.\n" \
-                    "Format: Ask what recent lab tests they've had AND what they remember about the lab results.\n" \
-                    "Example: 'Have you had any recent lab tests for this condition, and what do you remember about the results?'"
-            elif deep_diagnostic_question_num == 3 and chosen_topic == "screening":
-                deep_diag_note = "\n\nDEEP DIAGNOSTIC QUESTION #3 - SCREENING/COMPLICATION CHECKS (NO LABS):\n" \
-                                 "Ask about FORMAL SCREENING EXAMS and COMPLICATION CHECKS (not routine labs) done because of this chronic condition.\n" \
-                                 "Focus on: eye/foot exams, cardiac imaging or stress tests, kidney imaging, lung function tests, or other screening exams.\n" \
-                    "Format: Ask if they've had screening exams AND when they were last done.\n" \
-                    "Example: 'Have you had any screening tests for complications related to this condition (like eye, heart, or kidney exams), and when were they last done?'"
+            if lang == "es":
+                if deep_diagnostic_question_num == 1 and chosen_topic == "chronic_monitoring":
+                    deep_diag_note = "\n\nPREGUNTA DIAGNÓSTICA PROFUNDA #1 - MONITOREO EN CASA Y CLÍNICO:\n" \
+                                     "Pregunte sobre cómo el paciente monitorea esta condición crónica TANTO en casa como en entornos clínicos.\n" \
+                                     "Ejemplos: lecturas de azúcar en sangre en casa, controles de presión arterial en casa, y controles con dispositivos o doctores en la clínica.\n" \
+                                     "Formato: Pregunte sobre la frecuencia del monitoreo Y los valores/lecturas típicas (en casa y/o clínica).\n" \
+                                     "Ejemplo: '¿Con qué frecuencia usted o sus doctores revisan sus lecturas para esta condición, y cuáles son sus valores usuales?'"
+                elif deep_diagnostic_question_num == 2 and chosen_topic == "lab_tests":
+                    deep_diag_note = "\n\nPREGUNTA DIAGNÓSTICA PROFUNDA #2 - SOLO RESULTADOS DE PRUEBAS DE LABORATORIO:\n" \
+                        "Pregunte sobre RESULTADOS DE PRUEBAS DE LABORATORIO RECIENTES relevantes para esta condición crónica.\n" \
+                        "Enfóquese en: HbA1c, glucosa en ayunas, pruebas de función renal, paneles de colesterol, pruebas de tiroides, u otras pruebas de laboratorio específicas de la condición.\n" \
+                        "Formato: Pregunte qué pruebas de laboratorio recientes han tenido Y qué recuerdan sobre los resultados.\n" \
+                        "Ejemplo: '¿Ha tenido alguna prueba de laboratorio reciente para esta condición, y qué recuerda sobre los resultados?'"
+                elif deep_diagnostic_question_num == 3 and chosen_topic == "screening":
+                    deep_diag_note = "\n\nPREGUNTA DIAGNÓSTICA PROFUNDA #3 - EXÁMENES DE DETECCIÓN/CHECKS DE COMPLICACIONES (NO PRUEBAS DE LAB):\n" \
+                                     "Pregunte sobre EXÁMENES DE DETECCIÓN FORMALES y CHECKS DE COMPLICACIONES (no pruebas de laboratorio rutinarias) realizados debido a esta condición crónica.\n" \
+                                     "Enfóquese en: exámenes de ojos/pies, imágenes cardíacas o pruebas de esfuerzo, imágenes renales, pruebas de función pulmonar, u otros exámenes de detección.\n" \
+                        "Formato: Pregunte si han tenido exámenes de detección Y cuándo fueron realizados por última vez.\n" \
+                        "Ejemplo: '¿Ha tenido alguna prueba de detección para complicaciones relacionadas con esta condición (como exámenes de ojos, corazón o riñones), y cuándo fueron realizados por última vez?'"
+            else:
+                if deep_diagnostic_question_num == 1 and chosen_topic == "chronic_monitoring":
+                    deep_diag_note = "\n\nDEEP DIAGNOSTIC QUESTION #1 - HOME & CLINICAL MONITORING:\n" \
+                                     "Ask about how the patient monitors this chronic condition BOTH at home and in clinical settings.\n" \
+                                     "Examples: home blood sugar readings, home BP checks, and clinic-based device or doctor checks.\n" \
+                                     "Format: Ask about frequency of monitoring AND typical values/readings (home and/or clinic).\n" \
+                                     "Example: 'How often do you or your doctors check your readings for this condition, and what are your usual values?'"
+                elif deep_diagnostic_question_num == 2 and chosen_topic == "lab_tests":
+                    deep_diag_note = "\n\nDEEP DIAGNOSTIC QUESTION #2 - LAB TEST RESULTS ONLY:\n" \
+                        "Ask about RECENT LABORATORY TEST RESULTS relevant to this chronic condition.\n" \
+                        "Focus on: HbA1c, fasting glucose, kidney function tests, cholesterol panels, thyroid labs, or other condition-specific LAB tests.\n" \
+                        "Format: Ask what recent lab tests they've had AND what they remember about the lab results.\n" \
+                        "Example: 'Have you had any recent lab tests for this condition, and what do you remember about the results?'"
+                elif deep_diagnostic_question_num == 3 and chosen_topic == "screening":
+                    deep_diag_note = "\n\nDEEP DIAGNOSTIC QUESTION #3 - SCREENING/COMPLICATION CHECKS (NO LABS):\n" \
+                                     "Ask about FORMAL SCREENING EXAMS and COMPLICATION CHECKS (not routine labs) done because of this chronic condition.\n" \
+                                     "Focus on: eye/foot exams, cardiac imaging or stress tests, kidney imaging, lung function tests, or other screening exams.\n" \
+                        "Format: Ask if they've had screening exams AND when they were last done.\n" \
+                        "Example: 'Have you had any screening tests for complications related to this condition (like eye, heart, or kidney exams), and when were they last done?'"
         user_prompt = f"""
 CHOSEN TOPIC (MUST FOLLOW): {chosen_topic}{deep_diag_note}
 Patient:
@@ -787,7 +876,7 @@ Generate ONE question now, strictly about {chosen_topic}.
             except Exception as e:
                 logger.warning("Agent3: failed to persist interaction (attempt 1): %s", e)
         # If question is empty or doesn't match topic => retry once
-        if (not q1) or (not self._question_matches_topic(chosen_topic, q1)):
+        if (not q1) or (not self._question_matches_topic(chosen_topic, q1, language)):
             correction = f"""
 Your previous question was not clearly focused on the topic: {chosen_topic}
 Please generate a question that is SPECIFICALLY about {chosen_topic}.
@@ -809,7 +898,7 @@ Return ONE question ONLY.
                         visit_id=visit_id,
                         patient_id=patient_id,
                         question_number=question_number,
-                        question_text=q2 if q2 and self._question_matches_topic(chosen_topic, q2) else None,
+                        question_text=q2 if q2 and self._question_matches_topic(chosen_topic, q2, language) else None,
                         agent_name="agent3_question_generator",
                         user_prompt=user_prompt + "\n\n" + correction,  # Only user_prompt, NO system_prompt
                         response_text=response_text_2,
@@ -821,10 +910,10 @@ Return ONE question ONLY.
                     )
                 except Exception as e:
                     logger.warning("Agent3: failed to persist interaction (attempt 2): %s", e)
-            if q2 and self._question_matches_topic(chosen_topic, q2):
+            if q2 and self._question_matches_topic(chosen_topic, q2, language):
                 return q2
             # deterministic fallback
-            return self._postprocess_question_text(self._get_fallback_question(chosen_topic))
+            return self._postprocess_question_text(self._get_fallback_question(chosen_topic, language))
         return q1
 # =============================================================================
 # OPTIONAL: Safety Validator
@@ -965,7 +1054,7 @@ class OpenAIQuestionService(QuestionService):
 
     def _closing(self, language: str) -> str:
         lang = self._normalize_language(language)
-        return "¿Hay algo más que le gustaría compartir sobre su condición?" if lang == "sp" else \
+        return "¿Hay algo más que le gustaría compartir sobre su condición?" if lang == "es" else \
             "Is there anything else you'd like to share about your condition?"
 
     async def generate_first_question(
@@ -977,7 +1066,7 @@ class OpenAIQuestionService(QuestionService):
         question_number: Optional[int] = None,
     ) -> str:
         lang = self._normalize_language(language)
-        return "¿Por qué ha venido hoy? ¿Cuál es la principal preocupación con la que necesita ayuda?" if lang == "sp" else \
+        return "¿Por qué ha venido hoy? ¿Cuál es la principal preocupación con la que necesita ayuda?" if lang == "es" else \
             "Why have you come in today? What is the main concern you want help with?"
 
     async def generate_next_question(
@@ -1074,17 +1163,17 @@ class OpenAIQuestionService(QuestionService):
                     has_negative_consent = True
                 else:
                     has_negative_consent = True  # Ambiguous = negative
-        # Set max_count based on chronicity and consent
-        if not is_chronic:
-            # Non-chronic: max 10 questions (step 10 is closing)
+        # Set max_count based on chronicity/heredity and consent
+        if not is_chronic and not is_hereditary:
+            # Non-chronic, non-hereditary: max 10 questions (step 10 is closing)
             max_count = min(max_count, 10)
         else:
-            # Chronic conditions
+            # Chronic and/or hereditary conditions
             if has_positive_consent:
-                # Chronic + positive consent: max 13 questions (step 13 is closing)
+                # Chronic/hereditary + positive consent: max 13 questions (step 13 is closing)
                 max_count = min(max_count, 13)
             else:
-                # Chronic + negative consent OR no consent yet: max 10 questions (step 10 is closing)
+                # Chronic/hereditary + negative consent OR no consent yet: max 10 questions (step 10 is closing)
                 max_count = min(max_count, 10)
         # =============================================================================
         step_number = current_count + 1  # 1-based (step 1 = chief complaint, handled separately)
@@ -1125,20 +1214,20 @@ class OpenAIQuestionService(QuestionService):
             if is_chronic or is_hereditary:
                 # Return consent question directly (not a topic)
                 lang = self._normalize_language(language)
-                if lang == "sp":
+                if lang == "es":
                     return "¿Le gustaría responder algunas preguntas diagnósticas detalladas relacionadas con sus síntomas?"
                 return "Would you like to answer some detailed diagnostic questions related to your symptoms?"
             elif is_women_health:
                 next_topic = "menstrual_cycle"
             else:
                 next_topic = "past_evaluation"
-        # Step 10-13: Deep diagnostic flow (chronic only, if consent positive)
-        elif step_number >= 10 and is_chronic:
+        # Step 10-13: Deep diagnostic flow (chronic/hereditary, if consent positive)
+        elif step_number >= 10 and (is_chronic or is_hereditary):
             # Consent status already checked above
             # If negative consent OR no consent yet, return closing question at step 10
             if has_negative_consent or not has_positive_consent:
                 if step_number == 10:
-                    logger.info("Chronic condition with negative/no consent - returning closing question at step 10")
+                    logger.info("Chronic/hereditary condition with negative/no consent - returning closing question at step 10")
                     return self._closing(language)
                 else:
                     # Should not reach here, but safety check
@@ -1156,18 +1245,18 @@ class OpenAIQuestionService(QuestionService):
                     # Step 12: Screening/complications
                     next_topic = "screening"
                 elif deep_question_num == 4:
-                    # Step 13: Closing question (mandatory for chronic + positive consent)
-                    logger.info("Step 13 reached (chronic + positive consent) - returning mandatory closing question")
+                    # Step 13: Closing question (mandatory for chronic/hereditary + positive consent)
+                    logger.info("Step 13 reached (chronic/hereditary + positive consent) - returning mandatory closing question")
                     return self._closing(language)
                 else:
                     # Beyond step 13, return closing
                     return self._closing(language)
-        # Step 10: Non-chronic OR chronic with negative consent gets closing question
+        # Step 10: Non-chronic/non-hereditary OR chronic/hereditary with negative consent gets closing question
         elif step_number == 10:
-            if not is_chronic:
-                logger.info("Step 10 reached (non-chronic) - returning closing question")
-            elif is_chronic and (has_negative_consent or not has_positive_consent):
-                logger.info("Step 10 reached (chronic + negative/no consent) - returning closing question")
+            if not is_chronic and not is_hereditary:
+                logger.info("Step 10 reached (non-chronic, non-hereditary) - returning closing question")
+            elif (is_chronic or is_hereditary) and (has_negative_consent or not has_positive_consent):
+                logger.info("Step 10 reached (chronic/hereditary + negative/no consent) - returning closing question")
             return self._closing(language)
         # Safety check: beyond max_count (should not reach here normally due to step-based logic)
         elif current_count >= max_count:
@@ -1197,7 +1286,7 @@ class OpenAIQuestionService(QuestionService):
         if asked_categories is not None:
             asked_categories.append(next_topic)
         # =============================================================================
-        # Determine deep diagnostic question number if applicable
+        # Determine deep diagvnostic question number if applicable
         deep_diag_num = None
         if step_number >= 10 and is_chronic:
             # Check if we have positive consent
@@ -1284,6 +1373,138 @@ class OpenAIQuestionService(QuestionService):
             return None
 
 
+    def _normalize_previsit_section_config(self, raw_sections: list[dict] | list) -> dict[str, dict]:
+        """
+        Returns a map: section_key -> {"enabled": bool, "selected_fields": list[str]}
+        Only recognized section keys are retained.
+        """
+        recognized_sections = {
+            "chief_complaint",
+            "hpi",
+            "history",
+            "review_of_systems",
+            "current_medication",
+        }
+        cfg: dict[str, dict] = {}
+        if not raw_sections:
+            return cfg
+
+        for sec in raw_sections:
+            key = sec.get("section_key") if isinstance(sec, dict) else getattr(sec, "section_key", None)
+            if key not in recognized_sections:
+                continue
+            enabled = bool(sec.get("enabled", True) if isinstance(sec, dict) else getattr(sec, "enabled", True))
+            sel_fields = sec.get("selected_fields") if isinstance(sec, dict) else getattr(sec, "selected_fields", None)
+            if sel_fields is None:
+                sel_fields = []
+            cfg[key] = {
+                "enabled": enabled,
+                "selected_fields": [f for f in sel_fields if isinstance(f, str)],
+            }
+        return cfg
+
+    def _map_category_to_section(self, category: str) -> Optional[str]:
+        """
+        Map question category to pre-visit summary section.
+        Returns: 'chief_complaint', 'hpi', 'history', 'review_of_systems', 'current_medication', or None
+        """
+        # Chief Complaint: Q1 (no category, but symptom field)
+        # HPI: duration, associated_symptoms, triggers, temporal, pain_assessment, characterization_quality
+        # History: past_medical_history, family_history, lifestyle_functional_impact, travel_history
+        # Review of Systems: (usually derived from associated_symptoms and relevant_negatives)
+        # Current Medication: current_medications, allergies
+        
+        hpi_categories = {
+            "duration", "associated_symptoms", "triggers", "temporal", 
+            "pain_assessment", "characterization_quality", "aggravating_factors",
+            "relieving_factors", "radiation", "severity", "relevant_negatives"
+        }
+        
+        history_categories = {
+            "past_medical_history", "family_history", "lifestyle_functional_impact",
+            "travel_history", "medical", "surgical", "family", "lifestyle"
+        }
+        
+        medication_categories = {
+            "current_medications", "allergies"
+        }
+        
+        if category in hpi_categories:
+            return "hpi"
+        elif category in history_categories:
+            return "history"
+        elif category in medication_categories:
+            return "current_medication"
+        # Review of Systems is usually derived, not directly mapped
+        # Chief Complaint is Q1 (symptom field)
+        return None
+
+    def _filter_intake_answers_by_prefs(self, intake_answers: Dict[str, Any], cfg: dict[str, dict]) -> Dict[str, Any]:
+        """
+        Filters intake_answers Q/A pairs based on enabled sections.
+        Removes Q/A pairs that belong to disabled sections to prevent data leakage.
+        """
+        if not intake_answers or not cfg:
+            return intake_answers
+
+        # Get enabled sections
+        enabled_sections = set()
+        for section_key, info in cfg.items():
+            if info.get("enabled", True):
+                enabled_sections.add(section_key)
+
+        # If no config or all sections enabled, return as-is
+        if not cfg or len(enabled_sections) == 5:  # All 5 sections enabled
+            return intake_answers
+
+        # Filter Q/A pairs based on their category mapping
+        if isinstance(intake_answers, dict) and "questions_asked" in intake_answers:
+            filtered_qa = []
+            asked_categories = intake_answers.get("asked_categories", [])
+            questions_asked = intake_answers.get("questions_asked", [])
+            
+            if not questions_asked:
+                return intake_answers
+            
+            # Q1 is always Chief Complaint (symptom)
+            q1 = questions_asked[0]
+            if "chief_complaint" in enabled_sections:
+                filtered_qa.append(q1)
+            
+            # Filter remaining questions based on their category
+            for idx, qa in enumerate(questions_asked[1:], start=1):  # Skip Q1
+                category = asked_categories[idx - 1] if idx - 1 < len(asked_categories) else None
+                section = self._map_category_to_section(category) if category else None
+                
+                # Include if:
+                # 1. Section is enabled, OR
+                # 2. Category doesn't map to any section (include by default), OR
+                # 3. It's review_of_systems related (usually derived, include if HPI enabled)
+                if section is None:
+                    # Unmapped category - include by default (might be review of systems)
+                    filtered_qa.append(qa)
+                elif section in enabled_sections:
+                    filtered_qa.append(qa)
+                # else: exclude (section is disabled)
+            
+            # Build filtered intake_answers
+            filtered = dict(intake_answers)
+            filtered["questions_asked"] = filtered_qa
+            # Rebuild asked_categories to match filtered questions
+            if asked_categories and len(questions_asked) > 1:
+                filtered["asked_categories"] = [
+                    asked_categories[i] 
+                    for i in range(len(asked_categories)) 
+                    if i + 1 < len(questions_asked) and questions_asked[i + 1] in filtered_qa
+                ]
+            else:
+                filtered["asked_categories"] = []
+            
+            return filtered
+        
+        return intake_answers
+
+
     async def generate_pre_visit_summary(
         self,
         patient_data: Dict[str, Any],
@@ -1317,6 +1538,8 @@ class OpenAIQuestionService(QuestionService):
 
         # Section configuration from doctor preferences (pre_visit_config)
         raw_sections = (prefs or {}).get("pre_visit_config") or []
+        section_cfg = self._normalize_previsit_section_config(raw_sections)
+        filtered_intake_answers = self._filter_intake_answers_by_prefs(intake_answers, section_cfg)
         # Default behavior:
         # - If NO config present at all -> all sections enabled (fail-open, legacy behavior).
         # - If ANY config present       -> sections are opt-in and must be explicitly enabled.
@@ -1352,7 +1575,7 @@ class OpenAIQuestionService(QuestionService):
         enable_ros = enabled_sections.get("review_of_systems", True)
         enable_meds = enabled_sections.get("current_medication", True)
 
-        if lang == "sp":
+        if lang == "es":
             # Build dynamic Spanish headings based on enabled sections
             headings_lines_es: list[str] = []
             if enable_cc:
@@ -1413,12 +1636,126 @@ class OpenAIQuestionService(QuestionService):
                 )
             guidelines_text_es = "\n".join(guidelines_es_lines) + ("\n\n" if guidelines_es_lines else "\n\n")
 
+            # Build comprehensive section definitions (Spanish)
+            section_definitions_es: list[str] = []
+            
+            if enable_cc:
+                section_definitions_es.append(
+                    "MOTIVO DE CONSULTA:\n"
+                    "- Contiene: La razón principal de la visita en las propias palabras del paciente (de Q1/campo síntoma)\n"
+                    "- NO contiene: Detalles sobre duración, severidad, medicamentos, historia u otras secciones\n"
+                    "- Formato: Una línea, palabras exactas del paciente o paráfrasis cercana\n"
+                )
+            
+            if enable_hpi:
+                hpi_fields_note_es = ""
+                hpi_config = section_cfg.get("hpi", {})
+                hpi_selected = hpi_config.get("selected_fields", [])
+                if hpi_selected:
+                    hpi_fields_note_es = f"\n- Enfócate SOLO en estos aspectos: {', '.join(hpi_selected)}\n- Omite otros detalles de HPI que no estén en esta lista."
+                
+                section_definitions_es.append(
+                    "HPI (Historia de la Enfermedad Actual):\n"
+                    "- Contiene: Inicio, ubicación, duración, caracterización/calidad, factores agravantes/aliviadores, "
+                    "radiación, patrón temporal, severidad, síntomas asociados, negativos relevantes\n"
+                    "- NO contiene: Medicamentos, historia médica, historia familiar, historia quirúrgica, historia de estilo de vida, "
+                    "alergias o información de revisión de sistemas\n"
+                    f"- Formato: UN párrafo legible tejiendo OLDCARTS en prosa{hpi_fields_note_es}\n"
+                )
+            
+            if enable_history:
+                history_fields_note_es = ""
+                history_config = section_cfg.get("history", {})
+                history_selected = history_config.get("selected_fields", [])
+                if history_selected:
+                    history_fields_note_es = f"\n- Enfócate SOLO en estos tipos: {', '.join(history_selected)}\n- Omite otros tipos de historia que no estén en esta lista."
+                
+                section_definitions_es.append(
+                    "HISTORIA:\n"
+                    "- Contiene: Condiciones médicas pasadas, historia quirúrgica, historia familiar, factores de estilo de vida, historia de viajes\n"
+                    "- NO contiene: Medicamentos actuales, síntomas actuales (HPI), motivo de consulta o revisión de sistemas\n"
+                    f"- Formato: Una línea combinando elementos médicos/quirúrgicos/familiares/de estilo de vida{history_fields_note_es}\n"
+                )
+            
+            if enable_ros:
+                section_definitions_es.append(
+                    "REVISIÓN DE SISTEMAS:\n"
+                    "- Contiene: Positivos y negativos basados en sistemas (cardiovascular, respiratorio, gastrointestinal, etc.)\n"
+                    "- NO contiene: Detalles del motivo de consulta, detalles de HPI, medicamentos o historia específica\n"
+                    "- Formato: Una línea narrativa resumiendo hallazgos basados en sistemas\n"
+                )
+            
+            if enable_meds:
+                section_definitions_es.append(
+                    "MEDICACIÓN ACTUAL:\n"
+                    "- Contiene: Medicamentos actuales, suplementos, dosis, alergias\n"
+                    "- NO contiene: Medicamentos pasados, historia médica o información que pertenece a otras secciones\n"
+                    "- Formato: Una línea narrativa con medicamentos/suplementos realmente declarados por el paciente\n"
+                )
+            
+            section_definitions_text_es = "\n".join(section_definitions_es) + "\n\n" if section_definitions_es else ""
+            
+            # Build explicit exclusion rules for disabled sections (Spanish)
+            exclusion_rules_es: list[str] = []
+            
+            if not enable_cc:
+                exclusion_rules_es.append(
+                    "❌ MOTIVO DE CONSULTA está DESHABILITADO:\n"
+                    "- NO crees una sección 'Motivo de Consulta:'\n"
+                    "- NO menciones el motivo de consulta o síntoma principal en ninguna otra sección\n"
+                    "- La información del síntoma debe ser completamente excluida del resumen\n\n"
+                )
+            
+            if not enable_hpi:
+                exclusion_rules_es.append(
+                    "❌ HPI está DESHABILITADO:\n"
+                    "- NO crees una sección 'HPI:'\n"
+                    "- NO incluyas inicio, ubicación, duración, severidad, síntomas asociados, "
+                    "factores agravantes/aliviadores o cualquier información relacionada con HPI en ninguna sección\n\n"
+                )
+            
+            if not enable_history:
+                exclusion_rules_es.append(
+                    "❌ HISTORIA está DESHABILITADA:\n"
+                    "- NO crees una sección 'Historia:'\n"
+                    "- NO menciones condiciones médicas pasadas, historia quirúrgica, historia familiar, "
+                    "factores de estilo de vida o historia de viajes en NINGUNA sección (incluyendo HPI)\n\n"
+                )
+            
+            if not enable_ros:
+                exclusion_rules_es.append(
+                    "❌ REVISIÓN DE SISTEMAS está DESHABILITADA:\n"
+                    "- NO crees una sección 'Revisión de Sistemas:'\n"
+                    "- NO incluyas información de revisión basada en sistemas en ninguna sección\n\n"
+                )
+            
+            if not enable_meds:
+                exclusion_rules_es.append(
+                    "❌ MEDICACIÓN ACTUAL está DESHABILITADA:\n"
+                    "- NO crees una sección 'Medicación Actual:'\n"
+                    "- NO menciones medicamentos, drogas, suplementos, recetas, dosis o alergias "
+                    "EN NINGÚN LUGAR del resumen, incluyendo dentro de HPI, Historia o cualquier otra sección\n"
+                    "- Si la información de medicamentos aparece en las respuestas de admisión, "
+                    "exclúyela completamente de todas las secciones\n\n"
+                )
+            
+            exclusion_rules_text_es = "\n".join(exclusion_rules_es) if exclusion_rules_es else ""
+
+            output_language = _get_output_language_name(language)
             prompt = (
                 "Rol y Tarea\n"
                 "Eres un Asistente de Admisión Clínica.\n"
                 "Tu tarea es generar un Resumen Pre-Consulta conciso y clínicamente útil (~180-200 palabras) "
                 "basado estrictamente en las respuestas de admisión proporcionadas.\n\n"
                 f"{prefs_snippet}"
+                "DEFINICIONES DE SECCIONES (CRÍTICO - Sigue estos límites exactamente):\n"
+                f"{section_definitions_text_es}"
+                "REGLAS DE EXCLUSIÓN (CRÍTICO - Estas secciones están DESHABILITADAS y deben ser completamente excluidas):\n"
+                f"{exclusion_rules_text_es}"
+                "Reglas de Idioma:\n"
+                f"- Escribe todos los valores de texto en lenguaje natural en {output_language}.\n"
+                "- NO traduzcas claves JSON, enumeraciones, códigos, nombres de campos o IDs.\n"
+                "- Mantén la terminología médica apropiada para {output_language}.\n\n"
                 "Reglas Críticas\n"
                 "- No inventes, adivines o expandas más allá de la entrada proporcionada.\n"
                 "- La salida debe ser texto plano con encabezados de sección, una sección por línea "
@@ -1434,7 +1771,9 @@ class OpenAIQuestionService(QuestionService):
                 "- Usa frases orientadas al paciente: \"El paciente reporta...\", \"Niega...\", \"En medicamentos:...\".\n"
                 "- No incluyas observaciones clínicas, diagnósticos, planes, signos vitales o hallazgos del examen "
                 "(la pre-consulta es solo lo reportado por el paciente).\n"
-                "- Normaliza pronunciaciones médicas obvias a términos correctos sin agregar nueva información.\n\n"
+                "- Normaliza pronunciaciones médicas obvias a términos correctos sin agregar nueva información.\n"
+                "- Cada sección debe contener SOLO información que pertenece a esa sección (ver DEFINICIONES DE SECCIONES arriba).\n"
+                "- NO permitas que la información de secciones deshabilitadas se filtre a secciones habilitadas.\n\n"
                 "Encabezados (usa MAYÚSCULAS EXACTAS; incluye solo si tienes datos reales de las respuestas del paciente)\n"
                 f"{headings_text_es}"
                 "Pautas de Contenido por Sección (aplican solo a los encabezados listados arriba)\n"
@@ -1443,7 +1782,7 @@ class OpenAIQuestionService(QuestionService):
                 "(Estructura y tono solamente—el contenido será diferente; cada sección en una sola línea.)\n"
                 f"{example_block_es}"
                 f"{f'Imágenes de Medicamentos: {medication_images_info}' if medication_images_info else ''}\n\n"
-                f"Respuestas de Admisión:\n{self._format_intake_answers(intake_answers)}"
+                f"Respuestas de Admisión (FILTRADAS - solo datos de secciones habilitadas incluidas):\n{self._format_intake_answers(filtered_intake_answers)}"
             )
         else:
             # Build dynamic English headings based on enabled sections
@@ -1506,12 +1845,125 @@ class OpenAIQuestionService(QuestionService):
                 )
             guidelines_text = "\n".join(guidelines_lines) + ("\n\n" if guidelines_lines else "\n\n")
 
+            # Build comprehensive section definitions
+            section_definitions: list[str] = []
+            
+            if enable_cc:
+                section_definitions.append(
+                    "CHIEF COMPLAINT:\n"
+                    "- Contains: The primary reason for the visit in patient's own words (from Q1/symptom field)\n"
+                    "- Does NOT contain: Details about duration, severity, medications, history, or other sections\n"
+                    "- Format: One line, patient's exact words or close paraphrase\n"
+                )
+            
+            if enable_hpi:
+                hpi_fields_note = ""
+                hpi_config = section_cfg.get("hpi", {})
+                hpi_selected = hpi_config.get("selected_fields", [])
+                if hpi_selected:
+                    hpi_fields_note = f"\n- Focus ONLY on these aspects: {', '.join(hpi_selected)}\n- Omit other HPI details not in this list."
+                
+                section_definitions.append(
+                    "HPI (History of Present Illness):\n"
+                    "- Contains: Onset, location, duration, characterization/quality, aggravating/relieving factors, "
+                    "radiation, temporal pattern, severity, associated symptoms, relevant negatives\n"
+                    "- Does NOT contain: Medications, medical history, family history, surgical history, lifestyle history, "
+                    "allergies, or review of systems information\n"
+                    f"- Format: ONE readable paragraph weaving OLDCARTS into prose{hpi_fields_note}\n"
+                )
+            
+            if enable_history:
+                history_fields_note = ""
+                history_config = section_cfg.get("history", {})
+                history_selected = history_config.get("selected_fields", [])
+                if history_selected:
+                    history_fields_note = f"\n- Focus ONLY on these types: {', '.join(history_selected)}\n- Omit other history types not in this list."
+                
+                section_definitions.append(
+                    "HISTORY:\n"
+                    "- Contains: Past medical conditions, surgical history, family history, lifestyle factors, travel history\n"
+                    "- Does NOT contain: Current medications, current symptoms (HPI), chief complaint, or review of systems\n"
+                    f"- Format: One line combining medical/surgical/family/lifestyle elements{history_fields_note}\n"
+                )
+            
+            if enable_ros:
+                section_definitions.append(
+                    "REVIEW OF SYSTEMS:\n"
+                    "- Contains: System-based positives and negatives (cardiovascular, respiratory, gastrointestinal, etc.)\n"
+                    "- Does NOT contain: Chief complaint details, HPI details, medications, or specific history\n"
+                    "- Format: One narrative line summarizing system-based findings\n"
+                )
+            
+            if enable_meds:
+                section_definitions.append(
+                    "CURRENT MEDICATION:\n"
+                    "- Contains: Current medications, supplements, dosages, allergies\n"
+                    "- Does NOT contain: Past medications, medical history, or information that belongs in other sections\n"
+                    "- Format: One narrative line with meds/supplements actually stated by the patient\n"
+                )
+            
+            section_definitions_text = "\n".join(section_definitions) + "\n\n" if section_definitions else ""
+            
+            # Build explicit exclusion rules for disabled sections
+            exclusion_rules: list[str] = []
+            
+            if not enable_cc:
+                exclusion_rules.append(
+                    "❌ CHIEF COMPLAINT is DISABLED:\n"
+                    "- Do NOT create a 'Chief Complaint:' section\n"
+                    "- Do NOT mention the chief complaint or primary symptom in any other section\n"
+                    "- The symptom information should be completely excluded from the summary\n\n"
+                )
+            
+            if not enable_hpi:
+                exclusion_rules.append(
+                    "❌ HPI is DISABLED:\n"
+                    "- Do NOT create an 'HPI:' section\n"
+                    "- Do NOT include onset, location, duration, severity, associated symptoms, "
+                    "aggravating/relieving factors, or any HPI-related information in any section\n\n"
+                )
+            
+            if not enable_history:
+                exclusion_rules.append(
+                    "❌ HISTORY is DISABLED:\n"
+                    "- Do NOT create a 'History:' section\n"
+                    "- Do NOT mention past medical conditions, surgical history, family history, "
+                    "lifestyle factors, or travel history in ANY section (including HPI)\n\n"
+                )
+            
+            if not enable_ros:
+                exclusion_rules.append(
+                    "❌ REVIEW OF SYSTEMS is DISABLED:\n"
+                    "- Do NOT create a 'Review of Systems:' section\n"
+                    "- Do NOT include system-based review information in any section\n\n"
+                )
+            
+            if not enable_meds:
+                exclusion_rules.append(
+                    "❌ CURRENT MEDICATION is DISABLED:\n"
+                    "- Do NOT create a 'Current Medication:' section\n"
+                    "- Do NOT mention medications, drugs, supplements, prescriptions, dosages, or allergies "
+                    "ANYWHERE in the summary, including within HPI, History, or any other section\n"
+                    "- If medication information appears in the intake responses, completely exclude it from all sections\n\n"
+                )
+            
+            exclusion_rules_text = "\n".join(exclusion_rules) if exclusion_rules else ""
+
+            output_language = _get_output_language_name(language)
             prompt = (
                 "Role & Task\n"
                 "You are a Clinical Intake Assistant.\n"
                 "Your task is to generate a concise, clinically useful Pre-Visit Summary (~180–200 words) based strictly on "
                 "the provided intake responses.\n\n"
                 f"{prefs_snippet}"
+                "SECTION DEFINITIONS (CRITICAL - Follow these boundaries exactly):\n"
+                f"{section_definitions_text}"
+                "EXCLUSION RULES (CRITICAL - These sections are DISABLED and must be completely excluded):\n"
+                f"{exclusion_rules_text}"
+                "Language Rules:\n"
+                f"- Write all natural-language text values in {output_language}.\n"
+                "- Do NOT translate JSON keys, enums, codes, field names, or IDs.\n"
+                "- Keep medical terminology appropriate for {output_language}.\n\n"
                 "Critical Rules\n"
                 "- Do not invent, guess, or expand beyond the provided input.\n"
                 "- Output must be plain text with section headings, one section per line (no extra blank lines).\n"
@@ -1526,7 +1978,9 @@ class OpenAIQuestionService(QuestionService):
                 "- Do not include clinician observations, diagnoses, plans, vitals, or exam findings "
                 "(previsit is patient-reported only).\n"
                 "- Normalize obvious medical mispronunciations to correct terms (e.g., \"diabities\" -> \"diabetes\") "
-                "without adding new information.\n\n"
+                 "without adding new information.\n"
+                "- Each section must contain ONLY information that belongs to that section (see SECTION DEFINITIONS above).\n"
+                "- Do NOT allow information from disabled sections to leak into enabled sections.\n"
                 "Headings (use EXACT casing; include only if you have actual data from patient responses)\n"
                 f"{headings_text}"
                 "Content Guidelines per Section (apply only to the headings listed above)\n"
@@ -1535,13 +1989,13 @@ class OpenAIQuestionService(QuestionService):
                 "(Structure and tone only—content will differ; each section on a single line.)\n"
                 f"{example_block}"
                 f"{f'Medication Images: {medication_images_info}' if medication_images_info else ''}\n\n"
-                f"Intake Responses:\n{self._format_intake_answers(intake_answers)}"
+                f"Intake Responses (FILTERED - only enabled sections' data included):\n{self._format_intake_answers(filtered_intake_answers)}"
             )
 
         try:
             # Detect abusive language red flags
             try:
-                red_flags = await self._detect_red_flags(intake_answers, lang)
+                red_flags = await self._detect_red_flags(filtered_intake_answers, lang)
             except Exception as e:
                 logger.warning(f"Red flag detection failed, continuing without flags: {e}")
                 red_flags = []
@@ -1646,8 +2100,6 @@ class OpenAIQuestionService(QuestionService):
                 "unknown",
                 "don't know",
                 "dont know",
-                "no se",
-                "no proporcionado",
             ]:
                 continue
 
@@ -1715,7 +2167,7 @@ class OpenAIQuestionService(QuestionService):
         """Use LLM to analyze question-answer pairs for subtle abusive language."""
         lang = self._normalize_language(language)
 
-        if lang == "sp":
+        if lang == "es":
             prompt = f"""
 Analiza estas respuestas de admisión del paciente para detectar LENGUAJE ABUSIVO O INAPROPIADO:
 
@@ -1852,7 +2304,7 @@ Responses to analyze:
     def _get_llm_abusive_language_message(self, reason: str, language: str = "en") -> str:
         """Get message for LLM-detected abusive language."""
         lang = self._normalize_language(language)
-        if lang == "sp":
+        if lang == "es":
             return f"⚠️ BANDERA ROJA: Lenguaje abusivo detectado. Razón: {reason}"
         else:
             return f"⚠️ RED FLAG: Abusive language detected. Reason: {reason}"
@@ -1910,14 +2362,14 @@ Responses to analyze:
             "mamón",
         ]
 
-        abusive_words = spanish_abusive if lang == "sp" else english_abusive
+        abusive_words = spanish_abusive if lang == "es" else english_abusive
 
         return any(word in text_lower for word in abusive_words)
 
     def _get_abusive_language_message(self, language: str = "en") -> str:
         """Get message for abusive language red flag."""
         lang = self._normalize_language(language)
-        if lang == "sp":
+        if lang == "es":
             return (
                 "⚠️ BANDERA ROJA: El paciente utilizó lenguaje inapropiado o abusivo en sus respuestas."
             )

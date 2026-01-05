@@ -13,11 +13,12 @@ from clinicai.domain.errors import DuplicatePatientError, PatientNotFoundError
 
 class CreateWalkInVisitRequest:
     """Request for creating a walk-in visit."""
-    def __init__(self, name: str, mobile: str, age: int = None, gender: str = None):
+    def __init__(self, name: str, mobile: str, age: int = None, gender: str = None, language: str = "en"):
         self.name = name
         self.mobile = mobile
         self.age = age
         self.gender = gender
+        self.language = language
 
 
 class CreateWalkInVisitResponse:
@@ -37,29 +38,33 @@ class CreateWalkInVisitUseCase:
         self._patient_repository = patient_repository
         self._visit_repository = visit_repository
 
-    async def execute(self, request: CreateWalkInVisitRequest) -> CreateWalkInVisitResponse:
+    async def execute(self, request: CreateWalkInVisitRequest, doctor_id: str) -> CreateWalkInVisitResponse:
         """Execute the create walk-in visit use case."""
         
         # Check if patient already exists
         existing_patient = await self._patient_repository.find_by_name_and_mobile(
-            request.name, request.mobile
+            request.name, request.mobile, doctor_id
         )
         
         if existing_patient:
             # Use existing patient for walk-in visit
+            # Update patient's language preference for this visit
+            existing_patient.language = request.language
             patient = existing_patient
+            await self._patient_repository.save(patient)
         else:
             # Create new patient
             patient_id = PatientId.generate(request.name.split(" ")[0], request.mobile)
             
             patient = Patient(
                 patient_id=patient_id,
+                doctor_id=doctor_id,
                 name=request.name,
                 mobile=request.mobile,
                 age=request.age or 0,
                 gender=request.gender,
                 # recently_travelled removed from Patient - now stored on Visit
-                language="en",
+                language=request.language,
             )
             
             # Save patient
@@ -72,6 +77,7 @@ class CreateWalkInVisitUseCase:
         visit = Visit(
             visit_id=visit_id,
             patient_id=patient.patient_id.value,
+            doctor_id=doctor_id,
             symptom="",  # No symptom for walk-in
             workflow_type=VisitWorkflowType.WALK_IN,
             status="walk_in_patient",

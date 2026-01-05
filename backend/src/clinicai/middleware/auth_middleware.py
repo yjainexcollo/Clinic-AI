@@ -35,6 +35,8 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
     PUBLIC_PATH_PREFIXES = {
         "/docs",
         "/redoc",
+        # Only documentation and health endpoints are public
+        # All API routes (patients, workflow, notes, doctor) now require authentication
     }
     
     def is_public_endpoint(self, path: str) -> bool:
@@ -68,6 +70,9 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         # Extract authentication credentials from headers
         api_key = request.headers.get("X-API-Key") or request.headers.get("x-api-key")
         auth_header = request.headers.get("Authorization") or request.headers.get("authorization")
+        
+        # Authentication is required - no automatic fallback
+        # Frontend must send API key in headers (similar to X-Doctor-ID)
         
         try:
             # Validate authentication and get user ID

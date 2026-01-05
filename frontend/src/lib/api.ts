@@ -6,7 +6,6 @@ const API_BASE_URL =
   (import.meta.env?.VITE_API_URL as string) ||
   (import.meta.env?.VITE_BACKEND_BASE_URL as string) ||
   API_CONFIG.BASE_URL;
-const API_KEY = import.meta.env?.VITE_API_KEY as string | undefined;
 
 export interface ApiResponse<T> {
   success: boolean;
@@ -144,19 +143,10 @@ class ApiClient {
   private client: AxiosInstance;
 
   constructor() {
-    if (!API_KEY) {
-      console.warn(
-        '[API] VITE_API_KEY is not set. All backend requests will be rejected with 401 Unauthorized.'
-      );
-    }
 
     const defaultHeaders: Record<string, string> = {
       'Content-Type': 'application/json',
     };
-
-    if (API_KEY) {
-      defaultHeaders['X-API-Key'] = API_KEY;
-    }
 
     this.client = axios.create({
       baseURL: API_BASE_URL,
@@ -166,12 +156,6 @@ class ApiClient {
     // Add request interceptor for logging
     this.client.interceptors.request.use(
       (config) => {
-        if (API_KEY) {
-          config.headers = {
-            ...config.headers,
-            'X-API-Key': API_KEY,
-          };
-        }
         console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`);
         return config;
       },

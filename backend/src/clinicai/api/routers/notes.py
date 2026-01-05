@@ -176,6 +176,17 @@ async def transcribe_audio(
     file_size = 0
     audio_file_record = None  # Initialize outside try block for background task access
     try:
+        # Extract doctor_id
+        doctor_id = getattr(request.state, "doctor_id", None)
+        if not doctor_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "MISSING_DOCTOR_ID",
+                    "message": "X-Doctor-ID header is required",
+                    "details": {},
+                },
+            )
         logger.info("Starting streaming upload to temp file (no memory accumulation)...")
         print("🔵 Step 4a: Creating temp file...")
         ext = (audio_file.filename or 'audio').split('.')[-1]
@@ -292,7 +303,7 @@ async def transcribe_audio(
         try:
             # Check if patient and visit exist and are in correct status
             from clinicai.domain.value_objects.patient_id import PatientId
-            patient = await patient_repo.find_by_id(PatientId(internal_patient_id))
+            patient = await patient_repo.find_by_id(PatientId(internal_patient_id), doctor_id)
             if not patient:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
@@ -303,7 +314,7 @@ async def transcribe_audio(
             print(f"🔵 Step 5b: Looking up visit {visit_id}...")
             visit_id_obj = VisitId(visit_id)
             visit = await visit_repo.find_by_patient_and_visit_id(
-                internal_patient_id, visit_id_obj
+                internal_patient_id, visit_id_obj, doctor_id
             )
             if not visit:
                 raise HTTPException(
@@ -447,6 +458,7 @@ async def transcribe_audio(
                         language=language,
                         retry_count=attempt - 1,
                         delay_seconds=0,
+                        doctor_id=doctor_id,
                         request_id=request_id,
                     )
                     break
@@ -551,6 +563,16 @@ async def get_transcription_status(
 ):
     """Get transcription status for polling."""
     try:
+        # Get doctor_id from request state
+        doctor_id = getattr(request.state, "doctor_id", None)
+        if not doctor_id:
+            return fail(
+                request,
+                error="MISSING_DOCTOR_ID",
+                message="X-Doctor-ID header is required",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        
         # Decode patient ID
         if '_' in patient_id:
             parts = patient_id.split('_', 1)
@@ -570,7 +592,7 @@ async def get_transcription_status(
         from ...domain.value_objects.visit_id import VisitId
         visit_id_obj = VisitId(visit_id)
         visit = await visit_repo.find_by_patient_and_visit_id(
-            internal_patient_id, visit_id_obj
+            internal_patient_id, visit_id_obj, doctor_id
         )
         
         if not visit:
@@ -673,6 +695,18 @@ async def generate_soap_note(
         # Set IDs in request state for HIPAA audit middleware
         http_request.state.audit_patient_id = request.patient_id
         http_request.state.audit_visit_id = request.visit_id
+
+        # Extract doctor_id
+        doctor_id = getattr(http_request.state, "doctor_id", None)
+        if not doctor_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "MISSING_DOCTOR_ID",
+                    "message": "X-Doctor-ID header is required",
+                    "details": {},
+                },
+            )
         
         # Decode opaque patient_id if provided by client
         from ...core.utils.crypto import decode_patient_id
@@ -697,7 +731,7 @@ async def generate_soap_note(
 
         # Execute use case
         use_case = GenerateSoapNoteUseCase(patient_repo, visit_repo, soap_service)
-        result = await use_case.execute(decoded_request)
+        result = await use_case.execute(decoded_request, doctor_id=doctor_id)
         
         # Convert DTO to response format (encode patient_id for client)
         from ...core.utils.crypto import encode_patient_id
@@ -788,13 +822,24 @@ async def store_vitals(
             internal_patient_id = decode_patient_id(payload.patient_id)
         except Exception:
             internal_patient_id = payload.patient_id
-        patient = await patient_repo.find_by_id(PatientId(internal_patient_id))
+        doctor_id = getattr(http_request.state, "doctor_id", None)
+        if not doctor_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "MISSING_DOCTOR_ID",
+                    "message": "X-Doctor-ID header is required",
+                    "details": {},
+                },
+            )
+
+        patient = await patient_repo.find_by_id(PatientId(internal_patient_id), doctor_id)
         if not patient:
             raise PatientNotFoundError(payload.patient_id)
         from ...domain.value_objects.visit_id import VisitId
         visit_id_obj = VisitId(payload.visit_id)
         visit = await visit_repo.find_by_patient_and_visit_id(
-            internal_patient_id, visit_id_obj
+            internal_patient_id, visit_id_obj, doctor_id
         )
         if not visit:
             raise VisitNotFoundError(payload.visit_id)
@@ -843,25 +888,36 @@ async def store_vitals(
     include_in_schema=False
 )
 async def get_vitals(
+    request: Request,
     patient_id: str,
     visit_id: str,
     patient_repo: PatientRepositoryDep,
     visit_repo: VisitRepositoryDep,
 ) -> Dict[str, Any]:
     try:
+        doctor_id = getattr(request.state, "doctor_id", None)
+        if not doctor_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "MISSING_DOCTOR_ID",
+                    "message": "X-Doctor-ID header is required",
+                    "details": {},
+                },
+            )
         from ...domain.value_objects.patient_id import PatientId
         # decode opaque id
         try:
             internal_patient_id = decode_patient_id(patient_id)
         except Exception:
             internal_patient_id = patient_id
-        patient = await patient_repo.find_by_id(PatientId(internal_patient_id))
+        patient = await patient_repo.find_by_id(PatientId(internal_patient_id), doctor_id)
         if not patient:
             raise PatientNotFoundError(patient_id)
         from ...domain.value_objects.visit_id import VisitId
         visit_id_obj = VisitId(visit_id)
         visit = await visit_repo.find_by_patient_and_visit_id(
-            internal_patient_id, visit_id_obj
+            internal_patient_id, visit_id_obj, doctor_id
         )
         if not visit:
             raise VisitNotFoundError(visit_id)
@@ -950,7 +1006,17 @@ async def get_transcription_dialogue(request: Request, patient_id: str, visit_id
                     },
                 },
             )
-        patient = await patient_repo.find_by_id(patient_id_obj)
+        doctor_id = getattr(request.state, "doctor_id", None)
+        if not doctor_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "MISSING_DOCTOR_ID",
+                    "message": "X-Doctor-ID header is required",
+                    "details": {},
+                },
+            )
+        patient = await patient_repo.find_by_id(patient_id_obj, doctor_id)
         if not patient:
             raise PatientNotFoundError(patient_id)
 
@@ -958,7 +1024,7 @@ async def get_transcription_dialogue(request: Request, patient_id: str, visit_id
         from ...domain.value_objects.visit_id import VisitId
         visit_id_obj = VisitId(visit_id)
         visit = await visit_repo.find_by_patient_and_visit_id(
-            internal_patient_id, visit_id_obj
+            internal_patient_id, visit_id_obj, doctor_id
         )
         if not visit:
             raise VisitNotFoundError(visit_id)
@@ -1022,7 +1088,8 @@ async def get_transcription_dialogue(request: Request, patient_id: str, visit_id
 
 @router.get(
     "/{patient_id}/visits/{visit_id}/soap",
-    response_model=ApiResponse[SoapNoteDTO],
+    # Use Dict[str, Any] so we can control key insertion order at runtime
+    response_model=ApiResponse[Dict[str, Any]],
     status_code=status.HTTP_200_OK,
     tags=["SOAP Note Generation"],
     responses={
@@ -1044,17 +1111,29 @@ async def get_soap_note(request: Request, patient_id: str, visit_id: str, patien
         except Exception:
             internal_patient_id = decoded_param
 
-        # Find patient
+        # Get doctor_id from request state for multi-doctor isolation
+        doctor_id = getattr(request.state, "doctor_id", None)
+        if not doctor_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "MISSING_DOCTOR_ID",
+                    "message": "X-Doctor-ID header is required",
+                    "details": {},
+                },
+            )
+
+        # Find patient (scoped by doctor_id)
         patient_id_obj = PatientId(internal_patient_id)
-        patient = await patient_repo.find_by_id(patient_id_obj)
+        patient = await patient_repo.find_by_id(patient_id_obj, doctor_id)
         if not patient:
             raise PatientNotFoundError(internal_patient_id)
 
-        # Find visit
+        # Find visit (scoped by doctor_id)
         from ...domain.value_objects.visit_id import VisitId
         visit_id_obj = VisitId(visit_id)
         visit = await visit_repo.find_by_patient_and_visit_id(
-            internal_patient_id, visit_id_obj
+            internal_patient_id, visit_id_obj, doctor_id
         )
         if not visit:
             raise VisitNotFoundError(visit_id)
@@ -1072,18 +1151,51 @@ async def get_soap_note(request: Request, patient_id: str, visit_id: str, patien
 
         # Return SOAP note data
         soap = visit.soap_note
-        soap_data = SoapNoteDTO(
-            subjective=soap.subjective or "",
-            objective=soap.objective or {},
-            assessment=soap.assessment or "",
-            plan=soap.plan or "",
-            highlights=soap.highlights or [],
-            red_flags=soap.red_flags or [],
-            generated_at=soap.generated_at.isoformat() if soap.generated_at else "",
-            model_info=soap.model_info or {},
-            confidence_score=soap.confidence_score
+
+        # Load doctor preferences to determine soap_order
+        try:
+            from ...adapters.db.mongo.models.patient_m import DoctorPreferencesMongo
+            prefs = await DoctorPreferencesMongo.find_one(
+                DoctorPreferencesMongo.doctor_id == doctor_id
+            )
+            default_order = ["subjective", "objective", "assessment", "plan"]
+            raw_order = getattr(prefs, "soap_order", None) if prefs else None
+            if raw_order and isinstance(raw_order, list) and raw_order:
+                soap_order = [s for s in raw_order if s in default_order]
+                if len(soap_order) != len(default_order):
+                    soap_order = default_order
+            else:
+                soap_order = default_order
+        except Exception:
+            # Fail-open: if preferences cannot be loaded, use default order
+            soap_order = ["subjective", "objective", "assessment", "plan"]
+
+        # Build payload in the desired key order.
+        # JSON key order will follow insertion order of this dict.
+        section_map: Dict[str, Any] = {
+            "subjective": soap.subjective or "",
+            "objective": soap.objective or {},
+            "assessment": soap.assessment or "",
+            "plan": soap.plan or "",
+        }
+
+        payload: Dict[str, Any] = {}
+        for key in soap_order:
+            # Only insert known sections to avoid unexpected keys
+            if key in section_map:
+                payload[key] = section_map[key]
+
+        # Append non-ordered metadata fields
+        payload["highlights"] = soap.highlights or []
+        payload["red_flags"] = soap.red_flags or []
+        payload["generated_at"] = (
+            soap.generated_at.isoformat() if soap.generated_at else ""
         )
-        return ok(request, data=soap_data, message="Success")
+        payload["model_info"] = soap.model_info or {}
+        payload["confidence_score"] = soap.confidence_score
+        payload["soap_order"] = soap_order
+
+        return ok(request, data=payload, message="Success")
 
     except HTTPException:
         # Re-raise HTTPException directly (like 404 for SOAP note not found)

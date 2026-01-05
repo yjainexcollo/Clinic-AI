@@ -3,7 +3,7 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 import logging
 from typing import List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 
 from ...application.use_cases.create_walk_in_visit import (
     CreateWalkInVisitUseCase,
@@ -26,6 +26,19 @@ class CreateWalkInVisitRequestSchema(BaseModel):
     mobile: str = Field(..., description="Patient mobile number")
     age: int = Field(None, description="Patient age")
     gender: str = Field(None, description="Patient gender")
+    language: str = Field("en", description="Patient preferred language (en or sp)", pattern=r"^(en|es|sp)$")
+    
+    @validator("language", pre=True)
+    def normalize_language(cls, v):
+        """Normalize language codes: 'es' -> 'sp' for consistency with frontend."""
+        if v and isinstance(v, str):
+            normalized = v.lower().strip()
+            # Map 'es' to 'sp' for consistency with frontend LanguageContext
+            if normalized == "es":
+                return "sp"
+            if normalized in ["en", "sp"]:
+                return normalized
+        return "en"  # Default to English
 
 
 class CreateWalkInVisitResponseSchema(BaseModel):
@@ -63,17 +76,28 @@ async def create_walk_in_visit(
     4. Returns patient_id, visit_id, and next steps
     """
     try:
+        # Extract doctor_id
+        doctor_id = getattr(http_request.state, "doctor_id", None)
+        if not doctor_id:
+            return fail(
+                http_request,
+                error="MISSING_DOCTOR_ID",
+                message="X-Doctor-ID header is required",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
         # Convert schema to use case request
         use_case_request = CreateWalkInVisitRequest(
             name=request.name,
             mobile=request.mobile,
             age=request.age,
-            gender=request.gender
+            gender=request.gender,
+            language=request.language
         )
         
         # Execute use case
         use_case = CreateWalkInVisitUseCase(patient_repo, visit_repo)
-        response = await use_case.execute(use_case_request)
+        response = await use_case.execute(use_case_request, doctor_id=doctor_id)
         
         # Encode patient_id for client (opaque token) - same as scheduled flow
         from ...core.utils.crypto import encode_patient_id
@@ -124,8 +148,18 @@ async def get_available_workflow_steps(
         from ...domain.value_objects.visit_id import VisitId
         visit_id_obj = VisitId(visit_id)
         
+        # Extract doctor_id
+        doctor_id = getattr(request.state, "doctor_id", None)
+        if not doctor_id:
+            return fail(
+                request,
+                error="MISSING_DOCTOR_ID",
+                message="X-Doctor-ID header is required",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
         # Find visit by ID
-        visit = await visit_repo.find_by_id(visit_id_obj)
+        visit = await visit_repo.find_by_id(visit_id_obj, doctor_id)
         if not visit:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

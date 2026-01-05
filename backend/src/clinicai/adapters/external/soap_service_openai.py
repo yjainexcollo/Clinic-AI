@@ -92,13 +92,27 @@ class OpenAISoapService(SoapService):
         return translated_text
 
     def _normalize_language(self, language: str) -> str:
-        """Normalize language code to handle both 'sp' and 'es' for backward compatibility."""
+        """
+        Normalize language code for backend LLM prompts.
+        
+        Frontend uses: 'en' or 'sp'
+        Backend normalizes to: 'en' or 'es' (for LLM prompts)
+        
+        Mapping:
+        - 'sp', 'es', 'spanish', 'español', 'es-es', 'es-mx' → 'es'
+        - unknown/empty → 'en' (default)
+        """
         if not language:
             return "en"
         normalized = language.lower().strip()
-        if normalized in ['es', 'sp']:
-            return 'sp'
-        return normalized if normalized in ['en', 'sp'] else 'en'
+        if normalized in ['es', 'sp', 'spanish', 'español', 'es-es', 'es-mx']:
+            return 'es'
+        return normalized if normalized in ['en', 'es'] else 'en'
+    
+    def _get_output_language_name(self, language: str) -> str:
+        """Get human-readable language name for LLM prompts."""
+        lang = self._normalize_language(language)
+        return "Spanish" if lang == "es" else "English"
 
     async def _get_doctor_preferences(self, doctor_id: Optional[str]) -> Optional[Dict[str, Any]]:
         """Fetch doctor preferences with 1s timeout; fail-open on errors."""
@@ -137,6 +151,14 @@ class OpenAISoapService(SoapService):
         language_override = soap_ai_cfg.get("language")
         if language_override:
             lang = self._normalize_language(language_override)
+
+        # Determine SOAP section order from doctor preferences
+        default_soap_order = ["subjective", "objective", "assessment", "plan"]
+        raw_order = (prefs or {}).get("soap_order") or default_soap_order
+        # Keep only known sections and ensure we still have all of them
+        soap_order: List[str] = [s for s in raw_order if s in default_soap_order]
+        if len(soap_order) != len(default_soap_order):
+            soap_order = default_soap_order
         
         # Build context from available data
         context_parts = []
@@ -153,7 +175,7 @@ class OpenAISoapService(SoapService):
                 vitals_data = pre_visit_summary['vitals']['data']
                 vitals_text = self._format_vitals_for_soap(vitals_data)
                 # Translate vitals to Spanish if needed
-                if lang == "sp":
+                if lang == "es":
                     vitals_text = self._translate_vitals_to_spanish(vitals_text)
                 context_parts.append(f"Vitals Data: {vitals_text}")
         
@@ -240,10 +262,75 @@ class OpenAISoapService(SoapService):
             f"- Detail level: {detail_level}\n"
             f"- Formatting: {formatting_pref}\n"
             f"- Language override: {language_override or 'none'}\n"
+            f"- SOAP section order: {', '.join(soap_order)}\n"
         )
 
+        # Build JSON schema snippets honoring SOAP order
+        subjective_sp = '    "subjective": "Síntomas reportados por el paciente, preocupaciones e historial discutido"'
+        objective_sp = """    "objective": {
+        "vital_signs": {
+            "blood_pressure": "120/80 mmHg",
+            "heart_rate": "74 bpm",
+            "temperature": "36.4C",
+            "SpO2": "92% en aire ambiente",
+            "weight": "80 kg"
+        },
+        "physical_exam": {
+            "general_appearance": "El paciente parece cansado pero cooperativo",
+            "HEENT": "No discutido",
+            "cardiac": "No discutido",
+            "respiratory": "No discutido",
+            "abdominal": "No discutido",
+            "neuro": "No discutido",
+            "extremities": "No discutido",
+            "gait": "No discutido"
+        }
+    }"""
+        assessment_sp = '    "assessment": "Impresiones clínicas y razonamiento discutido por el médico"'
+        plan_sp = '    "plan": "Plan de tratamiento, instrucciones de seguimiento y próximos pasos discutidos"'
+
+        subjective_en = '    "subjective": "Patient\'s reported symptoms, concerns, and history as discussed"'
+        objective_en = """    "objective": {
+        "vital_signs": {
+            "blood_pressure": "120/80 mmHg",
+            "heart_rate": "74 bpm",
+            "temperature": "36.4C",
+            "SpO2": "92% on room air",
+            "weight": "80 kg"
+        },
+        "physical_exam": {
+            "general_appearance": "Patient appears tired but is cooperative",
+            "HEENT": "Not discussed",
+            "cardiac": "Not discussed",
+            "respiratory": "Not discussed",
+            "abdominal": "Not discussed",
+            "neuro": "Not discussed",
+            "extremities": "Not discussed",
+            "gait": "Not discussed"
+        }
+    }"""
+        assessment_en = '    "assessment": "Clinical impressions and reasoning discussed by the physician"'
+        plan_en = '    "plan": "Treatment plan, follow-up instructions, and next steps discussed"'
+
+        sp_section_map = {
+            "subjective": subjective_sp,
+            "objective": objective_sp,
+            "assessment": assessment_sp,
+            "plan": plan_sp,
+        }
+        en_section_map = {
+            "subjective": subjective_en,
+            "objective": objective_en,
+            "assessment": assessment_en,
+            "plan": plan_en,
+        }
+
+        ordered_sp_sections = ",\n".join(sp_section_map[s] for s in soap_order)
+        ordered_en_sections = ",\n".join(en_section_map[s] for s in soap_order)
+
         # Create language-aware prompt
-        if lang == "sp":
+        output_language = self._get_output_language_name(language)
+        if lang == "es":
             prompt = f"""
 Eres un escribano clínico que genera notas SOAP a partir de consultas médico-paciente.
 
@@ -266,30 +353,14 @@ INSTRUCCIONES:
 7. Nivel de detalle preferido: {detail_level}
 8. Formato preferido: {formatting_pref}
 
+Reglas de Idioma:
+- Escribe todos los valores de texto en lenguaje natural en {output_language}.
+- NO traduzcas claves JSON, enumeraciones, códigos, nombres de campos o IDs.
+- Mantén la terminología médica apropiada para {output_language}.
+
 FORMATO REQUERIDO (JSON):
 {{
-    "subjective": "Síntomas reportados por el paciente, preocupaciones e historial discutido",
-    "objective": {{
-        "vital_signs": {{
-            "blood_pressure": "120/80 mmHg",
-            "heart_rate": "74 bpm",
-            "temperature": "36.4C",
-            "SpO2": "92% en aire ambiente",
-            "weight": "80 kg"
-        }},
-        "physical_exam": {{
-            "general_appearance": "El paciente parece cansado pero cooperativo",
-            "HEENT": "No discutido",
-            "cardiac": "No discutido",
-            "respiratory": "No discutido",
-            "abdominal": "No discutido",
-            "neuro": "No discutido",
-            "extremities": "No discutido",
-            "gait": "No discutido"
-        }}
-    }},
-    "assessment": "Impresiones clínicas y razonamiento discutido por el médico",
-    "plan": "Plan de tratamiento, instrucciones de seguimiento y próximos pasos discutidos",
+{ordered_sp_sections},
     "highlights": ["Punto clínico clave 1", "Punto clínico clave 2", "Punto clínico clave 3"],
     "red_flags": ["Cualquier síntoma o hallazgo preocupante mencionado"],
     "model_info": {{
@@ -330,30 +401,14 @@ INSTRUCTIONS:
 9. Preferred detail level: {detail_level}
 10. Preferred formatting: {formatting_pref}
 
+Language Rules:
+- Write all natural-language text values in {output_language}.
+- Do NOT translate JSON keys, enums, codes, field names, or IDs.
+- Keep medical terminology appropriate for {output_language}.
+
 REQUIRED FORMAT (JSON):
 {{
-    "subjective": "Patient's reported symptoms, concerns, and history as discussed",
-    "objective": {{
-        "vital_signs": {{
-            "blood_pressure": "120/80 mmHg",
-            "heart_rate": "74 bpm",
-            "temperature": "36.4C",
-            "SpO2": "92% on room air",
-            "weight": "80 kg"
-        }},
-        "physical_exam": {{
-            "general_appearance": "Patient appears tired but is cooperative",
-            "HEENT": "Not discussed",
-            "cardiac": "Not discussed",
-            "respiratory": "Not discussed",
-            "abdominal": "Not discussed",
-            "neuro": "Not discussed",
-            "extremities": "Not discussed",
-            "gait": "Not discussed"
-        }}
-    }},
-    "assessment": "Clinical impressions and reasoning discussed by the physician",
-    "plan": "Treatment plan, follow-up instructions, and next steps discussed",
+{ordered_en_sections},
     "highlights": ["Key clinical points 1", "Key clinical points 2", "Key clinical points 3"],
     "red_flags": ["Any concerning symptoms or findings mentioned"],
     "model_info": {{
@@ -625,9 +680,9 @@ You are a clinical scribe. Generate accurate, structured SOAP notes from medical
         """Generate post-visit summary for patient sharing."""
         # Normalize language code
         lang = self._normalize_language(language)
-        
         # Create the prompt for post-visit summary
-        if lang == "sp":
+        output_language = self._get_output_language_name(language)
+        if lang == "es":
             prompt = f"""
 Estás generando un resumen post-consulta para un paciente para compartir por WhatsApp. Debe ser claro, completo y amigable para el paciente.
 
@@ -647,6 +702,11 @@ DATOS DE NOTA SOAP:
 
 INSTRUCCIONES:
 Genera un resumen post-consulta completo siguiendo esta estructura exacta en formato JSON:
+
+Reglas de Idioma:
+- Escribe todos los valores de texto en lenguaje natural en {output_language}.
+- NO traduzcas claves JSON, enumeraciones, códigos, nombres de campos o IDs.
+- Mantén la terminología médica apropiada para {output_language}.
 
 {{
     "key_findings": [
@@ -719,6 +779,11 @@ SOAP NOTE DATA:
 
 INSTRUCTIONS:
 Generate a comprehensive post-visit summary following this exact structure in JSON format:
+
+Language Rules:
+- Write all natural-language text values in {output_language}.
+- Do NOT translate JSON keys, enums, codes, field names, or IDs.
+- Keep medical terminology appropriate for {output_language}.
 
 {{
     "key_findings": [
