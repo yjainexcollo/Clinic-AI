@@ -1,0 +1,55 @@
+name: 'Health Check'
+description: 'Verifies deployment health with retry logic'
+inputs:
+  health-url:
+    description: 'Health check endpoint URL'
+    required: true
+  max-retries:
+    description: 'Maximum retry attempts'
+    required: false
+    default: '10'
+  retry-delay:
+    description: 'Delay between retries (seconds)'
+    required: false
+    default: '30'
+  timeout:
+    description: 'Request timeout (seconds)'
+    required: false
+    default: '10'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Wait for deployment
+      shell: bash
+      run: echo "⏳ Waiting 60 seconds for deployment to stabilize..." && sleep 60
+
+    - name: Health check with retries
+      shell: bash
+      run: |
+        set +e
+        RETRIES=${{ inputs.max-retries }}
+        DELAY=${{ inputs.retry-delay }}
+        TIMEOUT=${{ inputs.timeout }}
+        URL="${{ inputs.health-url }}"
+        
+        for i in $(seq 1 $RETRIES); do
+          echo "🏥 Health check attempt $i/$RETRIES: $URL"
+          
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time $TIMEOUT "$URL" || echo "000")
+          
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Health check passed (HTTP $HTTP_CODE)"
+            exit 0
+          else
+            echo "❌ Health check failed (HTTP $HTTP_CODE)"
+            if [ $i -lt $RETRIES ]; then
+              echo "⏳ Waiting $DELAY seconds before retry..."
+              sleep $DELAY
+            fi
+          fi
+        done
+        
+        echo "❌ Health check failed after $RETRIES attempts"
+        exit 1
+

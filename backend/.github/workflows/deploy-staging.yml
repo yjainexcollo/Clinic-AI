@@ -1,0 +1,110 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'backend/**'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force deployment (skip CI checks)'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  SERVICE_NAME: backend
+  WORKING_DIR: backend
+  ENVIRONMENT: staging
+
+jobs:
+  load-config:
+    name: Load Environment Config
+    runs-on: ubuntu-latest
+    outputs:
+      app_name: ${{ steps.config.outputs.app_name }}
+      resource_group: ${{ steps.config.outputs.resource_group }}
+      acr_name: ${{ steps.config.outputs.acr_name }}
+      slot_name: ${{ steps.config.outputs.slot_name }}
+      health_url: ${{ steps.config.outputs.health_url }}
+      concurrency_group: ${{ steps.config.outputs.concurrency_group }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Parse staging config
+        id: config
+        shell: bash
+        run: |
+          # Install yq for YAML parsing
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          
+          CONFIG_FILE="${{ env.WORKING_DIR }}/config/environments/staging.yml"
+          
+          APP_NAME=$(yq eval '.azure.app_name' $CONFIG_FILE)
+          RESOURCE_GROUP=$(yq eval '.azure.resource_group' $CONFIG_FILE)
+          ACR_NAME=$(yq eval '.azure.acr_name' $CONFIG_FILE)
+          SLOT_NAME=$(yq eval '.azure.slot_name' $CONFIG_FILE)
+          HEALTH_URL=$(yq eval '.deployment.health_check_url' $CONFIG_FILE)
+          CONCURRENCY_GROUP=$(yq eval '.deployment.concurrency_group' $CONFIG_FILE)
+          
+          echo "app_name=$APP_NAME" >> $GITHUB_OUTPUT
+          echo "resource_group=$RESOURCE_GROUP" >> $GITHUB_OUTPUT
+          echo "acr_name=$ACR_NAME" >> $GITHUB_OUTPUT
+          echo "slot_name=$SLOT_NAME" >> $GITHUB_OUTPUT
+          echo "health_url=$HEALTH_URL" >> $GITHUB_OUTPUT
+          echo "concurrency_group=$CONCURRENCY_GROUP" >> $GITHUB_OUTPUT
+
+  build-and-deploy:
+    name: Build and Deploy
+    needs: load-config
+    runs-on: ubuntu-latest
+    environment: staging
+    concurrency:
+      group: ${{ needs.load-config.outputs.concurrency_group }}
+      cancel-in-progress: false  # Don't cancel, wait for current deployment
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build Docker image
+        uses: ./.github/actions/build-docker
+        with:
+          service-name: ${{ env.SERVICE_NAME }}
+          acr-name: ${{ needs.load-config.outputs.acr_name }}
+          dockerfile-path: ${{ env.WORKING_DIR }}/docker/Dockerfile
+          context-path: ${{ env.WORKING_DIR }}
+          image-tag: ${{ github.sha }}
+      
+      - name: Deploy to Azure
+        uses: ./.github/actions/deploy-azure
+        with:
+          app-name: ${{ needs.load-config.outputs.app_name }}
+          slot-name: ${{ needs.load-config.outputs.slot_name }}
+          image: ${{ needs.load-config.outputs.acr_name }}.azurecr.io/${{ env.SERVICE_NAME }}:${{ github.sha }}
+          resource-group: ${{ needs.load-config.outputs.resource_group }}
+          environment: ${{ env.ENVIRONMENT }}
+      
+      - name: Health check
+        uses: ./.github/actions/health-check
+        with:
+          health-url: ${{ needs.load-config.outputs.health_url }}/health
+      
+      - name: Notify deployment success
+        uses: ./.github/actions/notify
+        if: success()
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          status: success
+          environment: ${{ env.ENVIRONMENT }}
+          service-name: ${{ env.SERVICE_NAME }}
+      
+      - name: Notify deployment failure
+        uses: ./.github/actions/notify
+        if: failure()
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          status: failure
+          environment: ${{ env.ENVIRONMENT }}
+          service-name: ${{ env.SERVICE_NAME }}
+

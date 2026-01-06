@@ -1,0 +1,20 @@
+# Development Environment Configuration
+azure:
+  app_name: clinic-ai-backend-dev
+  resource_group: clinic-ai-rg-dev
+  acr_name: clinicaiacrdev
+  slot_name: Production
+
+deployment:
+  auto_deploy: true
+  health_check_url: https://clinic-ai-backend-dev.azurewebsites.net
+  rollback_on_failure: true
+  concurrency_group: dev-backend
+
+monitoring:
+  application_insights: clinic-ai-insights-dev
+  log_level: DEBUG
+
+coverage:
+  threshold: 60  # Lower threshold for dev
+

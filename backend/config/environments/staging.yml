@@ -1,0 +1,21 @@
+# Staging Environment Configuration
+azure:
+  app_name: clinic-ai-backend-staging
+  resource_group: clinic-ai-rg-staging
+  acr_name: clinicaiacrstaging
+  slot_name: Production
+
+deployment:
+  auto_deploy: true
+  health_check_url: https://clinic-ai-backend-staging.azurewebsites.net
+  rollback_on_failure: true
+  concurrency_group: staging-backend
+  blue_green_deployment: false  # Use slot swap if available
+
+monitoring:
+  application_insights: clinic-ai-insights-staging
+  log_level: INFO
+
+coverage:
+  threshold: 70  # Standard threshold
+

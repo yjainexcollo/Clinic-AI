@@ -1,0 +1,21 @@
+# Production Environment Configuration
+azure:
+  app_name: clinic-ai-backend-prod
+  resource_group: clinic-ai-rg-prod
+  acr_name: clinicaiacrprod
+  slot_name: Production
+
+deployment:
+  auto_deploy: false  # Manual approval required
+  health_check_url: https://clinic-ai-backend-prod.azurewebsites.net
+  rollback_on_failure: true
+  concurrency_group: prod-backend
+  blue_green_deployment: true  # Use staging slot for blue-green
+
+monitoring:
+  application_insights: clinic-ai-insights-prod
+  log_level: WARNING
+
+coverage:
+  threshold: 70  # Standard threshold
+
