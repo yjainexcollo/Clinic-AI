@@ -38,10 +38,19 @@ const BACKEND_BASE_URL: string = rawBackendUrl
 // Authentication disabled - API_KEY no longer required
 const API_KEY = undefined;
 
-// Authentication disabled - authorizedFetch is now just a regular fetch wrapper
+// Automatic API key injection for frontend requests (similar to doctor_id handling)
 export function authorizedFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
-  // No authentication headers added
-  const headers = init.headers;
+  // Get API key from environment variable
+  const apiKey = (import.meta as any).env?.VITE_API_KEY as string || "";
+  
+  // Merge headers
+  const headers = new Headers(init.headers);
+  
+  // Add API key if available and not already present
+  if (apiKey && !headers.get('X-API-Key') && !headers.get('x-api-key') && !headers.get('Authorization')) {
+    headers.set('X-API-Key', apiKey);
+  }
+  
   return fetch(input, { ...init, headers });
 }
 

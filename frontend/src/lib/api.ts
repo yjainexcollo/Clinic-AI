@@ -143,19 +143,30 @@ class ApiClient {
   private client: AxiosInstance;
 
   constructor() {
+    // Get API key from environment variable (similar to how doctor_id is handled)
+    const apiKey = import.meta.env?.VITE_API_KEY as string || "";
 
     const defaultHeaders: Record<string, string> = {
       'Content-Type': 'application/json',
     };
+
+    // Add API key to headers if available (automatic authentication)
+    if (apiKey) {
+      defaultHeaders['X-API-Key'] = apiKey;
+    }
 
     this.client = axios.create({
       baseURL: API_BASE_URL,
       headers: defaultHeaders,
     });
 
-    // Add request interceptor for logging
+    // Add request interceptor for logging and API key injection
     this.client.interceptors.request.use(
       (config) => {
+        // Ensure API key is always included (in case it wasn't in default headers)
+        if (apiKey && !config.headers['X-API-Key'] && !config.headers['x-api-key']) {
+          config.headers['X-API-Key'] = apiKey;
+        }
         console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`);
         return config;
       },

@@ -46,7 +46,29 @@ function parsePythonDict(str: string): any {
   }
 }
 
-function renderObjective(obj: any, t: (key: string) => string): React.ReactNode {
+function renderObjective(obj: any, t: (key: string) => string, language: string = 'en'): React.ReactNode {
+  // Translation mapping for vital signs and exam keys
+  const translateKey = (key: string): string => {
+    const keyMap: Record<string, string> = {
+      'blood_pressure': language === 'sp' ? 'Presión Arterial' : 'Blood Pressure',
+      'heart_rate': language === 'sp' ? 'Frecuencia Cardíaca' : 'Heart Rate',
+      'temperature': language === 'sp' ? 'Temperatura' : 'Temperature',
+      'spo2': language === 'sp' ? 'SpO2' : 'SpO2',
+      'spO2': language === 'sp' ? 'SpO2' : 'SpO2',
+      'weight': language === 'sp' ? 'Peso' : 'Weight',
+      'height': language === 'sp' ? 'Altura' : 'Height',
+      'respiratory_rate': language === 'sp' ? 'Frecuencia Respiratoria' : 'Respiratory Rate',
+      'general_appearance': language === 'sp' ? 'Apariencia General' : 'General Appearance',
+      'heent': language === 'sp' ? 'HEENT' : 'HEENT',
+      'cardiac': language === 'sp' ? 'Cardíaco' : 'Cardiac',
+      'respiratory': language === 'sp' ? 'Respiratorio' : 'Respiratory',
+      'abdominal': language === 'sp' ? 'Abdominal' : 'Abdominal',
+      'neuro': language === 'sp' ? 'Neurológico' : 'Neuro',
+      'extremities': language === 'sp' ? 'Extremidades' : 'Extremities',
+      'gait': language === 'sp' ? 'Marcha' : 'Gait',
+    };
+    return keyMap[key.toLowerCase()] || key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  };
   if (obj == null) return <span className="opacity-60">{t('soap.not_discussed')}</span>;
   let data: any = obj;
   
@@ -97,7 +119,7 @@ function renderObjective(obj: any, t: (key: string) => string): React.ReactNode 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {Object.entries(vital).map(([k, v]) => (
                 <div key={k} className="flex items-start gap-2 text-sm">
-                  <span className="min-w-28 font-medium capitalize text-gray-700">{k.replace(/_/g, " ")}</span>
+                  <span className="min-w-28 font-medium text-gray-700">{translateKey(k)}</span>
                   <span className="flex-1">{String(v)}</span>
                 </div>
               ))}
@@ -111,7 +133,7 @@ function renderObjective(obj: any, t: (key: string) => string): React.ReactNode 
               <div className="space-y-2">
                 {Object.entries(physical).map(([k, v]) => (
                   <div key={k} className="flex items-start gap-2 text-sm">
-                    <span className="min-w-28 font-medium capitalize text-gray-700">{k.replace(/_/g, " ")}</span>
+                    <span className="min-w-28 font-medium text-gray-700">{translateKey(k)}</span>
                     <span className="flex-1">{String(v)}</span>
                   </div>
                 ))}
@@ -131,7 +153,7 @@ function renderObjective(obj: any, t: (key: string) => string): React.ReactNode 
                     <div className="space-y-1">
                       {Object.entries(v).map(([subK, subV]) => (
                         <div key={subK} className="flex items-start gap-2">
-                          <span className="min-w-20 text-xs font-medium text-gray-600">{subK.replace(/_/g, " ")}</span>
+                          <span className="min-w-20 text-xs font-medium text-gray-600">{translateKey(subK)}</span>
                           <span className="text-xs">{String(subV)}</span>
                         </div>
                       ))}
@@ -331,10 +353,9 @@ const SoapSummary: React.FC = () => {
         <div className="bg-white rounded-lg shadow-md p-6">
           <div className="space-y-6">
             <div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">SOAP Generation Settings</h3>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">{t("soap.generation_settings")}</h3>
               <p className="text-gray-600 text-sm">
-                You can fill this template form to guide the SOAP summary for this visit, or skip it and
-                generate using the default format.
+                {t("soap.generation_settings_message")}
               </p>
             </div>
 
@@ -347,10 +368,10 @@ const SoapSummary: React.FC = () => {
                     checked={useTemplate}
                     onChange={(e) => setUseTemplate(e.target.checked)}
                   />
-                  <span>Use custom SOAP template for this generation only</span>
+                  <span>{t("soap.use_custom_template")}</span>
                 </label>
                 <span className="text-xs text-gray-500">
-                  If unchecked, the default SOAP structure is used.
+                  {t("soap.default_structure_note")}
                 </span>
               </div>
 
@@ -358,7 +379,7 @@ const SoapSummary: React.FC = () => {
                 <div className="space-y-4 mt-4">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Template Name</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">{t("soap.template_name")}</label>
                       <input
                         className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         value={templateName}
@@ -367,7 +388,7 @@ const SoapSummary: React.FC = () => {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">{t("soap.template_category")}</label>
                       <input
                         className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         value={templateCategory}
@@ -376,7 +397,7 @@ const SoapSummary: React.FC = () => {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Speciality</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">{t("soap.template_speciality")}</label>
                       <input
                         className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         value={templateSpeciality}
@@ -388,7 +409,7 @@ const SoapSummary: React.FC = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Description (optional)
+                      {t("soap.template_description")}
                     </label>
                     <textarea
                       className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[60px]"
@@ -401,7 +422,7 @@ const SoapSummary: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Tags (comma-separated)
+                        {t("soap.template_tags")}
                       </label>
                       <input
                         className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -412,7 +433,7 @@ const SoapSummary: React.FC = () => {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Appointment Types (comma-separated)
+                        {t("soap.template_appointment_types")}
                       </label>
                       <input
                         className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -426,16 +447,16 @@ const SoapSummary: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Status
+                        {t("soap.template_status")}
                       </label>
                       <select
                         className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         value={templateStatus}
                         onChange={(e) => setTemplateStatus(e.target.value)}
                       >
-                        <option value="active">Active</option>
-                        <option value="inactive">Inactive</option>
-                        <option value="draft">Draft</option>
+                        <option value="active">{t("soap.status_active")}</option>
+                        <option value="inactive">{t("soap.status_inactive")}</option>
+                        <option value="draft">{t("soap.status_draft")}</option>
                       </select>
                     </div>
                     <div className="flex items-center pt-6">
@@ -446,7 +467,7 @@ const SoapSummary: React.FC = () => {
                           checked={templateIsFavorite}
                           onChange={(e) => setTemplateIsFavorite(e.target.checked)}
                         />
-                        Mark as favorite
+                        {t("soap.template_mark_favorite")}
                       </label>
                     </div>
                   </div>
@@ -454,7 +475,7 @@ const SoapSummary: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Subjective Template
+                        {t("soap.template_subjective")}
                       </label>
                       <textarea
                         className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[90px]"
@@ -467,7 +488,7 @@ const SoapSummary: React.FC = () => {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Objective Template
+                        {t("soap.template_objective")}
                       </label>
                       <textarea
                         className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[90px]"
@@ -480,7 +501,7 @@ const SoapSummary: React.FC = () => {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Assessment Template
+                        {t("soap.template_assessment")}
                       </label>
                       <textarea
                         className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[90px]"
@@ -493,7 +514,7 @@ const SoapSummary: React.FC = () => {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Plan Template
+                        {t("soap.template_plan")}
                       </label>
                       <textarea
                         className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 min-h-[90px]"
@@ -525,7 +546,7 @@ const SoapSummary: React.FC = () => {
                   disabled={loading}
                   className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {loading ? "Generating..." : "Generate SOAP Summary"}
+                  {loading ? t("soap.generating") : t("soap.generate_summary")}
                 </button>
               </div>
             </div>
@@ -580,7 +601,7 @@ const SoapSummary: React.FC = () => {
         if (key === "objective") {
           return (
             <Block key="objective" title={t("soap.objective")} t={t}>
-              {renderObjective(obj, t)}
+              {renderObjective(obj, t, language)}
             </Block>
           );
         }

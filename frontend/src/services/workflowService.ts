@@ -9,6 +9,7 @@ export interface CreateWalkInVisitRequest {
   mobile: string;
   age?: number;
   gender?: string;
+  language?: 'en' | 'sp';
 }
 
 export interface CreateWalkInVisitResponse {
@@ -56,17 +57,29 @@ export class WorkflowService {
     // Configure axios defaults
     axios.defaults.headers.common["Content-Type"] = "application/json";
     axios.defaults.timeout = 15000;
-    // Authentication disabled - no warnings needed
+    
+    // Add API key to axios defaults (automatic authentication)
+    const apiKey = (import.meta as any).env?.VITE_API_KEY as string || "";
+    if (apiKey) {
+      axios.defaults.headers.common["X-API-Key"] = apiKey;
+    }
   }
 
   private buildHeaders(
     extra: Record<string, string> = {}
   ): Record<string, string> {
-    // Authentication disabled - no API key headers
+    // Get API key from environment variable (automatic authentication)
+    const apiKey = (import.meta as any).env?.VITE_API_KEY as string || "";
+    
     const headers: Record<string, string> = {
       Accept: "application/json",
       ...extra,
     };
+    
+    // Add API key if available (automatic authentication for frontend)
+    if (apiKey) {
+      headers['X-API-Key'] = apiKey;
+    }
 
     return headers;
   }

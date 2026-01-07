@@ -24,9 +24,10 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 
 const PRE_VISIT_SECTIONS = [
+  // Top-level sections only – no sub-field configuration
   { key: "chief_complaint", label: "Chief Complaint", fields: [] },
-  { key: "hpi", label: "HPI", fields: ["Onset", "Location", "Duration", "Characterization/quality", "Aggravating factors", "Relieving factors", "Radiation", "Temporal pattern", "Severity", "Associated symptoms", "Relevant negatives"] },
-  { key: "history", label: "History", fields: ["Medical", "Surgical", "Family", "Lifestyle"] },
+  { key: "hpi", label: "HPI", fields: [] },
+  { key: "history", label: "History", fields: [] },
   { key: "review_of_systems", label: "Review of Systems", fields: [] },
   { key: "current_medication", label: "Current Medication", fields: [] },
 ];

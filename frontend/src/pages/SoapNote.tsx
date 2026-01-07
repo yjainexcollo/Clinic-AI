@@ -9,11 +9,13 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Loading } from '../components/ui/Loading';
 import { FileText, Activity, Plus, ArrowLeft } from 'lucide-react';
+import { useLanguage } from '../contexts/LanguageContext';
 
 export const SoapNote: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentPatient, currentVisit } = useAppStore();
+  const { language, t } = useLanguage();
   
   const [vitals, setVitals] = useState({
     blood_pressure: '',
@@ -439,10 +441,10 @@ export const SoapNote: React.FC = () => {
                       checked={useTemplate}
                       onChange={(e) => setUseTemplate(e.target.checked)}
                     />
-                    Use custom SOAP template for this generation only
+                    {t("soap.use_custom_template")}
                   </label>
                   <span className="text-xs text-gray-500">
-                    If disabled, the default AI format is used.
+                    {t("soap.default_structure_note_disabled")}
                   </span>
                 </div>
 
@@ -451,7 +453,7 @@ export const SoapNote: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Template Name
+                          {t("soap.template_name")}
                         </label>
                         <input
                           type="text"
@@ -463,7 +465,7 @@ export const SoapNote: React.FC = () => {
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Category
+                          {t("soap.template_category")}
                         </label>
                         <input
                           type="text"
@@ -475,7 +477,7 @@ export const SoapNote: React.FC = () => {
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Speciality
+                          {t("soap.template_speciality")}
                         </label>
                         <input
                           type="text"
@@ -488,7 +490,7 @@ export const SoapNote: React.FC = () => {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Description (optional)
+                        {t("soap.template_description")}
                       </label>
                       <textarea
                         className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-medical-primary focus:border-medical-primary min-h-[60px]"
@@ -500,7 +502,7 @@ export const SoapNote: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Tags (comma-separated)
+                          {t("soap.template_tags")}
                         </label>
                         <input
                           type="text"
@@ -512,7 +514,7 @@ export const SoapNote: React.FC = () => {
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Appointment Types (comma-separated)
+                          {t("soap.template_appointment_types")}
                         </label>
                         <input
                           type="text"
@@ -526,16 +528,16 @@ export const SoapNote: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Status
+                          {t("soap.template_status")}
                         </label>
                         <select
                           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-medical-primary focus:border-medical-primary"
                           value={templateStatus}
                           onChange={(e) => setTemplateStatus(e.target.value)}
                         >
-                          <option value="active">Active</option>
-                          <option value="inactive">Inactive</option>
-                          <option value="draft">Draft</option>
+                          <option value="active">{t("soap.status_active")}</option>
+                          <option value="inactive">{t("soap.status_inactive")}</option>
+                          <option value="draft">{t("soap.status_draft")}</option>
                         </select>
                       </div>
                       <div className="flex items-center pt-6">
@@ -546,14 +548,14 @@ export const SoapNote: React.FC = () => {
                             checked={templateIsFavorite}
                             onChange={(e) => setTemplateIsFavorite(e.target.checked)}
                           />
-                          Mark as favorite
+                          {t("soap.template_mark_favorite")}
                         </label>
                       </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Subjective Template
+                          {t("soap.template_subjective")}
                         </label>
                         <textarea
                           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-medical-primary focus:border-medical-primary min-h-[100px]"
@@ -566,7 +568,7 @@ export const SoapNote: React.FC = () => {
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Objective Template
+                          {t("soap.template_objective")}
                         </label>
                         <textarea
                           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-medical-primary focus:border-medical-primary min-h-[100px]"
@@ -579,7 +581,7 @@ export const SoapNote: React.FC = () => {
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Assessment Template
+                          {t("soap.template_assessment")}
                         </label>
                         <textarea
                           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-medical-primary focus:border-medical-primary min-h-[100px]"
@@ -592,7 +594,7 @@ export const SoapNote: React.FC = () => {
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Plan Template
+                          {t("soap.template_plan")}
                         </label>
                         <textarea
                           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-medical-primary focus:border-medical-primary min-h-[100px]"
@@ -613,7 +615,7 @@ export const SoapNote: React.FC = () => {
                     isLoading={generateSoapMutation.isPending}
                     size="lg"
                   >
-                    Generate SOAP Note
+                    {t("soap.generate_summary")}
                   </Button>
                 </div>
               </div>

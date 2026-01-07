@@ -2,10 +2,12 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { BACKEND_BASE_URL, authorizedFetch } from "../services/patientService";
 import { workflowService } from "../services/workflowService";
+import { useLanguage } from "../contexts/LanguageContext";
 
 const WalkInPostVisit: React.FC = () => {
   const { patientId = "", visitId = "" } = useParams();
   const navigate = useNavigate();
+  const { language, t } = useLanguage();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [summaryData, setSummaryData] = useState<any>(null);
@@ -100,20 +102,22 @@ const WalkInPostVisit: React.FC = () => {
     <div className="max-w-6xl mx-auto p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Walk-in Post-Visit Summary</h1>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {language === 'sp' ? 'Resumen Post-Consulta Sin Cita' : 'Walk-in Post-Visit Summary'}
+          </h1>
           <p className="text-sm text-gray-600 mt-1">
-            Patient: {patientId} • Visit: {visitId}
+            {t("soap.patient_visit", { patientId, visitId })}
           </p>
         </div>
         <div className="flex items-center gap-3">
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-            Walk-in Workflow
+            {t("soap.walkin_workflow")}
           </span>
           <button
             onClick={handleBack}
             className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
           >
-            Back
+            {t("common.back")}
           </button>
         </div>
       </div>
@@ -121,12 +125,12 @@ const WalkInPostVisit: React.FC = () => {
       {/* Workflow Status */}
       {workflowInfo && (
         <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-          <h3 className="text-sm font-medium text-green-800 mb-2">Current Workflow Status</h3>
+          <h3 className="text-sm font-medium text-green-800 mb-2">{t("soap.current_status")}</h3>
           <p className="text-sm text-green-700">
-            <strong>Current Step:</strong> Post-Visit Summary
+            <strong>{t("soap.current_step")}:</strong> {t("soap.postvisit_summary")}
           </p>
           <p className="text-sm text-green-700">
-            <strong>Status:</strong> Final step - Ready to complete visit
+            <strong>{language === 'sp' ? 'Estado:' : 'Status:'}</strong> {language === 'sp' ? 'Paso final - Listo para completar la visita' : 'Final step - Ready to complete visit'}
           </p>
         </div>
       )}
@@ -149,41 +153,51 @@ const WalkInPostVisit: React.FC = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
               </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">Post-Visit Summary Not Generated</h3>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                {language === 'sp' ? 'Resumen Post-Consulta No Generado' : 'Post-Visit Summary Not Generated'}
+              </h3>
               <p className="text-gray-600 mb-6">
-                Generate a patient-friendly summary based on the consultation, vitals, and SOAP note.
+                {language === 'sp' 
+                  ? 'Genere un resumen amigable para el paciente basado en la consulta, signos vitales y nota SOAP.'
+                  : 'Generate a patient-friendly summary based on the consultation, vitals, and SOAP note.'}
               </p>
               <button
                 onClick={generateSummary}
                 disabled={loading}
                 className="px-6 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {loading ? "Generating..." : "Generate Post-Visit Summary"}
+                {loading 
+                  ? (language === 'sp' ? "Generando..." : "Generating...") 
+                  : (language === 'sp' ? "Generar Resumen Post-Consulta" : "Generate Post-Visit Summary")}
               </button>
             </div>
           </div>
         ) : (
           <div className="p-6">
             <div className="mb-6">
-              <h2 className="text-xl font-semibold text-gray-900">Post-Visit Summary</h2>
+              <h2 className="text-xl font-semibold text-gray-900">
+                {language === 'sp' ? 'Resumen Post-Consulta' : 'Post-Visit Summary'}
+              </h2>
             </div>
 
             {/* Summary Sections */}
             <div className="space-y-6">
               {/* Visit Overview */}
               <div className="bg-blue-50 p-4 rounded-lg">
-                <h3 className="text-lg font-medium text-blue-900 mb-2">Visit Overview</h3>
+                <h3 className="text-lg font-medium text-blue-900 mb-2">
+                  {language === 'sp' ? 'Resumen de la Visita' : 'Visit Overview'}
+                </h3>
                 <div className="text-blue-800">
-                  <p><strong>Date:</strong> {new Date().toLocaleDateString()}</p>
-                  <p><strong>Patient:</strong> {patientId}</p>
-                  <p><strong>Visit Type:</strong> Walk-in Consultation</p>
+                  <p><strong>{language === 'sp' ? 'Fecha:' : 'Date:'}</strong> {new Date().toLocaleDateString()}</p>
+                  <p><strong>{language === 'sp' ? 'Paciente:' : 'Patient:'}</strong> {patientId}</p>
+                  <p><strong>{language === 'sp' ? 'Tipo de Visita:' : 'Visit Type:'}</strong> {language === 'sp' ? 'Consulta Sin Cita' : 'Walk-in Consultation'}</p>
                 </div>
               </div>
 
               {/* Chief Complaint */}
               {summaryData.chief_complaint && (
                 <div className="border-l-4 border-red-500 pl-4">
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">Chief Complaint</h3>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">{t("postvisit.chief_complaint")}</h3>
                   <p className="text-gray-700">{summaryData.chief_complaint}</p>
                 </div>
               )}
@@ -191,7 +205,7 @@ const WalkInPostVisit: React.FC = () => {
               {/* Key Findings */}
               {summaryData.key_findings && summaryData.key_findings.length > 0 && (
                 <div className="border-l-4 border-yellow-500 pl-4">
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">Key Findings</h3>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">{t("postvisit.key_findings")}</h3>
                   <ul className="space-y-2">
                     {summaryData.key_findings.map((finding: string, index: number) => (
                       <li key={index} className="flex items-start">
@@ -206,7 +220,7 @@ const WalkInPostVisit: React.FC = () => {
               {/* Diagnosis */}
               {summaryData.diagnosis && (
                 <div className="border-l-4 border-green-500 pl-4">
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">Diagnosis</h3>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">{t("postvisit.diagnosis")}</h3>
                   <div className="prose max-w-none">
                     <p className="text-gray-700 whitespace-pre-wrap">{summaryData.diagnosis}</p>
                   </div>
@@ -216,15 +230,15 @@ const WalkInPostVisit: React.FC = () => {
               {/* Medications */}
               {summaryData.medications && summaryData.medications.length > 0 && (
                 <div className="border-l-4 border-purple-500 pl-4">
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">Medications</h3>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">{t("postvisit.medications_prescribed")}</h3>
                   <div className="space-y-2">
                     {summaryData.medications.map((med: any, index: number) => (
                       <div key={index} className="bg-gray-50 p-3 rounded">
                         <p className="font-medium">{med.name}</p>
-                        {med.dosage && <p className="text-sm text-gray-600">Dosage: {med.dosage}</p>}
-                        {med.frequency && <p className="text-sm text-gray-600">Frequency: {med.frequency}</p>}
-                        {med.duration && <p className="text-sm text-gray-600">Duration: {med.duration}</p>}
-                        {med.purpose && <p className="text-sm text-gray-600">Purpose: {med.purpose}</p>}
+                        {med.dosage && <p className="text-sm text-gray-600">{t("postvisit.dosage")}: {med.dosage}</p>}
+                        {med.frequency && <p className="text-sm text-gray-600">{t("postvisit.frequency")}: {med.frequency}</p>}
+                        {med.duration && <p className="text-sm text-gray-600">{t("postvisit.duration")}: {med.duration}</p>}
+                        {med.purpose && <p className="text-sm text-gray-600">{t("postvisit.purpose")}: {med.purpose}</p>}
                       </div>
                     ))}
                   </div>
@@ -234,7 +248,7 @@ const WalkInPostVisit: React.FC = () => {
               {/* Other Recommendations */}
               {summaryData.other_recommendations && summaryData.other_recommendations.length > 0 && (
                 <div className="border-l-4 border-blue-500 pl-4">
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">Recommendations</h3>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">{t("postvisit.other_recommendations")}</h3>
                   <ul className="space-y-2">
                     {summaryData.other_recommendations.map((rec: string, index: number) => (
                       <li key={index} className="flex items-start">
@@ -249,13 +263,13 @@ const WalkInPostVisit: React.FC = () => {
               {/* Tests Ordered */}
               {summaryData.tests_ordered && summaryData.tests_ordered.length > 0 && (
                 <div className="border-l-4 border-indigo-500 pl-4">
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">Tests Ordered</h3>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">{t("postvisit.tests_ordered")}</h3>
                   <div className="space-y-2">
                     {summaryData.tests_ordered.map((test: any, index: number) => (
                       <div key={index} className="bg-gray-50 p-3 rounded">
                         {test.name && <p className="font-medium">{test.name}</p>}
-                        {test.purpose && <p className="text-sm text-gray-600">Purpose: {test.purpose}</p>}
-                        {test.instructions && <p className="text-sm text-gray-600">Instructions: {test.instructions}</p>}
+                        {test.purpose && <p className="text-sm text-gray-600">{t("postvisit.purpose_simple")}: {test.purpose}</p>}
+                        {test.instructions && <p className="text-sm text-gray-600">{t("postvisit.instructions")}: {test.instructions}</p>}
                       </div>
                     ))}
                   </div>
@@ -265,7 +279,7 @@ const WalkInPostVisit: React.FC = () => {
               {/* Next Appointment */}
               {summaryData.next_appointment && (
                 <div className="border-l-4 border-teal-500 pl-4">
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">Next Appointment</h3>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">{t("postvisit.next_appointment")}</h3>
                   <div className="prose max-w-none">
                     <p className="text-gray-700 whitespace-pre-wrap">{summaryData.next_appointment}</p>
                   </div>
@@ -275,7 +289,7 @@ const WalkInPostVisit: React.FC = () => {
               {/* Red Flag Symptoms */}
               {summaryData.red_flag_symptoms && summaryData.red_flag_symptoms.length > 0 && (
                 <div className="bg-red-50 p-4 rounded-lg">
-                  <h3 className="text-lg font-medium text-red-900 mb-2">Warning Signs</h3>
+                  <h3 className="text-lg font-medium text-red-900 mb-2">{t("postvisit.warning_signs")}</h3>
                   <ul className="space-y-2">
                     {summaryData.red_flag_symptoms.map((symptom: string, index: number) => (
                       <li key={index} className="flex items-start">
@@ -290,7 +304,7 @@ const WalkInPostVisit: React.FC = () => {
               {/* Patient Instructions */}
               {summaryData.patient_instructions && summaryData.patient_instructions.length > 0 && (
                 <div className="bg-yellow-50 p-4 rounded-lg">
-                  <h3 className="text-lg font-medium text-yellow-900 mb-2">Patient Instructions</h3>
+                  <h3 className="text-lg font-medium text-yellow-900 mb-2">{t("postvisit.patient_instructions")}</h3>
                   <ul className="space-y-2">
                     {summaryData.patient_instructions.map((instruction: string, index: number) => (
                       <li key={index} className="flex items-start">
@@ -305,7 +319,7 @@ const WalkInPostVisit: React.FC = () => {
               {/* Reassurance Note */}
               {summaryData.reassurance_note && (
                 <div className="bg-green-50 p-4 rounded-lg">
-                  <h3 className="text-lg font-medium text-green-900 mb-2">Reassurance Note</h3>
+                  <h3 className="text-lg font-medium text-green-900 mb-2">{t("postvisit.reassurance")}</h3>
                   <div className="prose max-w-none">
                     <p className="text-green-800 whitespace-pre-wrap">{summaryData.reassurance_note}</p>
                   </div>
@@ -314,12 +328,12 @@ const WalkInPostVisit: React.FC = () => {
 
               {/* Contact Information */}
               <div className="bg-gray-50 p-4 rounded-lg">
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Contact Information</h3>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">{t("postvisit.contact_info")}</h3>
                 <div className="text-gray-700">
-                  <p>If you have any questions or concerns, please contact our clinic:</p>
-                  <p className="mt-2"><strong>Phone:</strong> [Clinic Phone Number]</p>
-                  <p><strong>Hours:</strong> [Clinic Hours]</p>
-                  <p><strong>Emergency:</strong> Call 911 for medical emergencies</p>
+                  <p>{language === 'sp' ? 'Si tiene alguna pregunta o inquietud, por favor contacte nuestra clínica:' : 'If you have any questions or concerns, please contact our clinic:'}</p>
+                  <p className="mt-2"><strong>{language === 'sp' ? 'Teléfono:' : 'Phone:'}</strong> [Clinic Phone Number]</p>
+                  <p><strong>{language === 'sp' ? 'Horarios:' : 'Hours:'}</strong> [Clinic Hours]</p>
+                  <p><strong>{language === 'sp' ? 'Emergencia:' : 'Emergency:'}</strong> {language === 'sp' ? 'Llame al 911 para emergencias médicas' : 'Call 911 for medical emergencies'}</p>
                 </div>
               </div>
             </div>
@@ -329,10 +343,13 @@ const WalkInPostVisit: React.FC = () => {
 
       {/* Workflow Information */}
       <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-        <h3 className="text-sm font-medium text-blue-800 mb-2">Walk-in Workflow Complete</h3>
+        <h3 className="text-sm font-medium text-blue-800 mb-2">
+          {language === 'sp' ? 'Flujo Sin Cita Completado' : 'Walk-in Workflow Complete'}
+        </h3>
         <p className="text-sm text-blue-700">
-          This is the final step of the walk-in workflow. The post-visit summary provides a patient-friendly 
-          overview of their consultation, treatment plan, and follow-up instructions.
+          {language === 'sp' 
+            ? 'Este es el paso final del flujo sin cita. El resumen post-consulta proporciona una visión general amigable para el paciente de su consulta, plan de tratamiento e instrucciones de seguimiento.'
+            : 'This is the final step of the walk-in workflow. The post-visit summary provides a patient-friendly overview of their consultation, treatment plan, and follow-up instructions.'}
         </p>
       </div>
     </div>

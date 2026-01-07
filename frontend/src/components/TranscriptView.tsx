@@ -9,20 +9,37 @@ function parseDialogue(content: string): Array<{ speaker: "Doctor" | "Patient" |
   const items: Array<{ speaker: "Doctor" | "Patient" | "Family Member"; text: string }> = [];
   const raw = content || "";
 
+  // Helper function to normalize Spanish keys to English
+  const normalizeSpeaker = (key: string): "Doctor" | "Patient" | "Family Member" | null => {
+    const normalized = key.trim();
+    // English keys
+    if (normalized === "Doctor" || normalized === "Patient" || normalized === "Family Member") {
+      return normalized as "Doctor" | "Patient" | "Family Member";
+    }
+    // Spanish keys
+    if (normalized === "Paciente") return "Patient";
+    if (normalized === "Miembro de la Familia") return "Family Member";
+    // Doctor is the same in both languages
+    if (normalized === "Doctor") return "Doctor";
+    return null;
+  };
+
   // 1) Try to extract ordered pairs via regex even if JSON has duplicate keys
   // This preserves order when LLM returns an object like { "Doctor": "..", "Patient": "..", "Doctor": ".." }
-  // It also works on pretty-printed strings.
-  const pairRe = /"(Doctor|Patient|Family Member)"\s*:\s*"([\s\S]*?)"\s*(?:,|\}|$)/g;
+  // It also works on pretty-printed strings. Now supports both English and Spanish keys.
+  const pairRe = /"(Doctor|Patient|Family Member|Paciente|Miembro de la Familia)"\s*:\s*"([\s\S]*?)"\s*(?:,|\}|$)/g;
   try {
     let m: RegExpExecArray | null;
     while ((m = pairRe.exec(raw)) !== null) {
-      const role = (m[1] === "Doctor" || m[1] === "Family Member") ? (m[1] as any) : "Patient";
-      // Unescape common JSON escapes
-      const text = m[2]
-        .replace(/\\n/g, "\n")
-        .replace(/\\t/g, "\t")
-        .replace(/\\\"/g, '"');
-      items.push({ speaker: role, text });
+      const normalizedRole = normalizeSpeaker(m[1]);
+      if (normalizedRole) {
+        // Unescape common JSON escapes
+        const text = m[2]
+          .replace(/\\n/g, "\n")
+          .replace(/\\t/g, "\t")
+          .replace(/\\\"/g, '"');
+        items.push({ speaker: normalizedRole, text });
+      }
     }
     if (items.length > 0) return items;
   } catch {
@@ -36,9 +53,9 @@ function parseDialogue(content: string): Array<{ speaker: "Doctor" | "Patient" |
       for (const item of data) {
         if (item && typeof item === "object") {
           for (const [k, v] of Object.entries(item)) {
-            const key = k.trim();
-            if ((key === "Doctor" || key === "Patient" || key === "Family Member") && typeof v === "string") {
-              items.push({ speaker: key as "Doctor" | "Patient" | "Family Member", text: v });
+            const normalizedRole = normalizeSpeaker(k);
+            if (normalizedRole && typeof v === "string") {
+              items.push({ speaker: normalizedRole, text: v });
             }
           }
         }
@@ -47,9 +64,9 @@ function parseDialogue(content: string): Array<{ speaker: "Doctor" | "Patient" |
     }
     if (data && typeof data === "object") {
       for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
-        const key = k.trim();
-        if ((key === "Doctor" || key === "Patient" || key === "Family Member") && typeof v === "string") {
-          items.push({ speaker: key as "Doctor" | "Patient" | "Family Member", text: v });
+        const normalizedRole = normalizeSpeaker(k);
+        if (normalizedRole && typeof v === "string") {
+          items.push({ speaker: normalizedRole, text: v });
         }
       }
       if (items.length > 0) return items;
@@ -63,12 +80,16 @@ function parseDialogue(content: string): Array<{ speaker: "Doctor" | "Patient" |
   const out: Array<{ speaker: "Doctor" | "Patient" | "Family Member"; text: string }> = [];
   let next: "Doctor" | "Patient" | "Family Member" = "Doctor";
   for (const line of lines) {
-    const m = line.match(/^\s*(Doctor|Patient|Family Member)\s*:\s*(.*)$/i);
+    const m = line.match(/^\s*(Doctor|Patient|Family Member|Paciente|Miembro de la Familia)\s*:\s*(.*)$/i);
     if (m) {
-      const low = m[1].toLowerCase();
-      const sp = low === "doctor" ? "Doctor" : (low === "family member" ? "Family Member" : "Patient");
-      out.push({ speaker: sp, text: m[2] });
-      next = sp === "Doctor" ? "Patient" : "Doctor";
+      const normalizedRole = normalizeSpeaker(m[1]);
+      if (normalizedRole) {
+        out.push({ speaker: normalizedRole, text: m[2] });
+        next = normalizedRole === "Doctor" ? "Patient" : "Doctor";
+      } else {
+        out.push({ speaker: next, text: line });
+        next = next === "Doctor" ? "Patient" : "Doctor";
+      }
     } else {
       out.push({ speaker: next, text: line });
       next = next === "Doctor" ? "Patient" : "Doctor";

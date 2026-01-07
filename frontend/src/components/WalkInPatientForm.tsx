@@ -117,6 +117,7 @@ const WalkInPatientForm: React.FC<WalkInPatientFormProps> = ({ onPatientCreated,
         mobile: mobileE164,
         age: formData.age ? parseInt(formData.age) : undefined,
         gender: formData.gender || undefined,
+        language: language,
       };
 
       const response = await workflowService.createWalkInVisit(requestData);

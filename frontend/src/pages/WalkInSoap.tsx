@@ -2,11 +2,13 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { BACKEND_BASE_URL, authorizedFetch, getDoctorPreferences } from "../services/patientService";
 import { workflowService } from "../services/workflowService";
+import { useLanguage } from "../contexts/LanguageContext";
 
 const WalkInSoap: React.FC = () => {
   const { patientId = "", visitId = "" } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const { language, t } = useLanguage();
   const searchParams = new URLSearchParams(location.search);
   const autoOpenGeneration = searchParams.get("action") === "generate";
   const [loading, setLoading] = useState(false);
@@ -190,20 +192,20 @@ const WalkInSoap: React.FC = () => {
     <div className="max-w-6xl mx-auto p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Walk-in SOAP Summary</h1>
+          <h1 className="text-2xl font-bold text-gray-900">{t("soap.walkin_title")}</h1>
           <p className="text-sm text-gray-600 mt-1">
-            Patient: {patientId} • Visit: {visitId}
+            {t("soap.patient_visit", { patientId, visitId })}
           </p>
         </div>
         <div className="flex items-center gap-3">
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-            Walk-in Workflow
+            {t("soap.walkin_workflow")}
           </span>
           <button
             onClick={handleBack}
             className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
           >
-            Back
+            {t("common.back")}
           </button>
         </div>
       </div>
@@ -211,12 +213,12 @@ const WalkInSoap: React.FC = () => {
       {/* Workflow Status */}
       {workflowInfo && (
         <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-          <h3 className="text-sm font-medium text-green-800 mb-2">Current Workflow Status</h3>
+          <h3 className="text-sm font-medium text-green-800 mb-2">{t("soap.current_status")}</h3>
           <p className="text-sm text-green-700">
-            <strong>Current Step:</strong> SOAP Generation
+            <strong>{t("soap.current_step")}:</strong> {t("soap.soap_generation")}
           </p>
           <p className="text-sm text-green-700">
-            <strong>Next Step:</strong> Post-Visit Summary
+            <strong>{t("soap.next_step")}:</strong> {t("soap.postvisit_summary")}
           </p>
         </div>
       )}
@@ -240,24 +242,23 @@ const WalkInSoap: React.FC = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                 </div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">SOAP Note Not Generated</h3>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">{t("soap.not_generated")}</h3>
                 <p className="text-gray-600 mb-6">
-                  Click below to configure (optional) a one-time SOAP template and generate the SOAP summary.
+                  {t("soap.prepare_generation_message")}
                 </p>
                 <button
                   onClick={() => setShowGenerationPanel(true)}
                   className="px-6 py-3 bg-green-600 text-white rounded-md hover:bg-green-700"
                 >
-                  Prepare SOAP Generation
+                  {t("soap.prepare_generation")}
                 </button>
               </div>
             ) : (
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">SOAP Generation Settings</h3>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">{t("soap.generation_settings")}</h3>
                   <p className="text-gray-600 text-sm">
-                    You can fill this template form to guide the SOAP summary for this visit, or skip it and
-                    generate using the default format.
+                    {t("soap.generation_settings_message")}
                   </p>
                 </div>
 
@@ -270,10 +271,10 @@ const WalkInSoap: React.FC = () => {
                         checked={useTemplate}
                         onChange={(e) => setUseTemplate(e.target.checked)}
                       />
-                      <span>Use custom SOAP template for this generation only</span>
+                      <span>{t("soap.use_custom_template")}</span>
                     </label>
                     <span className="text-xs text-gray-500">
-                      If unchecked, the default SOAP structure is used.
+                      {t("soap.default_structure_note")}
                     </span>
                   </div>
 
@@ -281,7 +282,7 @@ const WalkInSoap: React.FC = () => {
                     <div className="space-y-4 mt-4">
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Template Name</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">{t("soap.template_name")}</label>
                           <input
                             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
                             value={templateName}
@@ -290,7 +291,7 @@ const WalkInSoap: React.FC = () => {
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">{t("soap.template_category")}</label>
                           <input
                             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
                             value={templateCategory}
@@ -299,7 +300,7 @@ const WalkInSoap: React.FC = () => {
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Speciality</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">{t("soap.template_speciality")}</label>
                           <input
                             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
                             value={templateSpeciality}
@@ -311,7 +312,7 @@ const WalkInSoap: React.FC = () => {
 
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Description (optional)
+                          {t("soap.template_description")}
                         </label>
                         <textarea
                           className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 min-h-[60px]"
@@ -324,7 +325,7 @@ const WalkInSoap: React.FC = () => {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Tags (comma-separated)
+                            {t("soap.template_tags")}
                           </label>
                           <input
                             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
@@ -335,7 +336,7 @@ const WalkInSoap: React.FC = () => {
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Appointment Types (comma-separated)
+                            {t("soap.template_appointment_types")}
                           </label>
                           <input
                             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
@@ -349,16 +350,16 @@ const WalkInSoap: React.FC = () => {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Status
+                            {t("soap.template_status")}
                           </label>
                           <select
                             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
                             value={templateStatus}
                             onChange={(e) => setTemplateStatus(e.target.value)}
                           >
-                            <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
-                            <option value="draft">Draft</option>
+                            <option value="active">{t("soap.status_active")}</option>
+                            <option value="inactive">{t("soap.status_inactive")}</option>
+                            <option value="draft">{t("soap.status_draft")}</option>
                           </select>
                         </div>
                         <div className="flex items-center pt-6">
@@ -369,7 +370,7 @@ const WalkInSoap: React.FC = () => {
                               checked={templateIsFavorite}
                               onChange={(e) => setTemplateIsFavorite(e.target.checked)}
                             />
-                            Mark as favorite
+                            {t("soap.template_mark_favorite")}
                           </label>
                         </div>
                       </div>
@@ -377,7 +378,7 @@ const WalkInSoap: React.FC = () => {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Subjective Template
+                            {t("soap.template_subjective")}
                           </label>
                           <textarea
                             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 min-h-[90px]"
@@ -390,7 +391,7 @@ const WalkInSoap: React.FC = () => {
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Objective Template
+                            {t("soap.template_objective")}
                           </label>
                           <textarea
                             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 min-h-[90px]"
@@ -403,7 +404,7 @@ const WalkInSoap: React.FC = () => {
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Assessment Template
+                            {t("soap.template_assessment")}
                           </label>
                           <textarea
                             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 min-h-[90px]"
@@ -416,7 +417,7 @@ const WalkInSoap: React.FC = () => {
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Plan Template
+                            {t("soap.template_plan")}
                           </label>
                           <textarea
                             className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 min-h-[90px]"
@@ -440,14 +441,14 @@ const WalkInSoap: React.FC = () => {
                       }}
                       className="px-4 py-2 border border-gray-300 rounded-md text-sm text-gray-700 bg-white hover:bg-gray-50"
                     >
-                      Back to Actions
+                      {t("soap.back_to_actions")}
                     </button>
                     <button
                       onClick={generateSoap}
                       disabled={loading}
                       className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {loading ? "Generating..." : "Generate SOAP Summary"}
+                      {loading ? t("soap.generating") : t("soap.generate_summary")}
                     </button>
                   </div>
                 </div>
@@ -457,7 +458,7 @@ const WalkInSoap: React.FC = () => {
         ) : (
           <div className="p-6">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-semibold text-gray-900">SOAP Note</h2>
+              <h2 className="text-xl font-semibold text-gray-900">{t("soap.title")}</h2>
             </div>
 
             {/* SOAP Sections (ordered by doctor preferences) */}
@@ -466,10 +467,10 @@ const WalkInSoap: React.FC = () => {
                 if (section === "subjective") {
                   return (
                     <div key="subjective" className="border-l-4 border-blue-500 pl-4">
-                      <h3 className="text-lg font-medium text-gray-900 mb-2">Subjective</h3>
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">{t("soap.subjective")}</h3>
                       <div className="prose max-w-none">
                         <p className="text-gray-700 whitespace-pre-wrap">
-                          {soapData.subjective || "No subjective information available."}
+                          {soapData.subjective || (language === 'sp' ? "No hay información subjetiva disponible." : "No subjective information available.")}
                         </p>
                       </div>
                     </div>
@@ -479,7 +480,7 @@ const WalkInSoap: React.FC = () => {
                 if (section === "objective") {
                   return (
                     <div key="objective" className="border-l-4 border-green-500 pl-4">
-                      <h3 className="text-lg font-medium text-gray-900 mb-2">Objective</h3>
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">{t("soap.objective")}</h3>
                       <div className="prose max-w-none">
                         {soapData.objective ? (
                           <div className="text-gray-700">
@@ -489,30 +490,77 @@ const WalkInSoap: React.FC = () => {
                               <div>
                                 {soapData.objective.vital_signs && (
                                   <div className="mb-4">
-                                    <h4 className="font-medium text-gray-900 mb-2">Vital Signs:</h4>
+                                    <h4 className="font-medium text-gray-900 mb-2">
+                                      {t("soap.vital_signs")}:
+                                    </h4>
                                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                                      {Object.entries(soapData.objective.vital_signs).map(([key, value]) => (
-                                        <div key={key} className="bg-gray-50 p-2 rounded">
-                                          <span className="font-medium capitalize">{key.replace(/_/g, " ")}:</span>{" "}
-                                          {String(value)}
-                                        </div>
-                                      ))}
+                                      {Object.entries(soapData.objective.vital_signs).map(([key, value]) => {
+                                        const translateKey = (k: string): string => {
+                                          const keyMap: Record<string, string> = {
+                                            'blood_pressure': language === 'sp' ? 'Presión Arterial' : 'Blood Pressure',
+                                            'heart_rate': language === 'sp' ? 'Frecuencia Cardíaca' : 'Heart Rate',
+                                            'temperature': language === 'sp' ? 'Temperatura' : 'Temperature',
+                                            'spo2': language === 'sp' ? 'SpO2' : 'SpO2',
+                                            'spO2': language === 'sp' ? 'SpO2' : 'SpO2',
+                                            'weight': language === 'sp' ? 'Peso' : 'Weight',
+                                            'height': language === 'sp' ? 'Altura' : 'Height',
+                                            'respiratory_rate': language === 'sp' ? 'Frecuencia Respiratoria' : 'Respiratory Rate',
+                                          };
+                                          return keyMap[k.toLowerCase()] || k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                                        };
+                                        return (
+                                          <div key={key} className="bg-gray-50 p-2 rounded">
+                                            <span className="font-medium">{translateKey(key)}:</span>{" "}
+                                            {String(value)}
+                                          </div>
+                                        );
+                                      })}
                                     </div>
                                   </div>
                                 )}
                                 {soapData.objective.physical_exam && (
                                   <div>
-                                    <h4 className="font-medium text-gray-900 mb-2">Physical Examination:</h4>
-                                    <p className="whitespace-pre-wrap">
-                                      {JSON.stringify(soapData.objective.physical_exam, null, 2)}
-                                    </p>
+                                    <h4 className="font-medium text-gray-900 mb-2">
+                                      {t("soap.physical_exam")}:
+                                    </h4>
+                                    {typeof soapData.objective.physical_exam === "object" && !Array.isArray(soapData.objective.physical_exam) ? (
+                                      <div className="space-y-2">
+                                        {Object.entries(soapData.objective.physical_exam).map(([key, value]) => {
+                                          const translateExamKey = (k: string): string => {
+                                            const keyMap: Record<string, string> = {
+                                              'general_appearance': language === 'sp' ? 'Apariencia General' : 'General Appearance',
+                                              'heent': language === 'sp' ? 'HEENT' : 'HEENT',
+                                              'cardiac': language === 'sp' ? 'Cardíaco' : 'Cardiac',
+                                              'respiratory': language === 'sp' ? 'Respiratorio' : 'Respiratory',
+                                              'abdominal': language === 'sp' ? 'Abdominal' : 'Abdominal',
+                                              'neuro': language === 'sp' ? 'Neurológico' : 'Neuro',
+                                              'extremities': language === 'sp' ? 'Extremidades' : 'Extremities',
+                                              'gait': language === 'sp' ? 'Marcha' : 'Gait',
+                                            };
+                                            return keyMap[k.toLowerCase()] || k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                                          };
+                                          return (
+                                            <div key={key} className="flex items-start gap-2 text-sm">
+                                              <span className="min-w-28 font-medium text-gray-700">{translateExamKey(key)}:</span>
+                                              <span className="flex-1">{String(value)}</span>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    ) : (
+                                      <p className="whitespace-pre-wrap">
+                                        {JSON.stringify(soapData.objective.physical_exam, null, 2)}
+                                      </p>
+                                    )}
                                   </div>
                                 )}
                               </div>
                             )}
                           </div>
                         ) : (
-                          <p className="text-gray-700">No objective information available.</p>
+                          <p className="text-gray-700">
+                            {language === 'sp' ? "No hay información objetiva disponible." : "No objective information available."}
+                          </p>
                         )}
                       </div>
                     </div>
@@ -522,10 +570,10 @@ const WalkInSoap: React.FC = () => {
                 if (section === "assessment") {
                   return (
                     <div key="assessment" className="border-l-4 border-yellow-500 pl-4">
-                      <h3 className="text-lg font-medium text-gray-900 mb-2">Assessment</h3>
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">{t("soap.assessment")}</h3>
                       <div className="prose max-w-none">
                         <p className="text-gray-700 whitespace-pre-wrap">
-                          {soapData.assessment || "No assessment available."}
+                          {soapData.assessment || (language === 'sp' ? "No hay evaluación disponible." : "No assessment available.")}
                         </p>
                       </div>
                     </div>
@@ -535,9 +583,11 @@ const WalkInSoap: React.FC = () => {
                 if (section === "plan") {
                   return (
                     <div key="plan" className="border-l-4 border-red-500 pl-4">
-                      <h3 className="text-lg font-medium text-gray-900 mb-2">Plan</h3>
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">{t("soap.plan")}</h3>
                       <div className="prose max-w-none">
-                        <p className="text-gray-700 whitespace-pre-wrap">{soapData.plan || "No plan available."}</p>
+                        <p className="text-gray-700 whitespace-pre-wrap">
+                          {soapData.plan || (language === 'sp' ? "No hay plan disponible." : "No plan available.")}
+                        </p>
                       </div>
                     </div>
                   );
@@ -550,7 +600,9 @@ const WalkInSoap: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {soapData.highlights && soapData.highlights.length > 0 && (
                     <div className="bg-blue-50 p-4 rounded-lg">
-                      <h4 className="font-medium text-blue-900 mb-2">Key Highlights</h4>
+                      <h4 className="font-medium text-blue-900 mb-2">
+                        {t("soap.key_highlights")}
+                      </h4>
                       <ul className="text-sm text-blue-800 space-y-1">
                         {soapData.highlights.map((highlight: string, index: number) => (
                           <li key={index} className="flex items-start">
@@ -564,7 +616,9 @@ const WalkInSoap: React.FC = () => {
 
                   {soapData.red_flags && soapData.red_flags.length > 0 && (
                     <div className="bg-red-50 p-4 rounded-lg">
-                      <h4 className="font-medium text-red-900 mb-2">Red Flags</h4>
+                      <h4 className="font-medium text-red-900 mb-2">
+                        {t("soap.red_flags")}
+                      </h4>
                       <ul className="text-sm text-red-800 space-y-1">
                         {soapData.red_flags.map((flag: string, index: number) => (
                           <li key={index} className="flex items-start">
@@ -581,12 +635,12 @@ const WalkInSoap: React.FC = () => {
               {/* Model Information */}
               {soapData.model_info && (
                 <div className="bg-gray-50 p-4 rounded-lg">
-                  <h4 className="font-medium text-gray-900 mb-2">Generation Details</h4>
+                  <h4 className="font-medium text-gray-900 mb-2">{t("soap.generation_details")}</h4>
                   <div className="text-sm text-gray-600">
-                    <p><strong>Model:</strong> {soapData.model_info.model || "Unknown"}</p>
-                    <p><strong>Generated:</strong> {new Date(soapData.generated_at).toLocaleString()}</p>
+                    <p><strong>{language === 'sp' ? "Modelo:" : "Model:"}</strong> {soapData.model_info.model || (language === 'sp' ? "Desconocido" : "Unknown")}</p>
+                    <p><strong>{language === 'sp' ? "Generado:" : "Generated:"}</strong> {new Date(soapData.generated_at).toLocaleString()}</p>
                     {soapData.confidence_score && (
-                      <p><strong>Confidence:</strong> {(soapData.confidence_score * 100).toFixed(1)}%</p>
+                      <p><strong>{language === 'sp' ? "Confianza:" : "Confidence:"}</strong> {(soapData.confidence_score * 100).toFixed(1)}%</p>
                     )}
                   </div>
                 </div>
@@ -598,10 +652,11 @@ const WalkInSoap: React.FC = () => {
 
       {/* Workflow Information */}
       <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-        <h3 className="text-sm font-medium text-blue-800 mb-2">Walk-in Workflow Information</h3>
+        <h3 className="text-sm font-medium text-blue-800 mb-2">{t("soap.walkin_info")}</h3>
         <p className="text-sm text-blue-700">
-          The SOAP note is generated based on the patient's transcription and vitals data. 
-          After reviewing the SOAP note, you'll proceed to create the post-visit summary for the patient.
+          {language === 'sp' 
+            ? "La nota SOAP se genera basándose en la transcripción del paciente y los datos de signos vitales. Después de revisar la nota SOAP, procederá a crear el resumen post-consulta para el paciente."
+            : "The SOAP note is generated based on the patient's transcription and vitals data. After reviewing the SOAP note, you'll proceed to create the post-visit summary for the patient."}
         </p>
       </div>
     </div>
