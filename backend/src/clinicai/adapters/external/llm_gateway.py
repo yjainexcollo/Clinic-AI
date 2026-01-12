@@ -11,12 +11,12 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
-from clinicai.adapters.external.prompt_registry import PromptScenario, PROMPT_VERSIONS
+from clinicai.adapters.external.prompt_registry import PROMPT_VERSIONS, PromptScenario
 from clinicai.core.ai_client import AzureAIClient
 from clinicai.observability.tracing import (
-    trace_operation,
     add_span_attribute,
     set_span_status,
+    trace_operation,
 )
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ async def call_llm_with_telemetry(
 ) -> Any:
     """
     Central gateway for LLM calls with telemetry.
-    
+
     Args:
         ai_client: AzureAIClient instance
         scenario: PromptScenario enum value for this LLM call
@@ -42,7 +42,7 @@ async def call_llm_with_telemetry(
         temperature: Sampling temperature
         max_tokens: Optional max tokens for response
         **kwargs: Additional arguments passed to chat completion
-    
+
     Returns:
         LLM response object
     """
@@ -66,43 +66,39 @@ async def call_llm_with_telemetry(
                 max_tokens=max_tokens,
                 **kwargs,
             )
-            
+
             latency_ms = (time.perf_counter() - start_time) * 1000.0
-            
+
             # Add version to span attributes
             if span:
                 add_span_attribute(span, "llm.prompt_version", prompt_version)
                 add_span_attribute(span, "llm.scenario", scenario.value)
                 add_span_attribute(span, "llm.latency_ms", latency_ms)
-                
+
                 # Extract token usage if available
                 usage = getattr(response, "usage", None)
                 if usage:
                     total_tokens = getattr(usage, "total_tokens", 0)
                     add_span_attribute(span, "llm.tokens", total_tokens)
-                
+
                 set_span_status(span, success=True)
-            
+
             logger.info(
                 f"LLM call completed: scenario={scenario.value} "
                 f"version={prompt_version} latency_ms={latency_ms:.2f}"
             )
-            
+
             return response
-            
+
         except Exception as e:
             latency_ms = (time.perf_counter() - start_time) * 1000.0
-            
+
             if span:
                 add_span_attribute(span, "llm.prompt_version", prompt_version)
                 add_span_attribute(span, "llm.scenario", scenario.value)
                 add_span_attribute(span, "llm.latency_ms", latency_ms)
                 add_span_attribute(span, "llm.error", str(e)[:200])
                 set_span_status(span, success=False, error_message=str(e))
-            
-            logger.error(
-                f"LLM call failed: scenario={scenario.value} "
-                f"version={prompt_version} error={str(e)}"
-            )
-            raise
 
+            logger.error(f"LLM call failed: scenario={scenario.value} " f"version={prompt_version} error={str(e)}")
+            raise

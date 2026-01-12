@@ -1,20 +1,21 @@
 """Workflow-related API endpoints for conditional workflow support."""
 
-from fastapi import APIRouter, HTTPException, status, Depends, Request
 import logging
 from typing import List
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field, validator
 
 from ...application.use_cases.create_walk_in_visit import (
-    CreateWalkInVisitUseCase,
     CreateWalkInVisitRequest,
-    CreateWalkInVisitResponse
+    CreateWalkInVisitResponse,
+    CreateWalkInVisitUseCase,
 )
 from ...domain.enums.workflow import VisitWorkflowType
 from ...domain.errors import PatientNotFoundError, VisitNotFoundError
 from ..deps import PatientRepositoryDep, VisitRepositoryDep
 from ..schemas.common import ApiResponse, ErrorResponse
-from ..utils.responses import ok, fail
+from ..utils.responses import fail, ok
 
 router = APIRouter(prefix="/workflow")
 logger = logging.getLogger("clinicai")
@@ -22,12 +23,17 @@ logger = logging.getLogger("clinicai")
 
 class CreateWalkInVisitRequestSchema(BaseModel):
     """Request schema for creating walk-in visit."""
+
     name: str = Field(..., description="Patient name")
     mobile: str = Field(..., description="Patient mobile number")
     age: int = Field(None, description="Patient age")
     gender: str = Field(None, description="Patient gender")
-    language: str = Field("en", description="Patient preferred language (en or sp)", pattern=r"^(en|es|sp)$")
-    
+    language: str = Field(
+        "en",
+        description="Patient preferred language (en or sp)",
+        pattern=r"^(en|es|sp)$",
+    )
+
     @validator("language", pre=True)
     def normalize_language(cls, v):
         """Normalize language codes: 'es' -> 'sp' for consistency with frontend."""
@@ -43,6 +49,7 @@ class CreateWalkInVisitRequestSchema(BaseModel):
 
 class CreateWalkInVisitResponseSchema(BaseModel):
     """Response schema for creating walk-in visit."""
+
     patient_id: str = Field(..., description="Patient ID")
     visit_id: str = Field(..., description="Visit ID")
     workflow_type: str = Field(..., description="Workflow type")
@@ -68,7 +75,7 @@ async def create_walk_in_visit(
 ):
     """
     Create a walk-in visit for patients without intake.
-    
+
     This endpoint:
     1. Creates or finds existing patient
     2. Creates walk-in visit with workflow_type = "walk_in"
@@ -92,29 +99,34 @@ async def create_walk_in_visit(
             mobile=request.mobile,
             age=request.age,
             gender=request.gender,
-            language=request.language
+            language=request.language,
         )
-        
+
         # Execute use case
         use_case = CreateWalkInVisitUseCase(patient_repo, visit_repo)
         response = await use_case.execute(use_case_request, doctor_id=doctor_id)
-        
+
         # Encode patient_id for client (opaque token) - same as scheduled flow
         from ...core.utils.crypto import encode_patient_id
+
         encoded_patient_id = encode_patient_id(response.patient_id)
-        
+
         # Set IDs in request state for HIPAA audit middleware
         http_request.state.audit_patient_id = encoded_patient_id
         http_request.state.audit_visit_id = response.visit_id
-        
-        return ok(http_request, data=CreateWalkInVisitResponseSchema(
-            patient_id=encoded_patient_id,  # Use encoded patient_id
-            visit_id=response.visit_id,
-            workflow_type=response.workflow_type,
-            status=response.status,
-            message=response.message
-        ), message="Walk-in visit created successfully")
-        
+
+        return ok(
+            http_request,
+            data=CreateWalkInVisitResponseSchema(
+                patient_id=encoded_patient_id,  # Use encoded patient_id
+                visit_id=response.visit_id,
+                workflow_type=response.workflow_type,
+                status=response.status,
+                message=response.message,
+            ),
+            message="Walk-in visit created successfully",
+        )
+
     except Exception as e:
         logger.error("Error creating walk-in visit", exc_info=True)
         return fail(http_request, error="INTERNAL_ERROR", message="An unexpected error occurred")
@@ -137,7 +149,7 @@ async def get_available_workflow_steps(
 ):
     """
     Get available workflow steps for a visit based on its workflow type and status.
-    
+
     This endpoint:
     1. Finds the visit
     2. Determines available steps based on workflow type
@@ -146,8 +158,9 @@ async def get_available_workflow_steps(
     try:
         # Convert string visit_id to VisitId object
         from ...domain.value_objects.visit_id import VisitId
+
         visit_id_obj = VisitId(visit_id)
-        
+
         # Extract doctor_id
         doctor_id = getattr(request.state, "doctor_id", None)
         if not doctor_id:
@@ -163,19 +176,25 @@ async def get_available_workflow_steps(
         if not visit:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail={"error": "VISIT_NOT_FOUND", "message": f"Visit {visit_id} not found"}
+                detail={
+                    "error": "VISIT_NOT_FOUND",
+                    "message": f"Visit {visit_id} not found",
+                },
             )
-        
+
         # Get available steps
         available_steps = visit.get_available_steps()
-        
-        return ok(request, data={
-            "visit_id": visit_id,
-            "workflow_type": visit.workflow_type.value,
-            "current_status": visit.status,
-            "available_steps": available_steps
-        })
-        
+
+        return ok(
+            request,
+            data={
+                "visit_id": visit_id,
+                "workflow_type": visit.workflow_type.value,
+                "current_status": visit.status,
+                "available_steps": available_steps,
+            },
+        )
+
     except HTTPException:
         raise
     except Exception as e:

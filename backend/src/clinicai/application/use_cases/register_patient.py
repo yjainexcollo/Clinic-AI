@@ -5,13 +5,13 @@ Formatting-only changes; behavior preserved.
 
 # Unused imports removed
 
+from ...core.config import get_settings
 from ...domain.entities.patient import Patient
 from ...domain.entities.visit import Visit
 
 # Domain events currently not dispatched here; keeping behavior unchanged.
 from ...domain.value_objects.patient_id import PatientId
 from ...domain.value_objects.visit_id import VisitId
-from ...core.config import get_settings
 from ..dto.patient_dto import RegisterPatientRequest, RegisterPatientResponse
 from ..ports.repositories.patient_repo import PatientRepository
 from ..ports.repositories.visit_repo import VisitRepository
@@ -22,7 +22,10 @@ class RegisterPatientUseCase:
     """Use case for registering a new patient and starting intake."""
 
     def __init__(
-        self, patient_repository: PatientRepository, visit_repository: VisitRepository, question_service: QuestionService
+        self,
+        patient_repository: PatientRepository,
+        visit_repository: VisitRepository,
+        question_service: QuestionService,
     ):
         self._patient_repository = patient_repository
         self._visit_repository = visit_repository
@@ -56,14 +59,14 @@ class RegisterPatientUseCase:
             existing_patient.language = request.language
             first_question = await self._question_service.generate_first_question(
                 disease=visit.symptom or "general consultation",
-                language=request.language
+                language=request.language,
             )
             visit.set_pending_question(first_question)
-            
+
             # Save patient and visit separately
             await self._patient_repository.save(existing_patient)
             await self._visit_repository.save(visit)
-            
+
             return RegisterPatientResponse(
                 patient_id=existing_patient.patient_id.value,
                 visit_id=visit_id.value,
@@ -107,8 +110,7 @@ class RegisterPatientUseCase:
 
         # Generate first question via QuestionService for consistency
         first_question = await self._question_service.generate_first_question(
-            disease=visit.symptom or "general consultation",
-            language=patient.language
+            disease=visit.symptom or "general consultation", language=patient.language
         )
 
         # Set pending question on visit

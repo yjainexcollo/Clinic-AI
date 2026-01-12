@@ -13,25 +13,25 @@ Retries, validation, and advanced monitoring are handled elsewhere.
 
 from __future__ import annotations
 
+import logging
+import time
 from typing import Any, Dict, List, Optional, Sequence, Union
 
 from openai import AsyncAzureOpenAI
 
 from .config import get_settings
-import logging
-import time
 
 logger = logging.getLogger("clinicai.ai")
 
 # Optional observability (OpenTelemetry + custom metrics)
 try:  # pragma: no cover - optional dependency
     from clinicai.observability import (
-        trace_operation,
-        set_span_status,
+        METRICS_AVAILABLE,
         add_span_attribute,
         record_ai_request,
         record_error,
-        METRICS_AVAILABLE,
+        set_span_status,
+        trace_operation,
     )
 
     OBSERVABILITY_AVAILABLE = True
@@ -76,10 +76,7 @@ class AzureAIClient:
             )
 
         if not deployment_name:
-            raise ValueError(
-                "Azure OpenAI deployment name is required. "
-                "Set AZURE_OPENAI_DEPLOYMENT_NAME."
-            )
+            raise ValueError("Azure OpenAI deployment name is required. " "Set AZURE_OPENAI_DEPLOYMENT_NAME.")
 
         # Normalize endpoint: Azure SDK does not expect trailing slash
         normalized_endpoint = endpoint.rstrip("/") if endpoint else endpoint
@@ -182,9 +179,7 @@ class AzureAIClient:
                                 error_message=str(exc)[:200],
                             )
                         except Exception:
-                            logger.debug(
-                                "Failed to record AI error metrics", exc_info=True
-                            )
+                            logger.debug("Failed to record AI error metrics", exc_info=True)
 
                     if span:
                         try:
@@ -271,6 +266,5 @@ class AzureAIClient:
             **kwargs,
         )
 
+
 __all__ = ["AzureAIClient"]
-
-

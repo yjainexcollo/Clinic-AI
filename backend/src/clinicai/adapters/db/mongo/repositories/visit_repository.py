@@ -3,21 +3,27 @@ MongoDB implementation of VisitRepository.
 """
 
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 
 from clinicai.application.ports.repositories.visit_repo import VisitRepository
-from clinicai.domain.entities.visit import IntakeSession, QuestionAnswer, Visit, TranscriptionSession, SoapNote
+from clinicai.domain.entities.visit import (
+    IntakeSession,
+    QuestionAnswer,
+    SoapNote,
+    TranscriptionSession,
+    Visit,
+)
+from clinicai.domain.enums.workflow import VisitWorkflowType
 from clinicai.domain.value_objects.question_id import QuestionId
 from clinicai.domain.value_objects.visit_id import VisitId
-from clinicai.domain.enums.workflow import VisitWorkflowType
 
 from ..models.patient_m import (
     IntakeSessionMongo,
-    VisitMongo,
-    QuestionAnswerMongo,
-    TranscriptionSessionMongo,
-    SoapNoteMongo,
     PatientMongo,
+    QuestionAnswerMongo,
+    SoapNoteMongo,
+    TranscriptionSessionMongo,
+    VisitMongo,
 )
 
 
@@ -27,15 +33,20 @@ class MongoVisitRepository(VisitRepository):
     async def save(self, visit: Visit) -> Visit:
         """Save a visit to MongoDB."""
         import logging
+
         logger = logging.getLogger("clinicai")
-        
+
         logger.info(f"Saving visit {visit.visit_id.value} to database")
         logger.info(f"Visit status: {visit.status}")
         if visit.transcription_session:
             logger.info(f"Transcription session status: {visit.transcription_session.transcription_status}")
-            logger.info(f"Transcript length: {len(visit.transcription_session.transcript) if visit.transcription_session.transcript else 0}")
-            logger.info(f"Structured dialogue turns: {len(visit.transcription_session.structured_dialogue) if visit.transcription_session.structured_dialogue else 0}")
-        
+            logger.info(
+                f"Transcript length: {len(visit.transcription_session.transcript) if visit.transcription_session.transcript else 0}"
+            )
+            logger.info(
+                f"Structured dialogue turns: {len(visit.transcription_session.structured_dialogue) if visit.transcription_session.structured_dialogue else 0}"
+            )
+
         # Convert domain entity to MongoDB model
         visit_mongo = await self._domain_to_mongo(visit)
 
@@ -46,17 +57,15 @@ class MongoVisitRepository(VisitRepository):
         # Remove revision_id from the document after saving using raw MongoDB operations
         if visit_mongo.id:
             from motor.motor_asyncio import AsyncIOMotorClient
+
             from clinicai.core.config import get_settings
-            
+
             settings = get_settings()
             client = AsyncIOMotorClient(settings.database.uri)
             db = client[settings.database.db_name]
             collection = db["visits"]
-            
-            await collection.update_one(
-                {"_id": visit_mongo.id},
-                {"$unset": {"revision_id": ""}}
-            )
+
+            await collection.update_one({"_id": visit_mongo.id}, {"$unset": {"revision_id": ""}})
             logger.info(f"Removed revision_id from visit {visit.visit_id.value}")
 
         # Return the domain entity
@@ -76,15 +85,16 @@ class MongoVisitRepository(VisitRepository):
 
     async def find_by_patient_id(self, patient_id: str, doctor_id: str) -> List[Visit]:
         """Find all visits for a specific patient."""
-        visits_mongo = await VisitMongo.find(
-            VisitMongo.patient_id == patient_id,
-            VisitMongo.doctor_id == doctor_id,
-        ).sort([("created_at", -1)]).to_list()
+        visits_mongo = (
+            await VisitMongo.find(
+                VisitMongo.patient_id == patient_id,
+                VisitMongo.doctor_id == doctor_id,
+            )
+            .sort([("created_at", -1)])
+            .to_list()
+        )
 
-        return [
-            await self._mongo_to_domain(visit_mongo)
-            for visit_mongo in visits_mongo
-        ]
+        return [await self._mongo_to_domain(visit_mongo) for visit_mongo in visits_mongo]
 
     async def find_by_patient_and_visit_id(self, patient_id: str, visit_id: VisitId, doctor_id: str) -> Optional[Visit]:
         """Find a specific visit for a patient."""
@@ -101,10 +111,14 @@ class MongoVisitRepository(VisitRepository):
 
     async def find_latest_by_patient_id(self, patient_id: str, doctor_id: str) -> Optional[Visit]:
         """Find the latest visit for a specific patient."""
-        visit_mongo = await VisitMongo.find(
-            VisitMongo.patient_id == patient_id,
-            VisitMongo.doctor_id == doctor_id,
-        ).sort([("created_at", -1)]).first()
+        visit_mongo = (
+            await VisitMongo.find(
+                VisitMongo.patient_id == patient_id,
+                VisitMongo.doctor_id == doctor_id,
+            )
+            .sort([("created_at", -1)])
+            .first()
+        )
 
         if not visit_mongo:
             return None
@@ -131,26 +145,30 @@ class MongoVisitRepository(VisitRepository):
 
     async def find_all(self, doctor_id: str, limit: int = 100, offset: int = 0) -> List[Visit]:
         """Find all visits with pagination."""
-        visits_mongo = await VisitMongo.find(
-            VisitMongo.doctor_id == doctor_id
-        ).skip(offset).limit(limit).sort([("created_at", -1)]).to_list()
+        visits_mongo = (
+            await VisitMongo.find(VisitMongo.doctor_id == doctor_id)
+            .skip(offset)
+            .limit(limit)
+            .sort([("created_at", -1)])
+            .to_list()
+        )
 
-        return [
-            await self._mongo_to_domain(visit_mongo)
-            for visit_mongo in visits_mongo
-        ]
+        return [await self._mongo_to_domain(visit_mongo) for visit_mongo in visits_mongo]
 
     async def find_by_status(self, status: str, doctor_id: str, limit: int = 100, offset: int = 0) -> List[Visit]:
         """Find visits by status with pagination."""
-        visits_mongo = await VisitMongo.find(
-            VisitMongo.status == status,
-            VisitMongo.doctor_id == doctor_id,
-        ).skip(offset).limit(limit).sort([("created_at", -1)]).to_list()
+        visits_mongo = (
+            await VisitMongo.find(
+                VisitMongo.status == status,
+                VisitMongo.doctor_id == doctor_id,
+            )
+            .skip(offset)
+            .limit(limit)
+            .sort([("created_at", -1)])
+            .to_list()
+        )
 
-        return [
-            await self._mongo_to_domain(visit_mongo)
-            for visit_mongo in visits_mongo
-        ]
+        return [await self._mongo_to_domain(visit_mongo) for visit_mongo in visits_mongo]
 
     async def count_by_patient_id(self, patient_id: str, doctor_id: str) -> int:
         """Count total visits for a patient."""
@@ -159,17 +177,26 @@ class MongoVisitRepository(VisitRepository):
             VisitMongo.doctor_id == doctor_id,
         ).count()
 
-    async def find_by_workflow_type(self, workflow_type: VisitWorkflowType, doctor_id: str, limit: int = 100, offset: int = 0) -> List[Visit]:
+    async def find_by_workflow_type(
+        self,
+        workflow_type: VisitWorkflowType,
+        doctor_id: str,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> List[Visit]:
         """Find visits by workflow type with pagination."""
-        visits_mongo = await VisitMongo.find(
-            VisitMongo.workflow_type == workflow_type.value,
-            VisitMongo.doctor_id == doctor_id,
-        ).skip(offset).limit(limit).sort([("created_at", -1)]).to_list()
+        visits_mongo = (
+            await VisitMongo.find(
+                VisitMongo.workflow_type == workflow_type.value,
+                VisitMongo.doctor_id == doctor_id,
+            )
+            .skip(offset)
+            .limit(limit)
+            .sort([("created_at", -1)])
+            .to_list()
+        )
 
-        return [
-            await self._mongo_to_domain(visit_mongo)
-            for visit_mongo in visits_mongo
-        ]
+        return [await self._mongo_to_domain(visit_mongo) for visit_mongo in visits_mongo]
 
     async def find_walk_in_visits(self, doctor_id: str, limit: int = 100, offset: int = 0) -> List[Visit]:
         """Find walk-in visits with pagination."""
@@ -186,60 +213,52 @@ class MongoVisitRepository(VisitRepository):
         limit: int = 100,
         offset: int = 0,
         sort_by: str = "created_at",
-        sort_order: str = "desc"
+        sort_order: str = "desc",
     ) -> List[Dict[str, Any]]:
         """
         Find patients with aggregated visit information using MongoDB aggregation.
         """
         from motor.motor_asyncio import AsyncIOMotorClient
+
         from clinicai.core.config import get_settings
-        
+
         settings = get_settings()
         client = AsyncIOMotorClient(settings.database.uri)
         db = client[settings.database.db_name]
         visits_collection = db["visits"]
-        
+
         # Build match stage for workflow_type filter
         match_stage = {"doctor_id": doctor_id}
         if workflow_type:
             match_stage["workflow_type"] = workflow_type.value
-        
+
         # Aggregation pipeline
         pipeline = [
             # Match visits by workflow_type if specified
             {"$match": match_stage},
-            
             # Sort visits by created_at to get latest first
             {"$sort": {"created_at": -1}},
-            
             # Group by patient_id to aggregate visit data
             {
                 "$group": {
                     "_id": "$patient_id",
                     "latest_visit": {"$first": "$$ROOT"},
                     "total_visits": {"$sum": 1},
-                    "scheduled_visits_count": {
-                        "$sum": {"$cond": [{"$eq": ["$workflow_type", "scheduled"]}, 1, 0]}
-                    },
-                    "walk_in_visits_count": {
-                        "$sum": {"$cond": [{"$eq": ["$workflow_type", "walk_in"]}, 1, 0]}
-                    }
+                    "scheduled_visits_count": {"$sum": {"$cond": [{"$eq": ["$workflow_type", "scheduled"]}, 1, 0]}},
+                    "walk_in_visits_count": {"$sum": {"$cond": [{"$eq": ["$workflow_type", "walk_in"]}, 1, 0]}},
                 }
             },
-            
             # Lookup patient information
             {
                 "$lookup": {
                     "from": "patients",
                     "localField": "_id",
                     "foreignField": "patient_id",
-                    "as": "patient"
+                    "as": "patient",
                 }
             },
-            
             # Unwind patient array (should be single patient)
             {"$unwind": {"path": "$patient", "preserveNullAndEmptyArrays": True}},
-            
             # Project final structure
             {
                 "$project": {
@@ -252,15 +271,15 @@ class MongoVisitRepository(VisitRepository):
                         "visit_id": "$latest_visit.visit_id",
                         "workflow_type": "$latest_visit.workflow_type",
                         "status": "$latest_visit.status",
-                        "created_at": "$latest_visit.created_at"
+                        "created_at": "$latest_visit.created_at",
                     },
                     "total_visits": 1,
                     "scheduled_visits_count": 1,
-                    "walk_in_visits_count": 1
+                    "walk_in_visits_count": 1,
                 }
-            }
+            },
         ]
-        
+
         # Add sorting
         sort_direction = -1 if sort_order == "desc" else 1
         if sort_by == "name":
@@ -269,17 +288,14 @@ class MongoVisitRepository(VisitRepository):
             pipeline.append({"$sort": {"latest_visit.created_at": sort_direction}})
         else:
             pipeline.append({"$sort": {"latest_visit.created_at": sort_direction}})
-        
+
         # Add pagination
-        pipeline.extend([
-            {"$skip": offset},
-            {"$limit": limit}
-        ])
-        
+        pipeline.extend([{"$skip": offset}, {"$limit": limit}])
+
         # Execute aggregation
         cursor = visits_collection.aggregate(pipeline)
         results = await cursor.to_list(length=limit)
-        
+
         # Format results
         formatted_results = []
         for result in results:
@@ -287,19 +303,21 @@ class MongoVisitRepository(VisitRepository):
             # MongoDB aggregation returns datetime objects directly, but ensure it's a dict
             if latest_visit and not isinstance(latest_visit, dict):
                 latest_visit = None
-            
-            formatted_results.append({
-                "patient_id": result.get("patient_id", ""),
-                "name": result.get("name", "Unknown"),
-                "mobile": result.get("mobile", ""),
-                "age": result.get("age", 0),
-                "gender": result.get("gender"),
-                "latest_visit": latest_visit,
-                "total_visits": result.get("total_visits", 0),
-                "scheduled_visits_count": result.get("scheduled_visits_count", 0),
-                "walk_in_visits_count": result.get("walk_in_visits_count", 0)
-            })
-        
+
+            formatted_results.append(
+                {
+                    "patient_id": result.get("patient_id", ""),
+                    "name": result.get("name", "Unknown"),
+                    "mobile": result.get("mobile", ""),
+                    "age": result.get("age", 0),
+                    "gender": result.get("gender"),
+                    "latest_visit": latest_visit,
+                    "total_visits": result.get("total_visits", 0),
+                    "scheduled_visits_count": result.get("scheduled_visits_count", 0),
+                    "walk_in_visits_count": result.get("walk_in_visits_count", 0),
+                }
+            )
+
         return formatted_results
 
     async def _domain_to_mongo(self, visit: Visit) -> VisitMongo:
@@ -495,28 +513,29 @@ class MongoVisitRepository(VisitRepository):
             if isinstance(objective, str):
                 try:
                     # Try to parse as JSON if it looks like a dict string
-                    if objective.strip().startswith('{') and objective.strip().endswith('}'):
+                    if objective.strip().startswith("{") and objective.strip().endswith("}"):
                         import json
+
                         objective = json.loads(objective)
                     else:
                         # If it's not JSON, create a basic structure
                         objective = {
                             "vital_signs": {},
-                            "physical_exam": {"general_appearance": objective or "Not discussed"}
+                            "physical_exam": {"general_appearance": objective or "Not discussed"},
                         }
                 except:
                     # If parsing fails, create a basic structure
                     objective = {
                         "vital_signs": {},
-                        "physical_exam": {"general_appearance": objective or "Not discussed"}
+                        "physical_exam": {"general_appearance": objective or "Not discussed"},
                     }
             elif not isinstance(objective, dict):
                 # If it's neither string nor dict, create a basic structure
                 objective = {
                     "vital_signs": {},
-                    "physical_exam": {"general_appearance": "Not discussed"}
+                    "physical_exam": {"general_appearance": "Not discussed"},
                 }
-            
+
             soap_note = SoapNote(
                 subjective=visit_mongo.soap_note.subjective,
                 objective=objective,  # Now guaranteed to be a dict
@@ -551,9 +570,9 @@ class MongoVisitRepository(VisitRepository):
         visit.vitals = getattr(visit_mongo, "vitals", None)
         if intake_session:
             intake_session.symptom = visit_symptom
-        
+
         return visit
-    
+
     async def try_mark_processing(
         self,
         patient_id: str,
@@ -564,15 +583,15 @@ class MongoVisitRepository(VisitRepository):
     ) -> bool:
         """
         Atomically claim a transcription job by marking it as processing.
-        
+
         Returns True only if the job was successfully claimed (modified_count == 1).
         This ensures only one worker processes each job.
-        
+
         Conditions for claiming:
         - status == "queued"
         - OR status == "processing" but started_at is None
         - OR status == "processing" and started_at <= now - stale_seconds (stale)
-        
+
         Updates on successful claim:
         - status = "processing"
         - started_at = now (UTC)
@@ -580,18 +599,20 @@ class MongoVisitRepository(VisitRepository):
         - worker_id = worker_id
         - error_message = None
         """
-        from motor.motor_asyncio import AsyncIOMotorClient
-        from clinicai.core.config import get_settings
         from datetime import datetime, timedelta
-        
+
+        from motor.motor_asyncio import AsyncIOMotorClient
+
+        from clinicai.core.config import get_settings
+
         settings = get_settings()
         client = AsyncIOMotorClient(settings.database.uri)
         db = client[settings.database.db_name]
         collection = db["visits"]
-        
+
         now = datetime.utcnow()
         stale_threshold = now - timedelta(seconds=stale_seconds)
-        
+
         # Build query conditions for claiming
         # Condition 1: status == "queued"
         # Condition 2: status == "processing" and started_at is None
@@ -608,17 +629,17 @@ class MongoVisitRepository(VisitRepository):
                     "transcription_session.transcription_status": "processing",
                     "$or": [
                         {"transcription_session.started_at": None},
-                        {"transcription_session.started_at": {"$exists": False}}
-                    ]
+                        {"transcription_session.started_at": {"$exists": False}},
+                    ],
                 },
                 # Status is processing but stale
                 {
                     "transcription_session.transcription_status": "processing",
-                    "transcription_session.started_at": {"$lte": stale_threshold}
-                }
-            ]
+                    "transcription_session.started_at": {"$lte": stale_threshold},
+                },
+            ],
         }
-        
+
         # Update operation - atomically claim the job
         update_operation = {
             "$set": {
@@ -627,57 +648,48 @@ class MongoVisitRepository(VisitRepository):
                 "transcription_session.dequeued_at": now,
                 "transcription_session.worker_id": worker_id,
                 "transcription_session.error_message": None,
-                "updated_at": now
+                "updated_at": now,
             }
         }
-        
-        result = await collection.update_one(
-            claim_conditions,
-            update_operation
-        )
-        
+
+        result = await collection.update_one(claim_conditions, update_operation)
+
         return result.modified_count == 1
-    
+
     async def update_transcription_session_fields(
-        self,
-        patient_id: str,
-        visit_id: VisitId,
-        doctor_id: str,
-        fields: Dict[str, Any]
+        self, patient_id: str, visit_id: VisitId, doctor_id: str, fields: Dict[str, Any]
     ) -> bool:
         """
         Atomically update specific fields in the transcription_session of a visit.
-        
+
         Args:
             patient_id: Patient ID
             visit_id: Visit ID
             fields: Dictionary of field names and values to update.
                    Field names should be top-level transcription_session field names
                    (e.g., "transcription_id", "last_poll_status", "last_poll_at")
-        
+
         Returns:
             True if the visit was found and updated (modified_count == 1), False otherwise
         """
-        from motor.motor_asyncio import AsyncIOMotorClient
-        from clinicai.core.config import get_settings
         from datetime import datetime
-        
+
+        from motor.motor_asyncio import AsyncIOMotorClient
+
+        from clinicai.core.config import get_settings
+
         settings = get_settings()
         client = AsyncIOMotorClient(settings.database.uri)
         db = client[settings.database.db_name]
         collection = db["visits"]
-        
+
         # Build update operation using dot notation for nested transcription_session fields
-        update_operation = {
-            "$set": {
-                "updated_at": datetime.utcnow()
-            }
-        }
-        
+        update_operation = {"$set": {"updated_at": datetime.utcnow()}}
+
         # Add transcription_session fields with dot notation
         for field_name, field_value in fields.items():
             update_operation["$set"][f"transcription_session.{field_name}"] = field_value
-        
+
         # Update the visit document
         result = await collection.update_one(
             {
@@ -685,7 +697,7 @@ class MongoVisitRepository(VisitRepository):
                 "visit_id": visit_id.value,
                 "doctor_id": doctor_id,
             },
-            update_operation
+            update_operation,
         )
-        
+
         return result.modified_count == 1

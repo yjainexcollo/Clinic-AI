@@ -10,12 +10,11 @@ Env vars used:
 from __future__ import annotations
 
 import base64
+import logging
 import os
 from typing import Optional
 
 from cryptography.fernet import Fernet, InvalidToken  # type: ignore
-import logging
-
 
 _fernet_singleton: Optional[Fernet] = None
 
@@ -66,9 +65,7 @@ def decrypt_text(token_str: str) -> str:
         return plaintext.decode("utf-8")
     except InvalidToken as exc:
         # Log the error for debugging but don't crash the system
-        logging.getLogger("clinicai").warning(
-            "Failed to decrypt token, possibly due to key mismatch: %s", str(exc)
-        )
+        logging.getLogger("clinicai").warning("Failed to decrypt token, possibly due to key mismatch: %s", str(exc))
         raise ValueError("Invalid opaque token") from exc
 
 
@@ -80,5 +77,3 @@ def encode_patient_id(internal_patient_id: str) -> str:
 def decode_patient_id(opaque_patient_id: str) -> str:
     """Recover internal patient_id from opaque client-facing token."""
     return decrypt_text(opaque_patient_id)
-
-

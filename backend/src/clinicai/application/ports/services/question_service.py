@@ -3,7 +3,7 @@ Question service interface for AI-powered question generation.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 
 class QuestionService(ABC):
@@ -56,8 +56,8 @@ class QuestionService(ABC):
 
     @abstractmethod
     async def generate_pre_visit_summary(
-        self, 
-        patient_data: Dict[str, Any], 
+        self,
+        patient_data: Dict[str, Any],
         intake_answers: Dict[str, Any],
         language: str = "en",
         medication_images_info: Optional[str] = None,

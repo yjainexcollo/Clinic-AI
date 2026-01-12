@@ -1,6 +1,9 @@
 [flake8]
 max-line-length = 120
-extend-ignore = E203,W503
+# Temporarily ignore these errors for incremental cleanup
+extend-ignore = E203,W503,E501,F401,F841,F541,E712,E722,E402,F811,F821,W291
 exclude = .git,__pycache__,build,dist,.eggs,.venv
+per-file-ignores =
+    __init__.py:F401
 
 

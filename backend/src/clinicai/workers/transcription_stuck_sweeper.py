@@ -3,9 +3,9 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
-from clinicai.core.config import get_settings
 from clinicai.adapters.db.mongo.models.patient_m import VisitMongo
 from clinicai.adapters.queue.azure_queue_service import get_azure_queue_service
+from clinicai.core.config import get_settings
 
 logger = logging.getLogger("clinicai")
 
@@ -55,11 +55,11 @@ async def _sweep_once(threshold_seconds: int) -> None:
             continue
 
         # We need an audio reference to re-enqueue. Use AudioFileMongo by visit_id.
-        from clinicai.adapters.db.mongo.models.audio_m import AudioFileMongo  # lazy import to avoid cycles
-
-        audio = await AudioFileMongo.find_one(
-            AudioFileMongo.visit_id == visit_id, AudioFileMongo.audio_type == "visit"
+        from clinicai.adapters.db.mongo.models.audio_m import (  # lazy import to avoid cycles
+            AudioFileMongo,
         )
+
+        audio = await AudioFileMongo.find_one(AudioFileMongo.visit_id == visit_id, AudioFileMongo.audio_type == "visit")
         if not audio or not getattr(audio, "audio_id", None):
             logger.warning(
                 "[StuckSweeper] Cannot re-enqueue visit=%s patient=%s: missing audio reference",
@@ -154,5 +154,3 @@ async def run_stuck_sweeper_forever() -> None:
         except Exception as e:  # noqa: PERF203
             logger.error("[StuckSweeper] Sweep iteration failed: %s", e, exc_info=True)
         await asyncio.sleep(interval)
-
-

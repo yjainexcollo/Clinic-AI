@@ -3,13 +3,14 @@ Medical content schemas for SOAP notes, vitals, and medical data.
 """
 
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, Field, validator
 
 
 class VitalsData(BaseModel):
     """Vitals data schema."""
-    
+
     blood_pressure: Optional[str] = Field(None, description="Blood pressure reading")
     heart_rate: Optional[str] = Field(None, description="Heart rate")
     temperature: Optional[str] = Field(None, description="Body temperature")
@@ -24,7 +25,7 @@ class VitalsData(BaseModel):
 
 class PhysicalExam(BaseModel):
     """Physical examination schema."""
-    
+
     general_appearance: Optional[str] = Field(None, description="General appearance")
     heent: Optional[str] = Field(None, description="Head, Eyes, Ears, Nose, Throat")
     cardiac: Optional[str] = Field(None, description="Cardiac examination")
@@ -43,52 +44,46 @@ class SoapTemplateSchema(BaseModel):
     template UI (e.g., screenshot form).
     """
 
-    template_name: Optional[str] = Field(
-        None, description="Human-friendly template name (e.g., 'General Template')"
-    )
-    category: Optional[str] = Field(
-        None, description="Template category (e.g., 'General / Primary Care')"
-    )
-    speciality: Optional[str] = Field(
-        None, description="Clinical speciality for this template (e.g., 'Primary Care')"
-    )
-    description: Optional[str] = Field(
-        None, description="Optional description or usage notes for this template"
-    )
+    template_name: Optional[str] = Field(None, description="Human-friendly template name (e.g., 'General Template')")
+    category: Optional[str] = Field(None, description="Template category (e.g., 'General / Primary Care')")
+    speciality: Optional[str] = Field(None, description="Clinical speciality for this template (e.g., 'Primary Care')")
+    description: Optional[str] = Field(None, description="Optional description or usage notes for this template")
 
     # Core SOAP text templates – can include placeholders like [patient_name], [blood_pressure], etc.
     soap_content: Dict[str, str] = Field(
         default_factory=dict,
         description=(
-            "Per-section SOAP templates. Keys typically include "
-            "'subjective', 'objective', 'assessment', 'plan'."
+            "Per-section SOAP templates. Keys typically include " "'subjective', 'objective', 'assessment', 'plan'."
         ),
     )
 
-    tags: Optional[List[str]] = Field(
-        None, description="Free-form tags/classifications (e.g., ['Test', 'Follow-up'])"
-    )
-    appointment_types: Optional[List[str]] = Field(
-        None, description="Applicable appointment types for this template"
-    )
-    is_favorite: Optional[bool] = Field(
-        None, description="Whether this template is marked as favorite"
-    )
-    status: Optional[str] = Field(
-        None, description="Template status (e.g., 'active', 'inactive', 'draft')"
-    )
+    tags: Optional[List[str]] = Field(None, description="Free-form tags/classifications (e.g., ['Test', 'Follow-up'])")
+    appointment_types: Optional[List[str]] = Field(None, description="Applicable appointment types for this template")
+    is_favorite: Optional[bool] = Field(None, description="Whether this template is marked as favorite")
+    status: Optional[str] = Field(None, description="Template status (e.g., 'active', 'inactive', 'draft')")
 
-    uploaded_at: Optional[datetime] = Field(
-        None, description="When this template was created on the client (optional)"
-    )
+    uploaded_at: Optional[datetime] = Field(None, description="When this template was created on the client (optional)")
 
 
 class SOAPNoteRequest(BaseModel):
     """Request schema for SOAP note generation."""
-    
-    patient_id: str = Field(..., min_length=10, max_length=200, description="Opaque/encrypted Patient ID (can be longer when encoded)")
-    visit_id: str = Field(..., min_length=10, max_length=200, description="Opaque/encrypted Visit ID (can be longer when encoded)")
-    transcript: Optional[str] = Field(None, description="Optional transcript text. If not provided, will use stored transcript from visit.")
+
+    patient_id: str = Field(
+        ...,
+        min_length=10,
+        max_length=200,
+        description="Opaque/encrypted Patient ID (can be longer when encoded)",
+    )
+    visit_id: str = Field(
+        ...,
+        min_length=10,
+        max_length=200,
+        description="Opaque/encrypted Visit ID (can be longer when encoded)",
+    )
+    transcript: Optional[str] = Field(
+        None,
+        description="Optional transcript text. If not provided, will use stored transcript from visit.",
+    )
     template: Optional[SoapTemplateSchema] = Field(
         None,
         description=(
@@ -100,7 +95,7 @@ class SOAPNoteRequest(BaseModel):
 
 class SOAPNoteResponse(BaseModel):
     """Response schema for SOAP note."""
-    
+
     subjective: str = Field(..., description="Subjective findings from patient")
     objective: Dict[str, Any] = Field(..., description="Objective findings and vitals")
     assessment: str = Field(..., description="Assessment and diagnosis")
@@ -114,7 +109,7 @@ class SOAPNoteResponse(BaseModel):
 
 class MedicationInfo(BaseModel):
     """Medication information schema."""
-    
+
     name: str = Field(..., description="Medication name")
     dosage: str = Field(..., description="Dosage information")
     frequency: str = Field(..., description="Frequency of administration")
@@ -125,7 +120,7 @@ class MedicationInfo(BaseModel):
 
 class TestOrderInfo(BaseModel):
     """Test order information schema."""
-    
+
     test_name: str = Field(..., description="Name of the test")
     purpose: str = Field(..., description="Purpose of the test")
     instructions: str = Field(..., description="Instructions for the test")
@@ -136,7 +131,7 @@ class TestOrderInfo(BaseModel):
 
 class MedicalRecommendation(BaseModel):
     """Medical recommendation schema."""
-    
+
     type: str = Field(..., description="Type of recommendation (lifestyle, dietary, exercise, etc.)")
     description: str = Field(..., description="Description of the recommendation")
     priority: str = Field(default="medium", description="Priority level (low, medium, high)")
@@ -146,14 +141,24 @@ class MedicalRecommendation(BaseModel):
 
 class ActionPlanRequest(BaseModel):
     """Request schema for action plan generation."""
-    
-    patient_id: str = Field(..., min_length=10, max_length=200, description="Opaque/encrypted Patient ID (can be longer when encoded)")
-    visit_id: str = Field(..., min_length=10, max_length=200, description="Opaque/encrypted Visit ID (can be longer when encoded)")
+
+    patient_id: str = Field(
+        ...,
+        min_length=10,
+        max_length=200,
+        description="Opaque/encrypted Patient ID (can be longer when encoded)",
+    )
+    visit_id: str = Field(
+        ...,
+        min_length=10,
+        max_length=200,
+        description="Opaque/encrypted Visit ID (can be longer when encoded)",
+    )
 
 
 class ActionPlanResponse(BaseModel):
     """Response schema for action plan."""
-    
+
     immediate_actions: List[str] = Field(default_factory=list, description="Immediate actions to take")
     short_term_goals: List[str] = Field(default_factory=list, description="Short-term goals (1-2 weeks)")
     long_term_goals: List[str] = Field(default_factory=list, description="Long-term goals (1-3 months)")

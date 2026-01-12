@@ -5,23 +5,25 @@ This module provides secure access to secrets stored in Azure Key Vault.
 It supports both Managed Identity (for Azure App Service) and DefaultAzureCredential
 (for local development).
 """
-import os
+
 import logging
+import os
 from typing import Optional
+
+from azure.core.exceptions import AzureError
 from azure.identity import DefaultAzureCredential, ManagedIdentityCredential
 from azure.keyvault.secrets import SecretClient
-from azure.core.exceptions import AzureError
 
 logger = logging.getLogger("clinicai")
 
 
 class AzureKeyVaultService:
     """Azure Key Vault service for secrets management."""
-    
+
     def __init__(self, vault_name: str):
         """
         Initialize Azure Key Vault service.
-        
+
         Args:
             vault_name: Name of the Azure Key Vault (without .vault.azure.net)
         """
@@ -29,7 +31,7 @@ class AzureKeyVaultService:
         self.vault_url = f"https://{vault_name}.vault.azure.net/"
         self._client: Optional[SecretClient] = None
         self._available = False
-        
+
     @property
     def client(self) -> Optional[SecretClient]:
         """Get or create SecretClient."""
@@ -49,39 +51,36 @@ class AzureKeyVaultService:
                 except Exception as e2:
                     logger.warning(f"Failed to initialize Azure credentials: {e2}")
                     return None
-            
+
             try:
-                self._client = SecretClient(
-                    vault_url=self.vault_url,
-                    credential=credential
-                )
+                self._client = SecretClient(vault_url=self.vault_url, credential=credential)
                 # Mark as available - actual access will be tested when get_secret() is called
                 # This avoids the expensive list_properties_of_secrets() call that causes slow startup
                 self._available = True
                 logger.info(f"✅ Azure Key Vault client initialized: {self.vault_name}")
-                    
+
             except Exception as e:
                 logger.error(f"❌ Failed to create Key Vault client: {e}")
                 self._available = False
                 return None
-        
+
         return self._client
-    
+
     @property
     def is_available(self) -> bool:
         """Check if Key Vault is available and accessible."""
         if self._client is None:
             self.client  # Try to initialize
         return self._available
-    
+
     def get_secret(self, secret_name: str, default: Optional[str] = None) -> Optional[str]:
         """
         Get secret from Key Vault.
-        
+
         Args:
             secret_name: Name of the secret in Key Vault
             default: Default value if secret not found (optional)
-            
+
         Returns:
             Secret value, default value, or None
         """
@@ -90,7 +89,7 @@ class AzureKeyVaultService:
             # Fallback to environment variable
             env_key = secret_name.replace("-", "_").upper()
             return os.getenv(env_key, default)
-        
+
         try:
             secret = self.client.get_secret(secret_name)
             logger.info(f"✅ Retrieved secret from Key Vault: {secret_name}")
@@ -107,22 +106,22 @@ class AzureKeyVaultService:
                 logger.info(f"   Using default value for: {secret_name}")
                 return default
             return None
-    
+
     def set_secret(self, secret_name: str, secret_value: str) -> bool:
         """
         Set secret in Key Vault.
-        
+
         Args:
             secret_name: Name of the secret
             secret_value: Value to store
-            
+
         Returns:
             True if successful, False otherwise
         """
         if not self.is_available or not self.client:
             logger.error(f"Key Vault not available, cannot set secret: {secret_name}")
             return False
-        
+
         try:
             self.client.set_secret(secret_name, secret_value)
             logger.info(f"✅ Set secret in Key Vault: {secret_name}")
@@ -130,17 +129,17 @@ class AzureKeyVaultService:
         except AzureError as e:
             logger.error(f"❌ Failed to set secret in Key Vault: {secret_name}, error: {e}")
             return False
-    
+
     def list_secrets(self) -> list:
         """
         List all secret names in Key Vault.
-        
+
         Returns:
             List of secret names
         """
         if not self.is_available or not self.client:
             return []
-        
+
         try:
             secrets = list(self.client.list_properties_of_secrets())
             return [secret.name for secret in secrets]
@@ -156,15 +155,15 @@ _key_vault_service: Optional[AzureKeyVaultService] = None
 def get_key_vault_service() -> Optional[AzureKeyVaultService]:
     """
     Get Azure Key Vault service instance (singleton).
-    
+
     Returns:
         AzureKeyVaultService instance or None if not configured
     """
     global _key_vault_service
-    
+
     if _key_vault_service is None:
         vault_name = os.getenv("AZURE_KEY_VAULT_NAME", "Clinic-ai-key-vault")
-        
+
         # Only initialize if vault name is provided
         if vault_name:
             try:
@@ -176,6 +175,5 @@ def get_key_vault_service() -> Optional[AzureKeyVaultService]:
                 _key_vault_service = None
         else:
             logger.info("AZURE_KEY_VAULT_NAME not set, Key Vault integration disabled")
-    
-    return _key_vault_service
 
+    return _key_vault_service

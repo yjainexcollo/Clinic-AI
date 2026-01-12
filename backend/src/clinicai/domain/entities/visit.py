@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from ..enums.workflow import VisitWorkflowType
 from ..errors import (
     DuplicateQuestionError,
     IntakeAlreadyCompletedError,
@@ -14,7 +15,6 @@ from ..errors import (
 )
 from ..value_objects.question_id import QuestionId
 from ..value_objects.visit_id import VisitId
-from ..enums.workflow import VisitWorkflowType
 
 
 @dataclass
@@ -57,9 +57,7 @@ class IntakeSession:
     ) -> None:
         # Check limit
         if self.current_question_count >= self.max_questions:
-            raise QuestionLimitExceededError(
-                self.current_question_count, self.max_questions
-            )
+            raise QuestionLimitExceededError(self.current_question_count, self.max_questions)
 
         # Check for duplicate questions - exact text match only
         # Note: Semantic duplicate checking is handled at the application layer
@@ -105,10 +103,7 @@ class IntakeSession:
 
     def can_ask_more_questions(self) -> bool:
         """Check if more questions can be asked."""
-        return (
-            self.current_question_count < self.max_questions
-            and self.status == "in_progress"
-        )
+        return self.current_question_count < self.max_questions and self.status == "in_progress"
 
     def is_complete(self) -> bool:
         """Check if intake is complete."""
@@ -121,7 +116,7 @@ class IntakeSession:
 
     def set_pending_question(self, question: Optional[str]) -> None:
         """Set the pending question to be asked next to the patient (not yet answered)."""
-        self.pending_question = (question or None)
+        self.pending_question = question or None
 
     def get_question_context(self) -> str:
         """Get context for AI to generate next question."""
@@ -146,7 +141,7 @@ class IntakeSession:
 @dataclass
 class TranscriptionSession:
     """Transcription session data for Step-03."""
-    
+
     audio_file_path: Optional[str] = None
     transcript: Optional[str] = None
     transcription_status: str = "pending"  # pending, queued, processing, completed, failed
@@ -159,7 +154,9 @@ class TranscriptionSession:
     # Cached structured dialogue turns (ordered Doctor/Patient), to avoid re-structuring on the fly
     structured_dialogue: Optional[List[Dict[str, Any]]] = None
     transcription_id: Optional[str] = None  # Azure Speech Service transcription job ID for tracking
-    last_poll_status: Optional[str] = None  # Last polled status from Azure Speech Service (Succeeded, Running, Failed, etc.)
+    last_poll_status: Optional[str] = (
+        None  # Last polled status from Azure Speech Service (Succeeded, Running, Failed, etc.)
+    )
     last_poll_at: Optional[datetime] = None  # Timestamp of last status poll from Azure Speech Service
     # Observability timestamps for latency analysis
     enqueued_at: Optional[datetime] = None  # When job was enqueued to Azure Queue
@@ -185,7 +182,7 @@ class TranscriptionSession:
 @dataclass
 class SoapNote:
     """SOAP note data for Step-03."""
-    
+
     subjective: str
     objective: Dict[str, Any]
     assessment: str
@@ -203,24 +200,22 @@ class Visit:
 
     visit_id: VisitId
     patient_id: str  # Reference to patient
-    doctor_id: str   # Owning doctor
+    doctor_id: str  # Owning doctor
     symptom: str
     workflow_type: VisitWorkflowType = VisitWorkflowType.SCHEDULED
-    status: str = (
-        "intake"  # intake, transcription, soap_generation, prescription_analysis, completed, walk_in_patient
-    )
+    status: str = "intake"  # intake, transcription, soap_generation, prescription_analysis, completed, walk_in_patient
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
-    
+
     # Visit-specific travel history (moved from Patient - travel is visit-specific, not lifetime patient attribute)
     recently_travelled: bool = False
 
     # Step 1: Pre-Visit Intake
     intake_session: Optional[IntakeSession] = None
-    
+
     # Step 2: Pre-Visit Summary (EHR Storage)
     pre_visit_summary: Optional[Dict[str, Any]] = None
-    
+
     # Step 3: Audio Transcription & SOAP Generation
     transcription_session: Optional[TranscriptionSession] = None
     soap_note: Optional[SoapNote] = None
@@ -311,9 +306,7 @@ class Visit:
             "intake_status": self.intake_session.status,
             "started_at": self.intake_session.started_at.isoformat(),
             "completed_at": (
-                self.intake_session.completed_at.isoformat()
-                if self.intake_session.completed_at
-                else None
+                self.intake_session.completed_at.isoformat() if self.intake_session.completed_at else None
             ),
         }
 
@@ -342,10 +335,10 @@ class Visit:
             "stored_at": datetime.utcnow().isoformat(),
         }
         self.updated_at = datetime.utcnow()
-    
+
     def get_post_visit_summary(self) -> Optional[Dict[str, Any]]:
         return self.post_visit_summary
-    
+
     def has_post_visit_summary(self) -> bool:
         return self.post_visit_summary is not None
 
@@ -368,14 +361,22 @@ class Visit:
             return self.status in ["vitals", "vitals_completed", "transcription"]
         elif self.is_walk_in_workflow():
             # For walk-in: after vitals are completed
-            return self.status in ["vitals_completed", "transcription_pending", "transcription"]
+            return self.status in [
+                "vitals_completed",
+                "transcription_pending",
+                "transcription",
+            ]
         return False
 
     def can_proceed_to_vitals(self) -> bool:
         """Check if visit can proceed to vitals input."""
         if self.is_scheduled_workflow():
             # For scheduled: after pre-visit summary is generated
-            return self.status in ["pre_visit_summary_generated", "vitals", "vitals_pending"]
+            return self.status in [
+                "pre_visit_summary_generated",
+                "vitals",
+                "vitals_pending",
+            ]
         elif self.is_walk_in_workflow():
             # For walk-in: right after registration (walk_in_patient status)
             return self.status in ["walk_in_patient", "vitals_pending", "vitals"]
@@ -384,13 +385,21 @@ class Visit:
     def can_proceed_to_soap(self) -> bool:
         """Check if visit can proceed to SOAP generation."""
         if self.is_walk_in_workflow():
-            return self.status in ["vitals_completed", "soap_pending", "soap_generation"]
+            return self.status in [
+                "vitals_completed",
+                "soap_pending",
+                "soap_generation",
+            ]
         return False
 
     def can_proceed_to_post_visit(self) -> bool:
         """Check if visit can proceed to post-visit summary."""
         if self.is_walk_in_workflow():
-            return self.status in ["soap_completed", "post_visit_pending", "post_visit_summary"]
+            return self.status in [
+                "soap_completed",
+                "post_visit_pending",
+                "post_visit_summary",
+            ]
         return False
 
     def get_available_steps(self) -> List[str]:
@@ -422,7 +431,7 @@ class Visit:
     def _get_walk_in_workflow_steps(self) -> List[str]:
         """Get available steps for walk-in workflow (sequential)."""
         steps = []
-        
+
         # Sequential workflow based on current status
         # Walk-in flow: registration -> vitals -> transcription -> soap -> post-visit
         if self.status == "walk_in_patient":
@@ -441,24 +450,28 @@ class Visit:
             steps.append("post_visit_summary")
         elif self.status in ["post_visit_pending", "post_visit_summary"]:
             steps.append("post_visit_summary")
-        
+
         return steps
 
     # Step-03: Audio Transcription & SOAP Generation Methods
 
-    def queue_transcription(self, audio_file_path: Optional[str] = None, enqueued_at: Optional[datetime] = None) -> None:
+    def queue_transcription(
+        self,
+        audio_file_path: Optional[str] = None,
+        enqueued_at: Optional[datetime] = None,
+    ) -> None:
         """
         Queue a transcription job (sets status to 'queued', not 'processing').
         Used when enqueuing to Azure Queue - actual processing is claimed by worker atomically.
         """
         if not self.can_proceed_to_transcription():
             raise ValueError(f"Cannot queue transcription. Current status: {self.status}")
-        
+
         now = datetime.utcnow()
         # Only update if not already completed (idempotency)
         if self.transcription_session and self.transcription_session.transcription_status == "completed":
             return  # Already completed, don't overwrite
-        
+
         # Preserve existing transcription_session fields if it exists (e.g., transcription_id, last_poll_status)
         if self.transcription_session:
             # Update existing session instead of replacing it
@@ -479,7 +492,7 @@ class Visit:
                 enqueued_at=enqueued_at or now,
                 dequeued_at=None,  # Will be set when worker claims it
                 worker_id=None,  # Will be set when worker claims it
-                error_message=None  # Clear any previous errors
+                error_message=None,  # Clear any previous errors
             )
         if self.is_walk_in_workflow():
             self.status = "transcription"
@@ -579,7 +592,7 @@ class Visit:
         """Start the transcription process."""
         if not self.can_proceed_to_transcription():
             raise ValueError(f"Cannot start transcription. Current status: {self.status}")
-        
+
         now = datetime.utcnow()
         # Preserve existing transcription_session fields if it exists (e.g., transcription_id, last_poll_status)
         if self.transcription_session:
@@ -598,7 +611,7 @@ class Visit:
                 audio_file_path=audio_file_path,
                 transcription_status="processing",
                 started_at=now,
-                enqueued_at=enqueued_at or now  # Use provided enqueued_at or fallback to now
+                enqueued_at=enqueued_at or now,  # Use provided enqueued_at or fallback to now
             )
         if self.is_walk_in_workflow():
             self.status = "transcription"
@@ -611,7 +624,7 @@ class Visit:
         if self.transcription_session:
             self.transcription_session.transcription_status = "completed"
             self.transcription_session.completed_at = datetime.utcnow()
-        
+
         if self.is_walk_in_workflow():
             self.status = "transcription_completed"
         else:
@@ -622,7 +635,7 @@ class Visit:
         """Start the vitals input process."""
         if not self.can_proceed_to_vitals():
             raise ValueError(f"Cannot start vitals. Current status: {self.status}")
-        
+
         if self.is_walk_in_workflow():
             self.status = "vitals_pending"
         self.updated_at = datetime.utcnow()
@@ -642,7 +655,7 @@ class Visit:
         """Start the SOAP generation process."""
         if not self.can_proceed_to_soap():
             raise ValueError(f"Cannot start SOAP generation. Current status: {self.status}")
-        
+
         if self.is_walk_in_workflow():
             self.status = "soap_pending"
         else:
@@ -661,7 +674,7 @@ class Visit:
         """Start the post-visit summary generation process."""
         if not self.can_proceed_to_post_visit():
             raise ValueError(f"Cannot start post-visit summary. Current status: {self.status}")
-        
+
         if self.is_walk_in_workflow():
             self.status = "post_visit_pending"
         else:
@@ -676,21 +689,26 @@ class Visit:
             self.status = "completed"
         self.updated_at = datetime.utcnow()
 
-    def complete_transcription_with_data(self, transcript: str, audio_duration: Optional[float] = None, structured_dialogue: Optional[List[Dict[str, Any]]] = None) -> None:
+    def complete_transcription_with_data(
+        self,
+        transcript: str,
+        audio_duration: Optional[float] = None,
+        structured_dialogue: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
         """Complete the transcription process with data."""
         if not self.transcription_session:
             raise ValueError("No active transcription session")
-        
+
         self.transcription_session.transcript = transcript
         self.transcription_session.transcription_status = "completed"
         self.transcription_session.completed_at = datetime.utcnow()
         self.transcription_session.audio_duration_seconds = audio_duration
         self.transcription_session.word_count = len(transcript.split()) if transcript else 0
-        
+
         # Store structured dialogue if provided
         if structured_dialogue:
             self.transcription_session.structured_dialogue = structured_dialogue
-        
+
         # Update status based on workflow type
         if self.is_walk_in_workflow():
             self.status = "transcription_completed"  # Next step is vitals
@@ -707,30 +725,32 @@ class Visit:
                 transcription_status="failed",
                 error_message=error_message,
                 started_at=datetime.utcnow(),
-                completed_at=datetime.utcnow()
+                completed_at=datetime.utcnow(),
             )
         else:
             self.transcription_session.transcription_status = "failed"
             self.transcription_session.error_message = error_message
             self.transcription_session.completed_at = datetime.utcnow()
-        
+
         self.updated_at = datetime.utcnow()
 
     def store_soap_note(self, soap_data: Dict[str, Any]) -> None:
         """Store generated SOAP note."""
         # Allow storing SOAP note from various valid statuses
         valid_statuses_for_soap = ["soap_generation", "soap_pending"]
-        
+
         # For walk-in workflows, also allow vitals_completed (next step after vitals)
         if self.is_walk_in_workflow():
             valid_statuses_for_soap.extend(["vitals_completed", "transcription_completed"])
         # For scheduled workflows, also allow transcription and transcription_completed
         elif self.is_scheduled_workflow():
             valid_statuses_for_soap.extend(["transcription", "transcription_completed"])
-        
+
         if self.status not in valid_statuses_for_soap:
-            raise ValueError(f"Cannot store SOAP note. Current status: {self.status}, valid statuses: {valid_statuses_for_soap}")
-        
+            raise ValueError(
+                f"Cannot store SOAP note. Current status: {self.status}, valid statuses: {valid_statuses_for_soap}"
+            )
+
         self.soap_note = SoapNote(
             subjective=soap_data.get("subjective", ""),
             objective=soap_data.get("objective", {}),
@@ -739,9 +759,9 @@ class Visit:
             highlights=soap_data.get("highlights", []),
             red_flags=soap_data.get("red_flags", []),
             model_info=soap_data.get("model_info", {}),
-            confidence_score=soap_data.get("confidence_score")
+            confidence_score=soap_data.get("confidence_score"),
         )
-        
+
         # Update status appropriately based on workflow type
         if self.is_walk_in_workflow():
             self.status = "soap_completed"
@@ -787,8 +807,7 @@ class Visit:
 
     def is_transcription_complete(self) -> bool:
         """Check if transcription is complete."""
-        return (self.transcription_session and 
-                self.transcription_session.transcription_status == "completed")
+        return self.transcription_session and self.transcription_session.transcription_status == "completed"
 
     def is_soap_generated(self) -> bool:
         """Check if SOAP note is generated."""
@@ -803,10 +822,16 @@ class Visit:
         has_transcript = self.is_transcription_complete()
         if not has_transcript:
             return False
-        
+
         if self.workflow_type == VisitWorkflowType.WALK_IN:
             # For walk-in: can generate SOAP after transcription and vitals are completed
-            return self.status in ["transcription_completed", "vitals", "vitals_completed", "soap_generation", "soap_pending"]
+            return self.status in [
+                "transcription_completed",
+                "vitals",
+                "vitals_completed",
+                "soap_generation",
+                "soap_pending",
+            ]
         else:
             # For scheduled: can generate SOAP if transcript exists AND vitals exist
             # This is more permissive - allows generation regardless of exact status

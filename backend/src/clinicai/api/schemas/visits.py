@@ -3,7 +3,8 @@ Visit-related API schemas.
 """
 
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, Field
 
 from .common import QuestionAnswer
@@ -11,7 +12,7 @@ from .common import QuestionAnswer
 
 class TranscriptionSessionSchema(BaseModel):
     """Transcription session schema."""
-    
+
     audio_file_path: Optional[str] = Field(None, description="Path to audio file")
     transcript: Optional[str] = Field(None, description="Full transcript text")
     transcription_status: str = Field(default="pending", description="Status: pending, processing, completed, failed")
@@ -25,7 +26,7 @@ class TranscriptionSessionSchema(BaseModel):
 
 class SoapNoteSchema(BaseModel):
     """SOAP note schema."""
-    
+
     subjective: str = Field(..., description="Subjective findings")
     objective: Dict[str, Any] = Field(..., description="Objective findings and vitals")
     assessment: str = Field(..., description="Assessment and diagnosis")
@@ -39,7 +40,7 @@ class SoapNoteSchema(BaseModel):
 
 class VisitListItemSchema(BaseModel):
     """Schema for visit list item (summary)."""
-    
+
     visit_id: str = Field(..., description="Visit ID")
     symptom: str = Field(..., description="Primary symptom")
     workflow_type: str = Field(..., description="Workflow type: scheduled or walk_in")
@@ -55,7 +56,7 @@ class VisitListItemSchema(BaseModel):
 
 class VisitDetailSchema(BaseModel):
     """Schema for full visit details."""
-    
+
     visit_id: str = Field(..., description="Visit ID")
     patient_id: str = Field(..., description="Patient ID")
     symptom: str = Field(..., description="Primary symptom")
@@ -63,32 +64,31 @@ class VisitDetailSchema(BaseModel):
     status: str = Field(..., description="Visit status")
     created_at: datetime = Field(..., description="Visit creation date")
     updated_at: datetime = Field(..., description="Visit last update date")
-    
+
     # Intake session (if scheduled workflow)
     intake_session: Optional[Dict[str, Any]] = Field(None, description="Intake session data")
-    
+
     # Pre-visit summary
     pre_visit_summary: Optional[Dict[str, Any]] = Field(None, description="Pre-visit summary")
-    
+
     # Transcription
     transcription_session: Optional[TranscriptionSessionSchema] = Field(None, description="Transcription session data")
-    
+
     # SOAP note
     soap_note: Optional[SoapNoteSchema] = Field(None, description="SOAP note")
-    
+
     # Vitals
     vitals: Optional[Dict[str, Any]] = Field(None, description="Vitals data")
-    
+
     # Post-visit summary
     post_visit_summary: Optional[Dict[str, Any]] = Field(None, description="Post-visit summary")
-    
+
     # Audio files
     audio_files: List[Dict[str, Any]] = Field(default_factory=list, description="Associated audio files")
 
 
 class VisitListResponse(BaseModel):
     """Response schema for visit list endpoint."""
-    
+
     visits: List[VisitListItemSchema] = Field(..., description="List of visits")
     total: int = Field(..., description="Total number of visits")
-

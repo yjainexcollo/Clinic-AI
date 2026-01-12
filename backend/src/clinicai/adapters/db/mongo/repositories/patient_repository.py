@@ -26,50 +26,40 @@ class MongoPatientRepository(PatientRepository):
         # Remove revision_id from the document after saving using raw MongoDB operations
         if patient_mongo.id:
             from motor.motor_asyncio import AsyncIOMotorClient
+
             from clinicai.core.config import get_settings
-            
+
             settings = get_settings()
             client = AsyncIOMotorClient(settings.database.uri)
             db = client[settings.database.db_name]
             collection = db["patients"]
-            
-            await collection.update_one(
-                {"_id": patient_mongo.id},
-                {"$unset": {"revision_id": ""}}
-            )
+
+            await collection.update_one({"_id": patient_mongo.id}, {"$unset": {"revision_id": ""}})
 
         # Return the domain entity
         return await self._mongo_to_domain(patient_mongo)
 
     async def find_by_id(self, patient_id: PatientId, doctor_id: str) -> Optional[Patient]:
         """Find a patient by ID."""
-        patient_mongo = await PatientMongo.find_one(
-            {"patient_id": patient_id.value, "doctor_id": doctor_id}
-        )
+        patient_mongo = await PatientMongo.find_one({"patient_id": patient_id.value, "doctor_id": doctor_id})
 
         if not patient_mongo:
             return None
-        
+
         return await self._mongo_to_domain(patient_mongo)
 
-    async def find_by_name_and_mobile(
-        self, name: str, mobile: str, doctor_id: str
-    ) -> Optional[Patient]:
+    async def find_by_name_and_mobile(self, name: str, mobile: str, doctor_id: str) -> Optional[Patient]:
         """Find a patient by name and mobile number using optimized indexes."""
-        patient_mongo = await PatientMongo.find_one(
-            {"name": name, "mobile": mobile, "doctor_id": doctor_id}
-        )
+        patient_mongo = await PatientMongo.find_one({"name": name, "mobile": mobile, "doctor_id": doctor_id})
 
         if not patient_mongo:
             return None
-        
+
         return await self._mongo_to_domain(patient_mongo)
 
     async def exists_by_id(self, patient_id: PatientId, doctor_id: str) -> bool:
         """Check if a patient exists by ID."""
-        count = await PatientMongo.find(
-            {"patient_id": patient_id.value, "doctor_id": doctor_id}
-        ).count()
+        count = await PatientMongo.find({"patient_id": patient_id.value, "doctor_id": doctor_id}).count()
 
         return count > 0
 
@@ -80,39 +70,28 @@ class MongoPatientRepository(PatientRepository):
         result = []
         for patient_mongo in patients_mongo:
             result.append(await self._mongo_to_domain(patient_mongo))
-        
+
         return result
 
     async def find_by_mobile(self, mobile: str, doctor_id: str) -> List[Patient]:
         """Find all patients with the same mobile number (family members)."""
-        patients_mongo = await PatientMongo.find(
-            {"mobile": mobile, "doctor_id": doctor_id}
-        ).to_list()
+        patients_mongo = await PatientMongo.find({"mobile": mobile, "doctor_id": doctor_id}).to_list()
 
         result = []
         for patient_mongo in patients_mongo:
             result.append(await self._mongo_to_domain(patient_mongo))
-        
+
         return result
 
     async def delete(self, patient_id: PatientId, doctor_id: str) -> bool:
         """Delete a patient by ID."""
-        result = await PatientMongo.find_one(
-            {"patient_id": patient_id.value, "doctor_id": doctor_id}
-        ).delete()
+        result = await PatientMongo.find_one({"patient_id": patient_id.value, "doctor_id": doctor_id}).delete()
 
         return result is not None
 
     async def cleanup_revision_ids(self) -> int:
         """Remove revision_id from all patient documents."""
-        result = await PatientMongo.update_many(
-            {},
-            {
-                "$unset": {
-                    "revision_id": ""
-                }
-            }
-        )
+        result = await PatientMongo.update_many({}, {"$unset": {"revision_id": ""}})
         return result.modified_count
 
     async def _domain_to_mongo(self, patient: Patient) -> PatientMongo:

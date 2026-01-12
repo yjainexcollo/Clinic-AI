@@ -10,7 +10,6 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-
 logger = logging.getLogger("clinicai.audit")
 
 
@@ -39,5 +38,3 @@ async def audit_log_event(
     except Exception:
         # Fallback
         logger.info("AUDIT %s", record)
-
-

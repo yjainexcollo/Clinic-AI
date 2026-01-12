@@ -23,9 +23,7 @@ class PatientRepository(ABC):
         pass
 
     @abstractmethod
-    async def find_by_name_and_mobile(
-        self, name: str, mobile: str, doctor_id: str
-    ) -> Optional[Patient]:
+    async def find_by_name_and_mobile(self, name: str, mobile: str, doctor_id: str) -> Optional[Patient]:
         """Find a patient by name and mobile number."""
         pass
 

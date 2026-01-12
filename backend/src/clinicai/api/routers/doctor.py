@@ -8,16 +8,26 @@ from ...core.config import get_settings
 from ..schemas.common import ApiResponse
 from ..schemas.doctor_preferences import (
     DoctorPreferencesResponse,
-    UpsertDoctorPreferencesRequest,
     PreVisitSectionConfig,
+    UpsertDoctorPreferencesRequest,
 )
 from ..utils.responses import fail, ok
 
 router = APIRouter(prefix="/doctor")
 DEFAULT_GLOBAL_CATEGORIES = [
-    "duration", "triggers", "pain", "temporal", "travel",
-    "allergies", "medications", "hpi", "family", "lifestyle",
-    "gyn", "functional", "other"
+    "duration",
+    "triggers",
+    "pain",
+    "temporal",
+    "travel",
+    "allergies",
+    "medications",
+    "hpi",
+    "family",
+    "lifestyle",
+    "gyn",
+    "functional",
+    "other",
 ]
 
 
@@ -69,7 +79,11 @@ def _merge_intake_prefs(existing: DoctorPreferencesMongo, payload: UpsertDoctorP
         merged_global = list(dict.fromkeys((existing.global_categories or []) + incoming_categories))
 
     existing.global_categories = merged_global
-    existing.selected_categories = [c for c in incoming_categories if c in set(merged_global)] if incoming_categories else (existing.selected_categories or [])
+    existing.selected_categories = (
+        [c for c in incoming_categories if c in set(merged_global)]
+        if incoming_categories
+        else (existing.selected_categories or [])
+    )
     existing.max_questions = max_q
 
 
@@ -93,7 +107,9 @@ def _build_response(doc: DoctorPreferencesMongo, settings) -> DoctorPreferencesR
         selected_categories=sorted(list(dict.fromkeys([c.lower() for c in (doc.selected_categories or [])]))),
         max_questions=int(doc.max_questions or settings.intake.max_questions),
         soap_order=doc.soap_order or [],
-        pre_visit_config=[PreVisitSectionConfig(**cfg) if isinstance(cfg, dict) else cfg for cfg in (doc.pre_visit_config or [])],
+        pre_visit_config=[
+            PreVisitSectionConfig(**cfg) if isinstance(cfg, dict) else cfg for cfg in (doc.pre_visit_config or [])
+        ],
         pre_visit_ai_config=doc.pre_visit_ai_config,
         soap_ai_config=doc.soap_ai_config,
     )
@@ -130,8 +146,16 @@ async def get_doctor_preferences(
             )
         doc = await _get_or_default(doctor_id)
         if not doc:
-            return ok(request, data=_defaults_for(doctor_id), message="Doctor preferences loaded")
-        return ok(request, data=_build_response(doc, get_settings()), message="Doctor preferences loaded")
+            return ok(
+                request,
+                data=_defaults_for(doctor_id),
+                message="Doctor preferences loaded",
+            )
+        return ok(
+            request,
+            data=_build_response(doc, get_settings()),
+            message="Doctor preferences loaded",
+        )
     except Exception:
         return fail(request, error="INTERNAL_ERROR", message="Failed to load preferences")
 
@@ -185,7 +209,10 @@ async def set_doctor_preferences(request: Request, payload: UpsertDoctorPreferen
         existing.updated_at = datetime.utcnow()
         await existing.save()
 
-        return ok(request, data=_build_response(existing, settings), message="Preferences updated")
+        return ok(
+            request,
+            data=_build_response(existing, settings),
+            message="Preferences updated",
+        )
     except Exception:
         return fail(request, error="INTERNAL_ERROR", message="Failed to update preferences")
-

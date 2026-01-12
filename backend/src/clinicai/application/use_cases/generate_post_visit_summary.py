@@ -1,19 +1,20 @@
 """Generate Post-Visit Summary use case for Step-04 functionality."""
 
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
+from clinicai.adapters.db.mongo.repositories.llm_interaction_repository import (
+    append_phase_call,
+)
+
+from ...api.schemas import PostVisitSummaryResponse
 from ...domain.errors import PatientNotFoundError, VisitNotFoundError
 from ...domain.value_objects.patient_id import PatientId
 from ...domain.value_objects.visit_id import VisitId
 from ..dto.patient_dto import PostVisitSummaryRequest
-from ...api.schemas import PostVisitSummaryResponse
 from ..ports.repositories.patient_repo import PatientRepository
 from ..ports.repositories.visit_repo import VisitRepository
 from ..ports.services.soap_service import SoapService
-from clinicai.adapters.db.mongo.repositories.llm_interaction_repository import (
-    append_phase_call,
-)
 
 
 class GeneratePostVisitSummaryUseCase:
@@ -22,9 +23,8 @@ class GeneratePostVisitSummaryUseCase:
     def __init__(
         self,
         patient_repository: PatientRepository,
-        visit_repository: VisitRepository, 
-        soap_service: SoapService
-    
+        visit_repository: VisitRepository,
+        soap_service: SoapService,
     ):
         self._patient_repository = patient_repository
         self._visit_repository = visit_repository
@@ -32,7 +32,7 @@ class GeneratePostVisitSummaryUseCase:
 
     async def execute(self, request: PostVisitSummaryRequest, doctor_id: str) -> PostVisitSummaryResponse:
         """Generate a comprehensive post-visit summary for patient sharing."""
-        
+
         # Find patient
         patient_id = PatientId(request.patient_id)
         patient = await self._patient_repository.find_by_id(patient_id, doctor_id)
@@ -41,16 +41,14 @@ class GeneratePostVisitSummaryUseCase:
 
         # Find visit
         visit_id = VisitId(request.visit_id)
-        visit = await self._visit_repository.find_by_patient_and_visit_id(
-            request.patient_id, visit_id, doctor_id
-        )
+        visit = await self._visit_repository.find_by_patient_and_visit_id(request.patient_id, visit_id, doctor_id)
         if not visit:
             raise VisitNotFoundError(request.visit_id)
 
         # Check if visit has SOAP note generated
         if not visit.is_soap_generated():
             raise ValueError("Cannot generate post-visit summary. SOAP note must be generated first.")
-        
+
         # Check if post-visit summary already exists
         if visit.has_post_visit_summary():
             raise ValueError("Post-visit summary already exists for this visit. Use GET endpoint to retrieve it.")
@@ -68,7 +66,7 @@ class GeneratePostVisitSummaryUseCase:
             "mobile": patient.mobile,
             "symptom": visit.symptom,
             "visit_date": visit.created_at.isoformat(),
-            "visit_id": visit.visit_id.value
+            "visit_id": visit.visit_id.value,
         }
 
         # Prepare SOAP note data - handle both string and dict formats
@@ -80,14 +78,14 @@ class GeneratePostVisitSummaryUseCase:
                 return str(field_value)
             else:
                 return str(field_value) if field_value else ""
-        
+
         soap_data = {
             "subjective": safe_get_soap_field(soap_note.subjective),
             "objective": safe_get_soap_field(soap_note.objective),
             "assessment": safe_get_soap_field(soap_note.assessment),
             "plan": safe_get_soap_field(soap_note.plan),
             "highlights": soap_note.highlights or [],
-            "red_flags": soap_note.red_flags or []
+            "red_flags": soap_note.red_flags or [],
         }
 
         # Generate post-visit summary using AI service
@@ -105,7 +103,7 @@ class GeneratePostVisitSummaryUseCase:
         chief_complaint = visit.symptom
         if not chief_complaint and visit.intake_session and visit.intake_session.questions_asked:
             chief_complaint = visit.intake_session.questions_asked[0].answer
-        
+
         response = PostVisitSummaryResponse(
             chief_complaint=chief_complaint or "General consultation",
             key_findings=parsed_summary.get("key_findings", []),
@@ -116,8 +114,11 @@ class GeneratePostVisitSummaryUseCase:
             next_appointment=parsed_summary.get("next_appointment"),
             red_flag_symptoms=parsed_summary.get("red_flag_symptoms", []),
             patient_instructions=parsed_summary.get("patient_instructions", []),
-            reassurance_note=parsed_summary.get("reassurance_note", "Please contact us if symptoms worsen or if you have questions."),
-            generated_at=datetime.utcnow().isoformat()
+            reassurance_note=parsed_summary.get(
+                "reassurance_note",
+                "Please contact us if symptoms worsen or if you have questions.",
+            ),
+            generated_at=datetime.utcnow().isoformat(),
         )
 
         # Structured per-visit LLM interaction log (no system prompt)
@@ -146,9 +147,7 @@ class GeneratePostVisitSummaryUseCase:
         except Exception as e:
             import logging
 
-            logging.getLogger("clinicai").warning(
-                f"Failed to append structured post-visit log: {e}"
-            )
+            logging.getLogger("clinicai").warning(f"Failed to append structured post-visit log: {e}")
 
         # Persist to visit for future retrieval
         try:
@@ -159,13 +158,14 @@ class GeneratePostVisitSummaryUseCase:
             print(f"ERROR: Failed to persist post-visit summary: {e}")
             print(f"ERROR: Exception type: {type(e)}")
             import traceback
+
             print(f"ERROR: Traceback: {traceback.format_exc()}")
 
         return response
 
     def _parse_summary_result(self, summary_result: Dict[str, Any], chief_complaint: str) -> Dict[str, Any]:
         """Parse and structure the AI-generated summary result according to recommended format."""
-        
+
         # Default structure following the recommended format
         parsed = {
             "key_findings": [],
@@ -176,42 +176,53 @@ class GeneratePostVisitSummaryUseCase:
             "next_appointment": None,
             "red_flag_symptoms": [],
             "patient_instructions": [],
-            "reassurance_note": "Please contact us if symptoms worsen or if you have questions."
+            "reassurance_note": "Please contact us if symptoms worsen or if you have questions.",
         }
 
         # If the AI service returns a structured response, use it
         if isinstance(summary_result, dict):
             # Map AI response to our structured format
-            parsed.update({
-                "key_findings": summary_result.get("key_findings", []),
-                "diagnosis": summary_result.get("diagnosis", ""),
-                "medications": summary_result.get("medications", []),
-                "other_recommendations": summary_result.get("other_recommendations", []),
-                "tests_ordered": summary_result.get("tests_ordered", []),
-                "next_appointment": summary_result.get("next_appointment"),
-                "red_flag_symptoms": summary_result.get("red_flag_symptoms", []),
-                "patient_instructions": summary_result.get("patient_instructions", []),
-                "reassurance_note": summary_result.get("reassurance_note", parsed["reassurance_note"])
-            })
+            parsed.update(
+                {
+                    "key_findings": summary_result.get("key_findings", []),
+                    "diagnosis": summary_result.get("diagnosis", ""),
+                    "medications": summary_result.get("medications", []),
+                    "other_recommendations": summary_result.get("other_recommendations", []),
+                    "tests_ordered": summary_result.get("tests_ordered", []),
+                    "next_appointment": summary_result.get("next_appointment"),
+                    "red_flag_symptoms": summary_result.get("red_flag_symptoms", []),
+                    "patient_instructions": summary_result.get("patient_instructions", []),
+                    "reassurance_note": summary_result.get("reassurance_note", parsed["reassurance_note"]),
+                }
+            )
         else:
             # If it's a string, create basic structure
-            parsed.update({
-                "diagnosis": f"Based on your symptoms of {chief_complaint}, please follow the treatment plan as discussed.",
-                "patient_instructions": [
-                    "Take medications as prescribed",
-                    "Rest and avoid strenuous activities",
-                    "Monitor symptoms and report any changes"
-                ],
-                "red_flag_symptoms": [
-                    "Severe pain that doesn't improve",
-                    "High fever (>38.5°C)",
-                    "Difficulty breathing",
-                    "Signs of allergic reaction"
-                ]
-            })
+            parsed.update(
+                {
+                    "diagnosis": f"Based on your symptoms of {chief_complaint}, please follow the treatment plan as discussed.",
+                    "patient_instructions": [
+                        "Take medications as prescribed",
+                        "Rest and avoid strenuous activities",
+                        "Monitor symptoms and report any changes",
+                    ],
+                    "red_flag_symptoms": [
+                        "Severe pain that doesn't improve",
+                        "High fever (>38.5°C)",
+                        "Difficulty breathing",
+                        "Signs of allergic reaction",
+                    ],
+                }
+            )
 
         return parsed
 
+
 def clean_summary_for_patient(response_dict):
-    forbidden = ["clinic_name", "doctor_name", "patient_name", "visit_date", "storage_path"]
+    forbidden = [
+        "clinic_name",
+        "doctor_name",
+        "patient_name",
+        "visit_date",
+        "storage_path",
+    ]
     return {k: v for k, v in response_dict.items() if k not in forbidden}

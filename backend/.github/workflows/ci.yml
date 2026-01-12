@@ -1,0 +1,187 @@
+name: CI - Backend
+
+on:
+  pull_request:
+    branches: [main, develop, sandbox]
+    paths:
+      - '**'
+      - '.github/workflows/ci.yml'
+  push:
+    branches: [develop, sandbox]
+    paths:
+      - '**'
+      - '.github/workflows/ci.yml'
+
+jobs:
+  lint:
+    name: Lint Code
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: ./.github/actions/setup-python
+        with:
+          python-version: '3.11'
+          install-editable: 'true'
+
+      - name: Lint code
+        uses: ./.github/actions/lint-code
+        with:
+          mypy-blocking: 'false'
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: ./.github/actions/setup-python
+        with:
+          python-version: '3.11'
+          install-editable: 'false'
+
+      - name: Security scan
+        uses: ./.github/actions/security-scan
+
+      - name: Upload security reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-reports
+          path: artifacts/security/**
+          retention-days: 30
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    services:
+      mongodb:
+        image: mongo:7.0
+        env:
+          MONGO_INITDB_ROOT_USERNAME: test
+          MONGO_INITDB_ROOT_PASSWORD: test
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.adminCommand(\"ping\")'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: ./.github/actions/setup-python
+        with:
+          python-version: '3.11'
+          install-editable: 'true'
+
+      - name: Run tests
+        uses: ./.github/actions/run-tests
+        with:
+          mongo-uri: 'mongodb://test:test@localhost:27017/test_db'
+          app-env: 'testing'
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-reports
+          path: artifacts/coverage/coverage.xml
+          retention-days: 30
+
+  docker-build:
+    name: Build Docker Image & Smoke Test
+    runs-on: ubuntu-latest
+    
+    services:
+      mongodb:
+        image: mongo:7.0
+        env:
+          MONGO_INITDB_ROOT_USERNAME: test
+          MONGO_INITDB_ROOT_PASSWORD: test
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.adminCommand(\"ping\")'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        uses: ./.github/actions/docker-build
+        with:
+          image-name: 'clinicai-backend'
+          image-tag: 'ci-test'
+
+      - name: Run container smoke test
+        run: |
+          echo "🐳 Starting container smoke test..."
+          
+          # Start container in background with all required env vars
+          docker run -d \
+            --name test-container \
+            -p 8000:8000 \
+            -e "APP_ENV=testing" \
+            -e "DEBUG=true" \
+            -e "MONGO_URI=mongodb://test:test@172.17.0.1:27017/test_db?authSource=admin" \
+            -e "MONGO_DB_NAME=test_db" \
+            -e "AZURE_KEY_VAULT_NAME=" \
+            -e "SECURITY_SECRET_KEY=test-secret-key-minimum-32-characters-long-for-jwt" \
+            -e "ENCRYPTION_KEY=test-encryption-key-base64-encoded-32-bytes-fernet" \
+            -e "API_KEYS=test-key:test-user" \
+            -e "AZURE_OPENAI_ENDPOINT=" \
+            -e "AZURE_OPENAI_API_KEY=" \
+            -e "AZURE_OPENAI_DEPLOYMENT_NAME=" \
+            -e "AZURE_BLOB_CONNECTION_STRING=" \
+            -e "ENABLE_TRANSCRIPTION_WORKER=false" \
+            clinicai-backend:ci-test
+          
+          # Wait for container to start
+          echo "Waiting for container to start..."
+          sleep 20
+          
+          # Check if container is still running
+          if ! docker ps | grep test-container > /dev/null; then
+            echo "❌ Container failed to start"
+            echo "Container logs:"
+            docker logs test-container
+            exit 1
+          fi
+          
+          echo "Container started successfully"
+          
+          # Try to reach health endpoint
+          echo "Testing health endpoint..."
+          MAX_ATTEMPTS=10
+          for i in $(seq 1 $MAX_ATTEMPTS); do
+            echo "  Attempt $i/$MAX_ATTEMPTS..."
+            if curl -fsS --max-time 5 http://localhost:8000/health > /dev/null 2>&1; then
+              echo "✅ Health check passed!"
+              docker stop test-container
+              docker rm test-container
+              exit 0
+            fi
+            
+            if [ $i -lt $MAX_ATTEMPTS ]; then
+              sleep 3
+            fi
+          done
+          
+          echo "❌ Health check failed after $MAX_ATTEMPTS attempts"
+          echo "Container logs:"
+          docker logs test-container
+          docker stop test-container
+          docker rm test-container
+          exit 1

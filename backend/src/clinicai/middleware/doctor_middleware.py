@@ -3,12 +3,12 @@
 import logging
 import os
 import re
+
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from clinicai.adapters.db.mongo.models.doctor_m import DoctorMongo
-
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,11 @@ class DoctorMiddleware(BaseHTTPMiddleware):
 
         if not doctor_id:
             if require_header:
-                logger.warning("❌ Missing X-Doctor-ID header for %s %s", request.method, request.url.path)
+                logger.warning(
+                    "❌ Missing X-Doctor-ID header for %s %s",
+                    request.method,
+                    request.url.path,
+                )
                 return JSONResponse(
                     status_code=400,
                     content={
@@ -108,4 +112,3 @@ class DoctorMiddleware(BaseHTTPMiddleware):
             )
 
         return await call_next(request)
-

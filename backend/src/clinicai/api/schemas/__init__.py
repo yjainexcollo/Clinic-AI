@@ -5,21 +5,20 @@ API schemas package.
 # Common schemas
 from .common import (
     BaseResponse,
-    ErrorResponse,
+    BlobFileInfo,
     ContactInfo,
+    ErrorResponse,
     PersonalInfo,
     QuestionAnswer,
-    BlobFileInfo
 )
 
-# Patient registration schemas
-from .patient_registration import (
-    RegisterPatientRequest,
-    RegisterPatientResponse,
-    PatientSummarySchema,
-    PatientWithVisitsSchema,
-    PatientListResponse,
-    LatestVisitInfo
+# Doctor preferences
+from .doctor_preferences import (
+    DoctorPreferencesResponse,
+    PreVisitAIConfig,
+    PreVisitSectionConfig,
+    SoapAIConfig,
+    UpsertDoctorPreferencesRequest,
 )
 
 # Intake schemas
@@ -28,46 +27,47 @@ from .intake import (
     AnswerIntakeResponse,
     EditAnswerRequest,
     EditAnswerResponse,
-    IntakeSummarySchema
-)
-
-# Summary schemas
-from .summaries import (
-    PreVisitSummaryRequest,
-    PreVisitSummaryResponse,
-    PostVisitSummaryRequest,
-    PostVisitSummaryResponse
+    IntakeSummarySchema,
 )
 
 # Medical schemas
 from .medical import (
-    VitalsData,
+    ActionPlanRequest,
+    ActionPlanResponse,
+    MedicalRecommendation,
+    MedicationInfo,
     PhysicalExam,
     SOAPNoteRequest,
     SOAPNoteResponse,
-    MedicationInfo,
     TestOrderInfo,
-    MedicalRecommendation,
-    ActionPlanRequest,
-    ActionPlanResponse
+    VitalsData,
+)
+
+# Patient registration schemas
+from .patient_registration import (
+    LatestVisitInfo,
+    PatientListResponse,
+    PatientSummarySchema,
+    PatientWithVisitsSchema,
+    RegisterPatientRequest,
+    RegisterPatientResponse,
+)
+
+# Summary schemas
+from .summaries import (
+    PostVisitSummaryRequest,
+    PostVisitSummaryResponse,
+    PreVisitSummaryRequest,
+    PreVisitSummaryResponse,
 )
 
 # Visit schemas
 from .visits import (
-    VisitListItemSchema,
-    VisitDetailSchema,
-    VisitListResponse,
+    SoapNoteSchema,
     TranscriptionSessionSchema,
-    SoapNoteSchema
-)
-
-# Doctor preferences
-from .doctor_preferences import (
-    PreVisitSectionConfig,
-    PreVisitAIConfig,
-    SoapAIConfig,
-    DoctorPreferencesResponse,
-    UpsertDoctorPreferencesRequest,
+    VisitDetailSchema,
+    VisitListItemSchema,
+    VisitListResponse,
 )
 
 # Health schemas
@@ -85,7 +85,6 @@ __all__ = [
     "PersonalInfo",
     "QuestionAnswer",
     "BlobFileInfo",
-    
     # Patient registration
     "RegisterPatientRequest",
     "RegisterPatientResponse",
@@ -93,20 +92,17 @@ __all__ = [
     "PatientWithVisitsSchema",
     "PatientListResponse",
     "LatestVisitInfo",
-    
     # Intake
     "AnswerIntakeRequest",
     "AnswerIntakeResponse",
     "EditAnswerRequest",
     "EditAnswerResponse",
     "IntakeSummarySchema",
-    
     # Summaries
     "PreVisitSummaryRequest",
     "PreVisitSummaryResponse",
     "PostVisitSummaryRequest",
     "PostVisitSummaryResponse",
-    
     # Medical
     "VitalsData",
     "PhysicalExam",
@@ -117,21 +113,18 @@ __all__ = [
     "MedicalRecommendation",
     "ActionPlanRequest",
     "ActionPlanResponse",
-    
     # Visits
     "VisitListItemSchema",
     "VisitDetailSchema",
     "VisitListResponse",
     "TranscriptionSessionSchema",
     "SoapNoteSchema",
-
     # Doctor preferences
     "PreVisitSectionConfig",
     "PreVisitAIConfig",
     "SoapAIConfig",
     "DoctorPreferencesResponse",
     "UpsertDoctorPreferencesRequest",
-    
     # Health
     # "HealthResponse",
     # "ReadyResponse",

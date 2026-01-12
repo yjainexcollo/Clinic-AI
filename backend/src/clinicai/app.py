@@ -2,33 +2,31 @@
 FastAPI application factory and main app configuration.
 """
 
+import asyncio
+import logging
+import os
+import sys
+import traceback
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
-import logging
-import os
+from fastapi.responses import FileResponse, JSONResponse
 
-from .api.routers import health, patients, notes, workflow
+from clinicai.api.errors import APIError, NotFoundError, ValidationError
+from clinicai.api.schemas.common import ErrorResponse
+from clinicai.middleware.request_id_middleware import RequestIDMiddleware
+
 from .api.routers import doctor as doctor_router
+from .api.routers import health, notes, patients, workflow
 from .core.config import get_settings
-from .domain.errors import DomainError
 from .core.hipaa_audit import get_audit_logger
+from .domain.errors import DomainError
 from .middleware.auth_middleware import AuthenticationMiddleware
 from .middleware.doctor_middleware import DoctorMiddleware
 from .middleware.hipaa_middleware import HIPAAAuditMiddleware
 from .middleware.performance_middleware import PerformanceMiddleware
-from clinicai.middleware.request_id_middleware import RequestIDMiddleware
-from clinicai.api.errors import APIError, ValidationError, NotFoundError
-from clinicai.api.schemas.common import ErrorResponse
-from fastapi import Request
-from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
-import logging
-import asyncio
-import sys
-import traceback
 
 
 @asynccontextmanager
@@ -51,27 +49,28 @@ async def lifespan(app: FastAPI):
         logger.info(debug_msg)
         print("=" * 60, flush=True)
         logger.info("=" * 60)
-        
+
         # Note: Azure Application Insights is initialized in create_app() before middleware
         # to ensure proper instrumentation order and request capture
-        
+
         # Initialize database connection (MongoDB + Beanie)
         try:
+            import certifi  # type: ignore
             from beanie import init_beanie  # type: ignore
             from motor.motor_asyncio import AsyncIOMotorClient  # type: ignore
-            import certifi  # type: ignore
+
+            from .adapters.db.mongo.models.blob_file_reference import BlobFileReference
+            from .adapters.db.mongo.models.doctor_m import DoctorMongo
 
             # Import models for registration
             from .adapters.db.mongo.models.patient_m import (
+                AudioFileMongo,
+                DoctorPreferencesMongo,
+                LLMInteractionVisit,
+                MedicationImageMongo,
                 PatientMongo,
                 VisitMongo,
-                MedicationImageMongo,
-                DoctorPreferencesMongo,
-                AudioFileMongo,
-                LLMInteractionVisit,
             )
-            from .adapters.db.mongo.models.doctor_m import DoctorMongo
-            from .adapters.db.mongo.models.blob_file_reference import BlobFileReference
             from .adapters.db.mongo.models.prompt_version_m import PromptVersionMongo
 
             # Use configured URI
@@ -137,6 +136,7 @@ async def lifespan(app: FastAPI):
             print(msg, flush=True)
             logger.info(msg)
             from .core.key_vault import get_key_vault_service
+
             key_vault = get_key_vault_service()
             if key_vault and key_vault.is_available:
                 msg = "✅ Azure Key Vault initialized"
@@ -160,6 +160,7 @@ async def lifespan(app: FastAPI):
             print(msg, flush=True)
             logger.info(msg)
             from .adapters.storage.azure_blob_service import get_azure_blob_service
+
             blob_service = get_azure_blob_service()
             await blob_service.ensure_container_exists()
             msg = "✅ Azure Blob Storage initialized"
@@ -175,15 +176,17 @@ async def lifespan(app: FastAPI):
         try:
             try:
                 from .adapters.queue.azure_queue_service import get_azure_queue_service
+
                 queue_service = get_azure_queue_service()
                 await queue_service.ensure_queue_exists()
                 msg = "✅ Azure Queue Storage initialized"
                 print(msg, flush=True)
                 logger.info(msg)
-                
+
                 # Start transcription worker if enabled (set ENABLE_TRANSCRIPTION_WORKER=true)
                 if os.getenv("ENABLE_TRANSCRIPTION_WORKER", "false").lower() == "true":
                     from .workers.transcription_worker import TranscriptionWorker
+
                     worker = TranscriptionWorker()
                     worker_task = asyncio.create_task(worker.run())
                     msg = "✅ Transcription worker started"
@@ -211,10 +214,7 @@ async def lifespan(app: FastAPI):
             print(msg, flush=True)
             logger.info(msg)
             audit_logger = get_audit_logger()
-            await audit_logger.initialize(
-                mongo_uri=mongo_uri,
-                db_name=db_name
-            )
+            await audit_logger.initialize(mongo_uri=mongo_uri, db_name=db_name)
             msg = "✅ HIPAA Audit Logger initialized"
             print(msg, flush=True)
             logger.info(msg)
@@ -233,6 +233,7 @@ async def lifespan(app: FastAPI):
             from clinicai.adapters.external.prompt_version_manager import (
                 get_prompt_version_manager,
             )
+
             version_manager = get_prompt_version_manager()
             versions = await version_manager.initialize_versions()
             msg = f"✅ Prompt versions initialized: {len(versions)} scenarios"
@@ -253,35 +254,38 @@ async def lifespan(app: FastAPI):
             msg = "Validating Azure OpenAI configuration..."
             print(msg, flush=True)
             logger.info(msg)
-            azure_openai_configured = (
-                settings.azure_openai.endpoint and 
-                settings.azure_openai.api_key
-            )
-            
+            azure_openai_configured = settings.azure_openai.endpoint and settings.azure_openai.api_key
+
             if azure_openai_configured:
-                # Validate endpoint format
-                if not settings.azure_openai.endpoint.startswith("https://") or ".openai.azure.com" not in settings.azure_openai.endpoint:
+                # Validate endpoint format - accept all Azure OpenAI endpoint formats
+                valid_endpoint_domains = [
+                    ".openai.azure.com",
+                    ".cognitiveservices.azure.com",
+                    ".services.ai.azure.com",
+                ]
+                if not settings.azure_openai.endpoint.startswith("https://"):
                     raise ValueError(
                         f"Invalid Azure OpenAI endpoint format: {settings.azure_openai.endpoint}. "
-                        "Must be: https://xxx.openai.azure.com/"
+                        "Must start with https://"
                     )
-                
+                if not any(domain in settings.azure_openai.endpoint for domain in valid_endpoint_domains):
+                    raise ValueError(
+                        f"Invalid Azure OpenAI endpoint format: {settings.azure_openai.endpoint}. "
+                        f"Must contain one of: {', '.join(valid_endpoint_domains)}"
+                    )
+
                 # Validate deployment names are configured
                 if not settings.azure_openai.deployment_name:
                     raise ValueError(
-                        "Azure OpenAI chat deployment name is required. "
-                        "Please set AZURE_OPENAI_DEPLOYMENT_NAME."
+                        "Azure OpenAI chat deployment name is required. " "Please set AZURE_OPENAI_DEPLOYMENT_NAME."
                     )
-                
+
                 # Azure OpenAI Whisper deployment not required - using Azure Speech Service for transcription
-                
+
                 # Validate API key is not empty
                 if not settings.azure_openai.api_key or len(settings.azure_openai.api_key.strip()) == 0:
-                    raise ValueError(
-                        "Azure OpenAI API key is required. "
-                        "Please set AZURE_OPENAI_API_KEY."
-                    )
-                
+                    raise ValueError("Azure OpenAI API key is required. " "Please set AZURE_OPENAI_API_KEY.")
+
                 # Validate deployment actually exists by making a test call
                 msg = f"🔍 Validating Azure OpenAI deployments..."
                 print(msg, flush=True)
@@ -295,17 +299,20 @@ async def lifespan(app: FastAPI):
                 msg = f"   Deployment: {settings.azure_openai.deployment_name}"
                 print(msg, flush=True)
                 logger.info(msg)
-                
+
                 # Initialize error_msg to None to avoid scope issues
                 error_msg = None
-                
+
                 # Import and validate with proper error handling
                 try:
-                    from .core.azure_openai_client import validate_azure_openai_deployment
+                    from .core.azure_openai_client import (
+                        validate_azure_openai_deployment,
+                    )
+
                     msg = "   Starting deployment validation (this may take a few seconds)..."
                     print(msg, flush=True)
                     logger.info(msg)
-                    
+
                     # Validate chat deployment (will try multiple API versions automatically)
                     is_valid, error_msg = await validate_azure_openai_deployment(
                         endpoint=settings.azure_openai.endpoint,
@@ -313,9 +320,9 @@ async def lifespan(app: FastAPI):
                         api_version=settings.azure_openai.api_version,
                         deployment_name=settings.azure_openai.deployment_name,
                         timeout=10.0,
-                        try_alternative_versions=True
+                        try_alternative_versions=True,
                     )
-                    
+
                     if not is_valid:
                         error_detail = f"❌ Deployment validation failed:"
                         print(error_detail, flush=True)
@@ -324,9 +331,7 @@ async def lifespan(app: FastAPI):
                         print(error_detail2, flush=True)
                         logger.error(error_detail2)
                         sys.stderr.flush()
-                        raise ValueError(
-                            f"Azure OpenAI chat deployment validation failed: {error_msg}"
-                        )
+                        raise ValueError(f"Azure OpenAI chat deployment validation failed: {error_msg}")
                 except SyntaxError as e:
                     error_msg = f"Syntax error in azure_openai_client.py: {e}"
                     print(f"⚠️  {error_msg}", flush=True)
@@ -348,12 +353,12 @@ async def lifespan(app: FastAPI):
                         print(f"⚠️  {error_msg}", flush=True)
                         logger.warning(error_msg)
                         # Don't fail startup, just log warning
-                
+
                 # If validation succeeded but with a different API version, show a warning
                 if error_msg and "API version" in error_msg:
                     logger.warning(f"⚠️  {error_msg}")
                     logging.warning(error_msg)
-                
+
                 msg = f"✅ Azure OpenAI configuration validated"
                 print(msg, flush=True)
                 logger.info(msg)
@@ -375,16 +380,24 @@ async def lifespan(app: FastAPI):
                     f"transcription_service=azure_speech"
                 )
             else:
-                # Azure OpenAI is required - fail startup if not configured
-                error_msg = "❌ Azure OpenAI is required but not configured"
-                print(error_msg, flush=True)
-                logger.error(error_msg)
-                sys.stderr.flush()
-                raise ValueError(
-                    "Azure OpenAI is required but not configured. "
-                    "Please set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY. "
-                    "Fallback to standard OpenAI is disabled for data security."
-                )
+                # Azure OpenAI is required in production, but optional in testing
+                if settings.is_testing:
+                    warning_msg = (
+                        "⚠️  Azure OpenAI not configured (running in testing mode - functionality will be limited)"
+                    )
+                    print(warning_msg, flush=True)
+                    logger.warning(warning_msg)
+                else:
+                    # Fail startup in non-testing environments
+                    error_msg = "❌ Azure OpenAI is required but not configured"
+                    print(error_msg, flush=True)
+                    logger.error(error_msg)
+                    sys.stderr.flush()
+                    raise ValueError(
+                        "Azure OpenAI is required but not configured. "
+                        "Please set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY. "
+                        "Fallback to standard OpenAI is disabled for data security."
+                    )
         except ValueError as e:
             error_sep = "=" * 60
             print(error_sep, flush=True)
@@ -438,7 +451,7 @@ async def lifespan(app: FastAPI):
     msg = "🛑 Shutting down Clinic-AI Intake Assistant"
     print(msg, flush=True)
     logger.info(msg)
-    
+
     # Stop transcription worker if running
     if worker_task:
         msg = "🛑 Stopping transcription worker..."
@@ -462,9 +475,9 @@ def create_app() -> FastAPI:
         title="Clinic-AI Intake Assistant",
         description="AI-powered clinical intake system for small and mid-sized clinics",
         version=settings.app_version,
-        docs_url="/docs",   # Restore Swagger UI
-        redoc_url="/redoc", # Restore ReDoc UI (optional)
-        openapi_url="/openapi.json", # Restore OpenAPI JSON
+        docs_url="/docs",  # Restore Swagger UI
+        redoc_url="/redoc",  # Restore ReDoc UI (optional)
+        openapi_url="/openapi.json",  # Restore OpenAPI JSON
         lifespan=lifespan,
     )
 
@@ -475,11 +488,9 @@ def create_app() -> FastAPI:
         if app_insights_connection_string:
             from azure.monitor.opentelemetry import configure_azure_monitor
             from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-            
+
             # Configure Azure Monitor with OpenTelemetry
-            configure_azure_monitor(
-                connection_string=app_insights_connection_string
-            )
+            configure_azure_monitor(connection_string=app_insights_connection_string)
             # Instrument FastAPI app for automatic telemetry
             # This must be done BEFORE adding middleware to ensure all requests are captured
             FastAPIInstrumentor.instrument_app(app)
@@ -500,6 +511,7 @@ def create_app() -> FastAPI:
         if app.openapi_schema:
             return app.openapi_schema
         from fastapi.openapi.utils import get_openapi
+
         openapi_schema = get_openapi(
             title=app.title,
             version=app.version,
@@ -509,39 +521,60 @@ def create_app() -> FastAPI:
         # Define tag order: Health, Patient Registration, Patient Management, Intake + Previsit, Vitals and Transcript, Soap, Postvisit, Audio Management
         openapi_schema["tags"] = [
             {"name": "health", "description": "Health and readiness checks"},
-            {"name": "Patient Registration", "description": "Patient registration for scheduled and walk-in visits"},
-            {"name": "Patient Management", "description": "Patient listing and management operations"},
-            {"name": "Intake + Pre-Visit Summary", "description": "Intake form, medication image, and previsit summary"},
-            {"name": "Vitals and Transcript Generation", "description": "Vitals and transcript routes"},
-            {"name": "SOAP Note Generation", "description": "SOAP note generation and retrieval"},
-            {"name": "Post-Visit Summary", "description": "Post-visit summary generation and retrieval"},
-            {"name": "Audio Management", "description": "Audio file listing and management operations"},
+            {
+                "name": "Patient Registration",
+                "description": "Patient registration for scheduled and walk-in visits",
+            },
+            {
+                "name": "Patient Management",
+                "description": "Patient listing and management operations",
+            },
+            {
+                "name": "Intake + Pre-Visit Summary",
+                "description": "Intake form, medication image, and previsit summary",
+            },
+            {
+                "name": "Vitals and Transcript Generation",
+                "description": "Vitals and transcript routes",
+            },
+            {
+                "name": "SOAP Note Generation",
+                "description": "SOAP note generation and retrieval",
+            },
+            {
+                "name": "Post-Visit Summary",
+                "description": "Post-visit summary generation and retrieval",
+            },
+            {
+                "name": "Audio Management",
+                "description": "Audio file listing and management operations",
+            },
         ]
-        
+
         # Add API key security scheme to OpenAPI schema
         # This enables the "Authorize" button in Swagger UI
         if "components" not in openapi_schema:
             openapi_schema["components"] = {}
-        
+
         openapi_schema["components"]["securitySchemes"] = {
             "ApiKeyAuth": {
                 "type": "apiKey",
                 "in": "header",
                 "name": "X-API-Key",
-                "description": "API key authentication. Enter your API key (e.g., 'abc123' from your API_KEYS environment variable)"
+                "description": "API key authentication. Enter your API key (e.g., 'abc123' from your API_KEYS environment variable)",
             },
             "BearerAuth": {
                 "type": "http",
                 "scheme": "bearer",
                 "bearerFormat": "API Key",
-                "description": "Bearer token authentication. Enter your API key as: 'Bearer your-api-key'"
-            }
+                "description": "Bearer token authentication. Enter your API key as: 'Bearer your-api-key'",
+            },
         }
-        
+
         # Add X-Doctor-ID as a reusable parameter component
         if "parameters" not in openapi_schema["components"]:
             openapi_schema["components"]["parameters"] = {}
-        
+
         openapi_schema["components"]["parameters"]["X-Doctor-ID"] = {
             "name": "X-Doctor-ID",
             "in": "header",
@@ -550,23 +583,31 @@ def create_app() -> FastAPI:
                 "type": "string",
                 "pattern": "^[A-Za-z0-9_-]+$",
                 "example": "D123",
-                "description": "Doctor ID for multi-doctor isolation"
+                "description": "Doctor ID for multi-doctor isolation",
             },
-            "description": "Doctor ID for multi-doctor data isolation. Must be alphanumeric with hyphens/underscores allowed. Examples: 'D123', 'DR_1', 'CLINIC_NORTH_DOC1'. This ID will be auto-created in the database if it doesn't exist."
+            "description": "Doctor ID for multi-doctor data isolation. Must be alphanumeric with hyphens/underscores allowed. Examples: 'D123', 'DR_1', 'CLINIC_NORTH_DOC1'. This ID will be auto-created in the database if it doesn't exist.",
         }
-        
+
         # Apply security to all endpoints AND add X-Doctor-ID parameter (except public ones)
         # Note: Public endpoints are already handled by middleware, but we mark protected paths as requiring auth
         # The middleware will still allow public paths through
         if "paths" in openapi_schema:
             for path, methods in openapi_schema["paths"].items():
                 # Skip public paths
-                if path in ["/", "/docs", "/redoc", "/openapi.json", "/health", "/health/live", "/health/ready"]:
+                if path in [
+                    "/",
+                    "/docs",
+                    "/redoc",
+                    "/openapi.json",
+                    "/health",
+                    "/health/live",
+                    "/health/ready",
+                ]:
                     continue
                 # Skip paths that start with /docs or /redoc
                 if path.startswith("/docs/") or path.startswith("/redoc/"):
                     continue
-                
+
                 # Add security requirement AND X-Doctor-ID parameter to all methods
                 for method_name, method_info in methods.items():
                     if isinstance(method_info, dict):
@@ -574,43 +615,51 @@ def create_app() -> FastAPI:
                         if "security" not in method_info:
                             method_info["security"] = [
                                 {"ApiKeyAuth": []},
-                                {"BearerAuth": []}
+                                {"BearerAuth": []},
                             ]
-                        
+
                         # Add X-Doctor-ID parameter to each endpoint
                         if "parameters" not in method_info:
                             method_info["parameters"] = []
-                        
+
                         # Check if X-Doctor-ID parameter already exists in this endpoint
                         has_doctor_param = False
                         for param in method_info["parameters"]:
                             if isinstance(param, dict):
-                                if param.get("name") == "X-Doctor-ID" or param.get("$ref") == "#/components/parameters/X-Doctor-ID":
+                                if (
+                                    param.get("name") == "X-Doctor-ID"
+                                    or param.get("$ref") == "#/components/parameters/X-Doctor-ID"
+                                ):
                                     has_doctor_param = True
                                     break
                             elif isinstance(param, str) and param == "#/components/parameters/X-Doctor-ID":
                                 has_doctor_param = True
                                 break
-                        
+
                         # Add the parameter reference if it doesn't exist
                         if not has_doctor_param:
-                            method_info["parameters"].append({
-                                "$ref": "#/components/parameters/X-Doctor-ID"
-                            })
-        
+                            method_info["parameters"].append({"$ref": "#/components/parameters/X-Doctor-ID"})
+
         app.openapi_schema = openapi_schema
         return app.openapi_schema
-    
+
     app.openapi = custom_openapi
 
     # CORS middleware
     # Allow all origins (no credentials) to resolve preflight failures
-    allow_methods = settings.cors.allowed_methods or ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
+    allow_methods = settings.cors.allowed_methods or [
+        "GET",
+        "POST",
+        "PUT",
+        "DELETE",
+        "PATCH",
+        "OPTIONS",
+    ]
     allow_methods = list({m.upper() for m in allow_methods} | {"PATCH", "OPTIONS"})
     allow_headers = settings.cors.allowed_headers or ["*"]
     if allow_headers != ["*"] and "content-type" not in {h.lower() for h in allow_headers}:
         allow_headers = [*allow_headers, "content-type"]
-    
+
     # Add specific headers for file uploads
     if allow_headers != ["*"]:
         upload_headers = [
@@ -630,7 +679,7 @@ def create_app() -> FastAPI:
     print(f"   - Methods: {allow_methods}")
     print(f"   - Headers: {allow_headers}")
     print(f"   - Credentials: False")
-    
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -640,17 +689,17 @@ def create_app() -> FastAPI:
         max_age=600,
         expose_headers=["*"],  # Expose all headers to client
     )
-    
+
     # Add authentication middleware FIRST (before HIPAA audit)
     # This ensures all PHI endpoints require authentication
     app.add_middleware(AuthenticationMiddleware)
     # Add doctor middleware to bind doctor_id to request.state
     app.add_middleware(DoctorMiddleware)
-    
+
     # Add HIPAA audit middleware (runs after authentication)
     # This logs all PHI access with authenticated user IDs
     app.add_middleware(HIPAAAuditMiddleware)
-    
+
     # Add request timeout middleware (300s for transcription uploads)
     @app.middleware("http")
     async def timeout_middleware(request: Request, call_next):
@@ -670,27 +719,29 @@ def create_app() -> FastAPI:
                         "error": "REQUEST_TIMEOUT",
                         "error_type": "UPLOAD_TIMEOUT",
                         "message": "Request timed out after 300 seconds. The file may be too large or the server is overloaded.",
-                        "details": {"timeout_seconds": 300, "retry": True}
-                    }
+                        "details": {"timeout_seconds": 300, "retry": True},
+                    },
                 )
         else:
             return await call_next(request)
-    
+
     # Add performance tracking middleware
     app.add_middleware(PerformanceMiddleware)
-    
+
     # Add request logging middleware for debugging
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
         logger = logging.getLogger("clinicai")
-        logger.info(f"🌐 {request.method} {request.url.path} from {request.client.host if request.client else 'unknown'}")
+        logger.info(
+            f"🌐 {request.method} {request.url.path} from {request.client.host if request.client else 'unknown'}"
+        )
         logger.info(f"   Headers: {dict(request.headers)}")
-        
+
         response = await call_next(request)
-        
+
         logger.info(f"   Response: {response.status_code}")
         return response
-    
+
     # Add explicit CORS headers for all responses
     @app.middleware("http")
     async def add_cors_headers(request: Request, call_next):
@@ -699,14 +750,16 @@ def create_app() -> FastAPI:
             response = JSONResponse(content={"message": "OK"})
         else:
             response = await call_next(request)
-        
+
         # Add CORS headers to all responses
         response.headers["Access-Control-Allow-Origin"] = "*"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With, X-API-Key, Accept, Origin"
+        response.headers["Access-Control-Allow-Headers"] = (
+            "Content-Type, Authorization, X-Requested-With, X-API-Key, Accept, Origin"
+        )
         response.headers["Access-Control-Expose-Headers"] = "*"
         response.headers["Access-Control-Max-Age"] = "600"
-        
+
         return response
 
     # Register X-Request-ID middleware after CORS etc.
@@ -750,7 +803,7 @@ def create_app() -> FastAPI:
                 error=exc.code,
                 message=exc.message,
                 request_id=req_id or "",
-                details=exc.details or {}
+                details=exc.details or {},
             ).dict(),
         )
 
@@ -766,22 +819,22 @@ def create_app() -> FastAPI:
         logging.error(f"ValidationError on {request.method} {request.url.path}: {error_details} | request_id={req_id}")
         logging.error(f"Request headers: {dict(request.headers)}")
         logging.error(f"Request content-type: {request.headers.get('content-type', 'not set')}")
-        
+
         # Create user-friendly error message
         error_messages = []
         for error in error_details:
             loc = " -> ".join(str(x) for x in error.get("loc", []))
             msg = error.get("msg", "Validation error")
             error_messages.append(f"{loc}: {msg}")
-        
+
         return JSONResponse(
             status_code=422,
             content=ErrorResponse(
                 error="INVALID_INPUT",
                 message=f"Input validation failed: {'; '.join(error_messages)}",
                 request_id=req_id or "",
-                details={"errors": error_details, "path": request.url.path}
-            ).dict()
+                details={"errors": error_details, "path": request.url.path},
+            ).dict(),
         )
 
     @app.exception_handler(NotFoundError)
@@ -794,8 +847,8 @@ def create_app() -> FastAPI:
                 error="NOT_FOUND",
                 message=exc.message,
                 request_id=req_id or "",
-                details=exc.details or {}
-            ).dict()
+                details=exc.details or {},
+            ).dict(),
         )
 
     @app.exception_handler(Exception)
@@ -873,13 +926,6 @@ async def get_swagger_yaml():
     """Serve the custom Swagger YAML file."""
     swagger_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "swagger.yaml")
     if os.path.exists(swagger_path):
-        return FileResponse(
-            path=swagger_path,
-            media_type="application/x-yaml",
-            filename="swagger.yaml"
-        )
+        return FileResponse(path=swagger_path, media_type="application/x-yaml", filename="swagger.yaml")
     else:
-        return JSONResponse(
-            status_code=404,
-            content={"error": "Swagger file not found"}
-        )
+        return JSONResponse(status_code=404, content={"error": "Swagger file not found"})

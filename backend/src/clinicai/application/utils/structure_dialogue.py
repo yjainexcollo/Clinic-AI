@@ -5,9 +5,9 @@ This mirrors the logic used in the visit transcript route so both visit and
 ad-hoc flows produce consistent outputs.
 """
 
-from typing import List, Dict, Optional
 import asyncio
 import re as _re
+from typing import Dict, List, Optional
 
 from clinicai.core.ai_factory import get_ai_client
 from clinicai.core.config import get_settings
@@ -16,10 +16,10 @@ from clinicai.core.config import get_settings
 def _normalize_language(language: str) -> str:
     """
     Normalize language code for backend LLM prompts.
-    
+
     Frontend uses: 'en' or 'sp'
     Backend normalizes to: 'en' or 'es' (for LLM prompts)
-    
+
     Mapping:
     - 'sp', 'es', 'spanish', 'español', 'es-es', 'es-mx' → 'es'
     - unknown/empty → 'en' (default)
@@ -39,17 +39,17 @@ def _get_output_language_name(language: str) -> str:
 
 
 async def structure_dialogue_from_text(
-    raw: str, 
-    *, 
-    model: str, 
+    raw: str,
+    *,
+    model: str,
     azure_endpoint: Optional[str] = None,
     azure_api_key: Optional[str] = None,
     api_key: Optional[str] = None,  # Deprecated - use azure_api_key
-    language: str = "en"
+    language: str = "en",
 ) -> Optional[List[Dict[str, str]]]:
     """
     Structure dialogue from text using Azure OpenAI.
-    
+
     Args:
         raw: Raw transcript text
         model: Azure OpenAI deployment name (required)
@@ -57,10 +57,10 @@ async def structure_dialogue_from_text(
         azure_api_key: Azure OpenAI API key (required if not in settings)
         api_key: Deprecated - ignored, use azure_api_key instead
         language: Language code (en/sp)
-    
+
     Returns:
         List of dialogue turns or None if processing failed
-    
+
     Raises:
         ValueError: If Azure OpenAI is not configured
     """
@@ -278,17 +278,18 @@ FINAL INSTRUCTION
 Output ONLY the JSON array. Do not include explanatory text, confidence scores, or metadata. The response must begin with [ and end with ]."""
 
         import json as _json
+
         sentences = [_s.strip() for _s in _re.split(r"(?<=[.!?])\s+", raw) if _s.strip()]
         # More specific model detection for chunk sizing
         deployment_name_lower = str(deployment_name).lower()
-        if 'gpt-4o-mini' in deployment_name_lower:
+        if "gpt-4o-mini" in deployment_name_lower:
             max_chars_per_chunk = 6000  # Conservative for mini model
-        elif deployment_name_lower.startswith('gpt-4'):
+        elif deployment_name_lower.startswith("gpt-4"):
             max_chars_per_chunk = 8000  # Full GPT-4 models
         else:
             max_chars_per_chunk = 5000  # Other models
         overlap_chars = 500
-        is_gpt4 = deployment_name_lower.startswith('gpt-4')
+        is_gpt4 = deployment_name_lower.startswith("gpt-4")
 
         if len(raw) <= max_chars_per_chunk:
             # Unified English user prompt with dynamic language instructions
@@ -345,9 +346,9 @@ Output ONLY the JSON array. Do not include explanatory text, confidence scores, 
 
             async def _call_openai_chunk(text: str) -> str:
                 # Unified English user prompt with dynamic language instructions
-                    user_prompt = (
+                user_prompt = (
                     f"TRANSCRIPT CHUNK (Part of larger conversation):\n"
-                        f"{text}\n\n"
+                    f"{text}\n\n"
                     f"TASK: Convert this chunk into structured Doctor-Patient dialogue.\n"
                     f"• Preserve ALL text verbatim - do not modify, paraphrase, or correct\n"
                     f"• Use context-based analysis: analyze previous turn to determine speaker\n"
@@ -356,7 +357,7 @@ Output ONLY the JSON array. Do not include explanatory text, confidence scores, 
                     f"• Return a JSON object with key 'dialogue' containing the array, or return the array directly\n"
                     f"• Write all natural-language text values in {output_language}\n\n"
                     f"OUTPUT: Valid JSON array starting with [ and ending with ]"
-                    )
+                )
                 try:
                     resp = await client.chat(
                         model=deployment_name,
@@ -432,10 +433,13 @@ Output ONLY the JSON array. Do not include explanatory text, confidence scores, 
                     pass
                 merged.append(item)
             import json as _json2
+
             if not merged:
                 # Heuristic fallback if model returned nothing useful
                 turns: List[Dict[str, str]] = []
-                patient_label = "Paciente" if (language or "en").lower() in ["sp", "es", "es-es", "es-mx", "spanish"] else "Patient"
+                patient_label = (
+                    "Paciente" if (language or "en").lower() in ["sp", "es", "es-es", "es-mx", "spanish"] else "Patient"
+                )
                 next_role = "Doctor"
                 for s in sentences:
                     low = s.lower()
@@ -452,6 +456,7 @@ Output ONLY the JSON array. Do not include explanatory text, confidence scores, 
             content = _json2.dumps(merged)
 
         import json
+
         try:
             parsed = json.loads(content)
             if isinstance(parsed, dict) and isinstance(parsed.get("dialogue"), list):
@@ -459,9 +464,11 @@ Output ONLY the JSON array. Do not include explanatory text, confidence scores, 
             if isinstance(parsed, list):
                 return parsed
         except Exception:
-                # Heuristic fallback: alternate speakers
+            # Heuristic fallback: alternate speakers
             turns: List[Dict[str, str]] = []
-            patient_label = "Paciente" if (language or "en").lower() in ["sp", "es", "es-es", "es-mx", "spanish"] else "Patient"
+            patient_label = (
+                "Paciente" if (language or "en").lower() in ["sp", "es", "es-es", "es-mx", "spanish"] else "Patient"
+            )
             next_role = "Doctor"
             for s in sentences:
                 low = s.lower()
@@ -477,5 +484,3 @@ Output ONLY the JSON array. Do not include explanatory text, confidence scores, 
             return turns
     except Exception:
         return None
-
-

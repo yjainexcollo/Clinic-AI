@@ -1,35 +1,43 @@
 """Answer Intake use case for Step-01 functionality.
 Formatting-only changes; behavior preserved.
 """
+
 import logging
-from typing import Optional, List
+from typing import List, Optional
+
+from ...core.config import get_settings
+from ...core.constants import TRAVEL_KEYWORDS
 from ...domain.entities.visit import Visit
 from ...domain.errors import (
+    DuplicateQuestionError,
     IntakeAlreadyCompletedError,
     PatientNotFoundError,
     VisitNotFoundError,
-    DuplicateQuestionError,
 )
 from ...domain.value_objects.patient_id import PatientId
 from ...domain.value_objects.visit_id import VisitId
-from ...core.config import get_settings
-from ...core.constants import TRAVEL_KEYWORDS
 from ..dto.patient_dto import (
-AnswerIntakeRequest,
-AnswerIntakeResponse,
-EditAnswerRequest,
-EditAnswerResponse,
-PreVisitSummaryRequest,
+    AnswerIntakeRequest,
+    AnswerIntakeResponse,
+    EditAnswerRequest,
+    EditAnswerResponse,
+    PreVisitSummaryRequest,
 )
 from ..ports.repositories.patient_repo import PatientRepository
 from ..ports.repositories.visit_repo import VisitRepository
 from ..ports.services.question_service import QuestionService
+
 logger = logging.getLogger("clinicai")
+
+
 class AnswerIntakeUseCase:
     """Use case for answering intake questions."""
 
     def __init__(
-        self, patient_repository: PatientRepository, visit_repository: VisitRepository, question_service: QuestionService
+        self,
+        patient_repository: PatientRepository,
+        visit_repository: VisitRepository,
+        question_service: QuestionService,
     ):
         self._patient_repository = patient_repository
         self._visit_repository = visit_repository
@@ -50,7 +58,7 @@ class AnswerIntakeUseCase:
             raise VisitNotFoundError(request.visit_id)
 
         # Build prior context from latest completed visit (excluding current)
-        from typing import Optional, List
+        from typing import List, Optional
 
         prior_summary: Optional[str] = None
         prior_qas: Optional[List[str]] = None
@@ -61,8 +69,7 @@ class AnswerIntakeUseCase:
                     prior_summary = latest.pre_visit_summary.get("summary")
                 if latest.intake_session and latest.intake_session.questions_asked:
                     prior_qas = [
-                        f"Q: {qa.question} | A: {qa.answer}"
-                        for qa in latest.intake_session.questions_asked[:8]
+                        f"Q: {qa.question} | A: {qa.answer}" for qa in latest.intake_session.questions_asked[:8]
                     ]
         except Exception:
             prior_summary = None
@@ -90,9 +97,13 @@ class AnswerIntakeUseCase:
 
                 # Initialize asked_categories list for tracking (code-truth)
                 # First, try to use existing asked_categories from session
-                asked_categories: List[str] = list(visit.intake_session.asked_categories) if visit.intake_session.asked_categories else []
+                asked_categories: List[str] = (
+                    list(visit.intake_session.asked_categories) if visit.intake_session.asked_categories else []
+                )
                 # If asked_categories is empty or shorter than expected, reconstruct from existing questions
-                if len(asked_categories) < len(visit.intake_session.questions_asked) - 1:  # -1 because Q1 has no category
+                if (
+                    len(asked_categories) < len(visit.intake_session.questions_asked) - 1
+                ):  # -1 because Q1 has no category
                     asked_categories = []
                     # Reconstruct from existing questions based on strict sequence
                     for i, qa in enumerate(visit.intake_session.questions_asked):
@@ -142,8 +153,6 @@ class AnswerIntakeUseCase:
                             elif deep_num == 3:
                                 asked_categories.append("screening")
 
-
-
                 # Robust uniqueness loop: never surface a duplicate question
                 max_attempts = 6
                 attempt = 0
@@ -186,13 +195,22 @@ class AnswerIntakeUseCase:
                 if not current_question:
                     # Avoid asking generic medication question if medications were already clearly asked
                     meds_keywords = [
-                        "medication", "medications", "medicine", "medicines",
-                        "drug", "drugs", "tablet", "tablets", "capsule", "capsules",
-                        "insulin", "supplement", "supplements",
+                        "medication",
+                        "medications",
+                        "medicine",
+                        "medicines",
+                        "drug",
+                        "drugs",
+                        "tablet",
+                        "tablets",
+                        "capsule",
+                        "capsules",
+                        "insulin",
+                        "supplement",
+                        "supplements",
                     ]
                     meds_already_asked = any(
-                        any(kw in (q or "").lower() for kw in meds_keywords)
-                        for q in asked_questions
+                        any(kw in (q or "").lower() for kw in meds_keywords) for q in asked_questions
                     )
 
                     generic_pool = []
@@ -268,7 +286,9 @@ class AnswerIntakeUseCase:
 
             # Initialize asked_categories list for tracking (code-truth)
             # First, try to use existing asked_categories from session
-            asked_categories: List[str] = list(visit.intake_session.asked_categories) if visit.intake_session.asked_categories else []
+            asked_categories: List[str] = (
+                list(visit.intake_session.asked_categories) if visit.intake_session.asked_categories else []
+            )
             # If asked_categories is empty or shorter than expected, reconstruct from existing questions
             if len(asked_categories) < len(visit.intake_session.questions_asked) - 1:  # -1 because Q1 has no category
                 asked_categories = []
@@ -329,8 +349,6 @@ class AnswerIntakeUseCase:
                             asked_categories.append("screening")  # Lab tests
                         elif deep_num == 3:
                             asked_categories.append("screening")  # Screening/complications
-
-
 
             max_attempts = 6
             attempt = 0
@@ -505,12 +523,34 @@ class AnswerIntakeUseCase:
             "¿le gustaría responder algunas preguntas diagnósticas detalladas relacionadas con sus síntomas?",
         }
         positive_responses = {
-            "yes", "y", "yeah", "yep", "sure", "ok", "okay", "of course", "absolutely",
-            "sí", "si", "claro", "por supuesto", "por supuesto que sí", "de acuerdo",
+            "yes",
+            "y",
+            "yeah",
+            "yep",
+            "sure",
+            "ok",
+            "okay",
+            "of course",
+            "absolutely",
+            "sí",
+            "si",
+            "claro",
+            "por supuesto",
+            "por supuesto que sí",
+            "de acuerdo",
         }
         negative_responses = {
-            "no", "n", "nope", "nah", "not really", "don't", "dont",
-            "no gracias", "no quiero", "no, gracias", "no, no quiero",
+            "no",
+            "n",
+            "nope",
+            "nah",
+            "not really",
+            "don't",
+            "dont",
+            "no gracias",
+            "no quiero",
+            "no, gracias",
+            "no, no quiero",
         }
 
         # Base limit starts at 10 (for non-chronic or negative consent)
